@@ -1,0 +1,83 @@
+
+
+X Value: 0
+
+Input Pattern: 000xx
+Input Vector With X Assigned: 00000
+Fault Free: 00
+Detected : 2/1
+Faulty Response: 11
+
+Input Pattern: x10xx
+Input Vector With X Assigned: 01000
+Fault Free: 11
+Detected : 11/0
+Faulty Response: 00
+Detected : 22/0
+Faulty Response: 01
+Detected : 16/1
+Faulty Response: 00
+
+Input Pattern: 1x1xx
+Input Vector With X Assigned: 10100
+Fault Free: 10
+Detected : 2/1
+Faulty Response: 11
+Detected : 22/0
+Faulty Response: 00
+
+X Value: 1
+
+Input Pattern: 000xx
+Input Vector With X Assigned: 00011
+Fault Free: 01
+Detected : 2/1
+Faulty Response: 11
+Detected : 11/0
+Faulty Response: 00
+
+Input Pattern: x10xx
+Input Vector With X Assigned: 11011
+Fault Free: 11
+Detected : 11/0
+Faulty Response: 00
+Detected : 22/0
+Faulty Response: 01
+Detected : 16/1
+Faulty Response: 01
+
+Input Pattern: 1x1xx
+Input Vector With X Assigned: 11111
+Fault Free: 10
+Detected : 22/0
+Faulty Response: 00
+
+X Value: 2
+
+Input Pattern: 000xx
+Input Vector With X Assigned: 00022
+Fault Free: 02
+Detected : 2/1
+Faulty Response: 11
+Detected : 11/0
+Faulty Response: 00
+
+Input Pattern: x10xx
+Input Vector With X Assigned: 21022
+Fault Free: 11
+Detected : 11/0
+Faulty Response: 00
+Detected : 22/0
+Faulty Response: 01
+Detected : 16/1
+Faulty Response: 02
+
+Input Pattern: 1x1xx
+Input Vector With X Assigned: 12122
+Fault Free: 12
+Detected : 11/0
+Faulty Response: 10
+Detected : 22/0
+Faulty Response: 02
+Detected : 6/1
+Faulty Response: 10
