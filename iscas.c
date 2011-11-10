@@ -1,7 +1,7 @@
 #include "project.h"
-/***************************************************************************************************************************
+/*****************************************************
 Insert an element "x" at end of LIST "l", if "x" is not already in "l". 
-****************************************************************************************************************************/
+******************************************************/
 void InsertList(LIST **l,int x)
 {
 LIST *p,*tl;
@@ -17,9 +17,9 @@ else{
     tl = tl->nxt; }  }
 return;
 }//end of InsertList
-/***************************************************************************************************************************
+/*****************************************************
 Print the elements in LIST "l"          
-***************************************************************************************************************************/
+*****************************************************/
 void PrintList(LIST *l)
 {
 LIST *temp=NULL;
@@ -162,22 +162,4 @@ for(num=0;num<i;num++){
     if(graph[num].fot!=NULL){   FreeList(&graph[num].fot);  graph[num].fot = NULL;     } } }
 return;
 }//end of ClearCircuit
-/*****************************************************************************************************************************
- Routine to read the .vec files
-*****************************************************************************************************************************/
-int ReadVec(FILE *fvec,PATTERN *vector)
-{
-int a,b,c,d;      //random variables 
-char str[Mpi];        //char array
 
-a=b=c=d=0;               //intializing the temporary variables 
-while(!feof(fvec)){    
-  bzero(str,Mpi);                  //initialing the string   
-  fgets(str,Mpi,fvec);             //reading a single line
-  if(*str!='\0'){ 
-    bzero(vector[a].piv,Mpi);                           //initialing the string 
-    strcpy(vector[a].piv,str);                          //copy the string into a piv in vector structure  
-    a++; } } 
-return a;
-}//end of readvec
-/****************************************************************************************************************************/
