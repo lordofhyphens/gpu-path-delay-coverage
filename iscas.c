@@ -1,8 +1,9 @@
-#include "project.h"
+#include "iscas.h"
+int counter = 1;
 /*****************************************************
  * Insert an element "x" at end of LIST "l", if "x" is not already in "l".
  *****************************************************/
-void InsertList(LIST **l,int x)
+void InsertList(LIST **l,int x,int lineid)
 {
     LIST *p,*tl;
     if ((p=(LIST *) malloc(sizeof(LIST)))==NULL) {
@@ -11,6 +12,7 @@ void InsertList(LIST **l,int x)
     }
     else {
         p->id=x;
+		p->line=lineid;
         p->nxt=NULL;
         if(*l==NULL) {
             *l=p;
@@ -39,7 +41,7 @@ void PrintList(LIST *l)
 
     temp=l;
     while(temp!=NULL) {
-        printf("%d ", temp->id);
+        printf("(%d,%d) ", temp->id, temp->line);
         temp = temp->nxt;
     }
     return;
@@ -126,8 +128,8 @@ int ReadIsc(FILE *fisc,NODE *graph)
         case NOT   :
             for(i=1; i<=fin; i++) {
                 fscanf(fisc, "%d", &fid);
-                InsertList(&graph[id].fin,fid);
-                InsertList(&graph[fid].fot,id);
+                InsertList(&graph[id].fin,fid,-1);
+                InsertList(&graph[fid].fot,id, counter++);
             }
             fscanf(fisc,"\n");
             break;
@@ -140,8 +142,8 @@ int ReadIsc(FILE *fisc,NODE *graph)
                     }
                 }
             }
-            InsertList(&graph[id].fin,fid);
-            InsertList(&graph[fid].fot,id);
+            InsertList(&graph[id].fin,fid,-1);
+            InsertList(&graph[fid].fot,id,counter++);
             break;
         } //end case
         bzero(line,strlen(line));
