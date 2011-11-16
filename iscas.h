@@ -88,6 +88,8 @@ void FreeList(LIST **);
 **************************************************************************/
 int ReadIsc(FILE *,NODE *);
 void InitializeCircuit(NODE *,int);
+void InitializeLines(LINE *,int);
 int AssignType(char *);
 void PrintCircuit(NODE *,int);
-
+int EnumerateLines(NODE *graph, LINE *lgraph);
+void PrintLines(LINE* lgraph, int lcnt); 

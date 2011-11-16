@@ -129,7 +129,7 @@ int ReadIsc(FILE *fisc,NODE *graph)
             for(i=1; i<=fin; i++) {
                 fscanf(fisc, "%d", &fid);
                 InsertList(&graph[id].fin,fid,-1);
-                InsertList(&graph[fid].fot,id, counter++);
+                InsertList(&graph[fid].fot,id, -1);
             }
             fscanf(fisc,"\n");
             break;
@@ -143,7 +143,7 @@ int ReadIsc(FILE *fisc,NODE *graph)
                 }
             }
             InsertList(&graph[id].fin,fid,-1);
-            InsertList(&graph[fid].fot,id,counter++);
+            InsertList(&graph[fid].fot,id,-1);
             break;
         } //end case
         bzero(line,strlen(line));
@@ -162,7 +162,11 @@ void InitializeCircuit(NODE *graph,int num)
     graph[num].fin=graph[num].fot=NULL;
     return;
 }
-
+void InitializeLines(LINE *graph,int num)
+{
+    graph[num].logic=graph[num].prev=graph[num].next=-1;
+    return;
+}
 /******************************************************
  * Convert (char *) type read to (int)
  ******************************************************/
@@ -243,4 +247,62 @@ void ClearCircuit(NODE *graph,int i)
     }
     return;
 }
+// Enumerate (label) every line in the circuit. 
+// Returns the number of lines in the circuit.
+int EnumerateLines(NODE *graph, LINE *lgraph) {
+	// lid is -1 because the algorithm increments before assigning.
+	int lid = -1, init;  
+	for (int i = 0; i < Mnod; i++) {
+		if (graph[i].typ == 0) 
+			continue;
+		LIST* cur = graph[i].fin;
+		LIST* tmp = NULL;
+		while (cur != NULL) {
+			if (cur->line == -1) {
+				tmp = graph[cur->id].fot;
+				while (tmp != NULL) {
+					if (tmp->id == i) {
+						cur->line = tmp->line;
+						break;
+					}
+					tmp = tmp->nxt;
+				}
 
+			}
+			cur = cur->nxt;
+		}
+		cur = graph[i].fot;
+		tmp = NULL;
+		init = 1;
+		if (cur == NULL) {
+			// gate is primary output
+			lid++;
+//			printf("%d\n",lid);
+			lgraph[lid].prev = i;
+		} else {
+			while (cur != NULL) {
+				if (graph[cur->id].typ == FROM) {
+					if (init == 1) {
+						lid++;
+						init = 0;
+					}
+				} else { 
+					lid++;
+				}
+				cur->line = lid;
+				lgraph[lid].prev = i;
+				lgraph[lid].next = cur->id;
+//				printf ("%d,%d\t",lid, cur->id);
+				cur = cur->nxt;
+			}
+		}
+//		printf("\n");
+	}
+	return lid+1;
+}
+void PrintLines(LINE* lgraph, int lcnt) {
+	printf("ID\tVALUE\tPREV\tNEXT\n");
+	for (int i = 0; i < lcnt; i++) {
+		printf("%d:\t%d\t%d\t%d\n",i,lgraph[i].logic,lgraph[i].prev,lgraph[i].next);
+	}
+}
