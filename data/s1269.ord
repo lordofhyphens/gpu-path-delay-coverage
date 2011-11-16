@@ -1,0 +1,7 @@
+oLDALUout STMQ LDDR TESTMODE qShiftRight qLDALUout I679 I680 
+I681 I683 INS_2 INS_1 INS_0 MQ_q_5 MQ_q_6 MQ_q_7 
+LDMQ MQ_q_3 MQ_q_4 MQ_q_2 MQ_q_1 I682 MQ_q_0 qPass2 
+DR_q_7 inBUS_7 qINSo_2 qINSo_1 qINSo_0 qPass1 inBUS_1 inBUS_2 
+Acc_q_7 DR_q_6 Acc_q_6 inBUS_5 inBUS_6 DR_q_4 Acc_q_4 inBUS_3 
+Acc_q_5 DR_q_5 inBUS_4 LDAcc inBUS_0 DR_q_2 Acc_q_2 DR_q_3 
+Acc_q_3 STAcc Acc_q_0 Acc_q_1 DR_q_0 DR_q_1 STDR

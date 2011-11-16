@@ -1,0 +1,9 @@
+wdcntXXXXstate3 Incr_wd_cnt wdcntXXXXstate0 wdcntXXXXstate2 wdcntXXXXstate1 RESETi PCCSawReset slaveXXXXstate0 
+UpdateReq slaveXXXXstate1 slaveXXXXstate2 STARTo Gen_Reset resetXXXXstate1 PCCsync resetXXXXstate0 
+resetXXXXstate2 ACKi NuBusActive Intr_done SlotSpace_Id_Match physrecXXXXstate1 physrecXXXXstate0 P_receive_begin 
+Intr_req VTM0l Tag_Match PCCAck CoherencyState2i CoherencyState1i P_receive_cancel TM1i 
+TM0i VTM1l TM1l virmachXXXXstate0 PCCAckCode virmachXXXXstate1 VACKi V_receive_begin 
+wd_cnt_test V_transmit_begin nubusXXXXstate1 nubusXXXXstate0 Reset_wd_cnt Set_ex_wd_cnt1 SBCResetPCC masterXXXXstate3 
+STARTi masterXXXXstate2 VTM0i masterXXXXstate1 VSACKi UpdateDone VACKl GRANTi 
+LastRQSTi ACKl masterXXXXstate0 RQSTi PCCConfirm BUS_Inactive SingleStep PCCReqCode1 
+PCCReqCode0 PCCReqCode2 PCCReqCode3 PCCReq 

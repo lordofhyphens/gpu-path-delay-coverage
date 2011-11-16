@@ -1,0 +1,11 @@
+ld_9 ld_10 ld_11 ld_8 I1731 I1732 rst_7 addrout_3 
+addrout_0 addrout_6 addrout_1 addrout_2 addrout_7 addrout_4 addrout_5 rst_6 
+dataout_7 dataout_2 dataout_0 dataout_1 dataout_6 dataout_3 dataout_4 dataout_5 
+I1733 actnum_7 num_7 actnum_6 num_6 VDD GND rst_2 
+rst_1 rst_0 eoc rst_10 video videoinp black_7 black_0 
+rst_5 white_0 rst_4 flag memw actnum_0 num_0 num_4 
+actnum_4 actnum_5 num_5 actnum_3 num_3 num_1 actnum_1 num_2 
+rst_8 numinp_3 numinp_0 numinp_7 numinp_4 numinp_5 numinp_6 numinp_2 
+actnum_2 rst_3 white_7 white_6 black_6 black_5 black_4 black_3 
+black_1 black_2 white_5 white_4 white_3 white_2 white_1 numinp_1 
+rst_11 scan scaninp rst_9 start startinp 
