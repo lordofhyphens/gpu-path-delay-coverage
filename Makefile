@@ -8,15 +8,16 @@ gobj=$(gsrc:.cu=.o)
 out=fcount
 CFLAGS=-std=c99 -O2
 LIB=-lcuda
-all: $(obj) ${gobj} tags fcount
-	${GPUCC} -o ${out} ${obj} ${gobj}
-cpu: tags fcount-cpu
+all: tags $(out) $(out)-cpu
+cpu: tags $(out)-cpu
 
-fcount-cpu: $(obj)
+${out}: $(obj) ${gobj} 
+	${GPUCC} -o ${out} ${obj} ${gobj}
+${out}-cpu: $(obj)
 	${CC} -o ${out}-cpu ${obj}
+
 ${obj}: ${src} ${header}
 	${CC} -c ${CFLAGS} $^
-${gobj}: CC = gcc-4.4
 ${gobj}: ${gsrc}
 	${GPUCC} -ccbin g++-4.4 -c $^
 tags: ${src} ${gsrc} ${header}
