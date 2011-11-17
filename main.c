@@ -8,36 +8,19 @@ int main(int argc, char ** argv) {
 	FILE *fisc;
 	NODE graph[Mnod];
 	LINE lgraph[Mnod];
-	int lcnt; // count of lines in the circuit
+	int lcnt, ncnt; // count of lines in the circuit
 	fisc=fopen(argv[1],"r");
-	ReadIsc(fisc,graph);
+	ncnt = ReadIsc(fisc,graph);
 	for (int i = 0; i < Mnod; i++)
 		InitializeLines(lgraph, i);
 	lcnt = EnumerateLines(graph,lgraph);
-	PrintCircuit(graph,50);
-	PrintLines(lgraph,lcnt);
-	
+	printf ("Max Node ID: %d\tLines: %d\n",ncnt,lcnt);
 	int vecA[5] = {0,1,0,0,0};
 	int vecB[5] = {1,0,0,1,1};
 	int j = 0;
 
-	// simulate logic values with vector A
-	for (int i = 0; i < Mnod; i++) {
-		if (graph[i].typ == INPT)
-			graph[i].val = vecA[j];
-		else
-			graph[i].val = procgate(graph[i], true);
-	}
-
-	// simulate with vector B, determine transitions propagated.
-	for (int i = 0; i < Mnod; i++) {
-		if (graph[i].typ == INPT) {
-			graph[i].val = vecB[j];
-		}
-		else {
-			graph[i].val = procgate(graph[i], true);
-		}
-	}
+	PrintCircuit(graph,20);
+	PrintLines(lgraph,lcnt);
 
 	return 0;
 }

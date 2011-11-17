@@ -1,17 +1,17 @@
 CC=gcc
 GPUCC=nvcc
+header=iscas.h
 src=main.c iscas.c
-gsrc=kernel.cu
+gsrc=kernel.cu gpuiscas.cu
 obj=$(src:.c=.o)
 gobj=$(gsrc:.cu=.o)
-gpusrc=main.cu
 out=fcount
 CFLAGS=-std=c99 -O2
 all: $(obj) ${gobj}
 	${GPUCC} -o ${out} ${obj} ${gobj}
-${obj}: ${src}
+${obj}: ${src} ${header}
 	${CC} -c ${CFLAGS} $^
 ${gobj}: ${gsrc}
-	${GPUCC} -c ${gsrc} $^
+	${GPUCC} -c $^
 clean:
-	rm -f ${out} ${obj}
+	rm -f ${out} ${obj} ${gobj} $(header:.h=.h.gch)

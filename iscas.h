@@ -64,6 +64,11 @@ typedef struct LINE_type {
 	int prev, next; // preceding gate, next gate
 } LINE;
 
+typedef struct GPU_NODE_type {
+	int type, nfi, nfo, po;
+	LINE *fin, *fot;
+} GPUNODE;
+
 //3.Stucture declaration for PATTERN
 typedef struct PATTERN_type
 {
