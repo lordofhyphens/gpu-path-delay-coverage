@@ -1,20 +1,23 @@
-CC=gcc-4.4
+CC=g++-4.4
 GPUCC=nvcc
-header=iscas.h
-src=main.c iscas.c
+header=iscas.h gpuiscas.h
+src=main.cc iscas.cc
 gsrc=kernel.cu gpuiscas.cu
-obj=$(src:.c=.o)
-gobj=$(gsrc:.cu=.o)
+obj=$(src:.cc=.o)
+gobj_cu=$(gsrc:.cu=.o)
+gobj=$(gobj_cu:.c=.o)
 out=fcount
-CFLAGS=-std=c99 -O2
+CFLAGS=-I/opt/net/apps/cuda/include -O2
 LIB=-lcuda
-all: tags $(out) $(out)-cpu
+test: tags $(out)
+	./${out} data/c17.isc
+all: tags $(out)
 cpu: tags $(out)-cpu
 
 ${out}: $(obj) ${gobj} 
 	${GPUCC} -o ${out} ${obj} ${gobj}
 ${out}-cpu: $(obj)
-	${CC} -o ${out}-cpu ${obj}
+	${CC} -cuda -o ${out}-cpu ${obj} ${gobj}
 
 ${obj}: ${src} ${header}
 	${CC} -c ${CFLAGS} $^
@@ -23,4 +26,4 @@ ${gobj}: ${gsrc}
 tags: ${src} ${gsrc} ${header}
 	ctags ${src} ${gsrc}
 clean:
-	rm -f ${out} ${obj}-cpu ${obj} ${gobj} $(header:.h=.h.gch)
+	rm -f ${out} ${out}-cpu ${obj} ${gobj} $(header:.h=.h.gch)

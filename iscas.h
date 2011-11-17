@@ -1,3 +1,5 @@
+#ifndef ISCAS_H
+#define ISCAS_H
 /*************************************************************
 Header Files
 *************************************************************/
@@ -104,3 +106,4 @@ int EnumerateLines(NODE *graph, LINE *lgraph);
 GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid);
 void PrintLines(LINE* lgraph, int lcnt); 
 int verifyArrays(GPUNODE_INFO info, LINE* lgraph, int maxid);
+#endif

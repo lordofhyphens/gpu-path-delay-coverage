@@ -1,6 +1,11 @@
 #include <cuda.h>
 #include "iscas.h"
 #define N 32
+
+
+__global__ void IN_gate(int i, GPUNODE* graph, LINE* lgraph, int* offsets, int type, int** res) {
+
+}
 __global__ void OR_gate(int i, GPUNODE* graph, LINE* lgraph, int* offsets, int type, int **res) {
 	int tid = blockIdx.x;
 	int cnt = 0;
