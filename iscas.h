@@ -65,10 +65,14 @@ typedef struct LINE_type {
 } LINE;
 
 typedef struct GPU_NODE_type {
-	int type, nfi, nfo, po;
-	LINE *fin, *fot;
+	int type, nfi, nfo, po, offset; // initial offset for fanin and fanout
 } GPUNODE;
 
+typedef struct GPUNODE_INFO_type {
+	int max_offset;
+	GPUNODE* graph;
+	int* offsets;
+} GPUNODE_INFO;
 //3.Stucture declaration for PATTERN
 typedef struct PATTERN_type
 {
@@ -97,4 +101,5 @@ void InitializeLines(LINE *,int);
 int AssignType(char *);
 void PrintCircuit(NODE *,int);
 int EnumerateLines(NODE *graph, LINE *lgraph);
+GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid);
 void PrintLines(LINE* lgraph, int lcnt); 

@@ -162,6 +162,43 @@ void InitializeCircuit(NODE *graph,int num)
     graph[num].fin=graph[num].fot=NULL;
     return;
 }
+/* GPUNODE has its fanin and fanout in the following order in offsets[]:
+ * fanin, fanout. The value is the integer ID in lgraph for the relevant line. 
+ * To get id of the first gate in fanout, use lgraph[(ggraph[i].offset+ggraph[i].nfi)].next, up to ggraph[i].nfo. 
+ */
+GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid) {
+	GPUNODE *ggraph = (GPUNODE*)malloc(sizeof(GPUNODE)*maxid);
+	GPUNODE_INFO ars;
+	int off = 0;
+	int maxoff = 0;
+	for (int i = 0; i < maxid; i++) {
+		maxoff += (graph[i].nfi + graph[i].nfo);
+	}
+	ars.offsets = (int*)malloc(sizeof(int)*maxoff); 
+	for (int i = 0; i < maxid; i++) {
+		LIST* tmp = NULL;
+		ggraph[i].type = graph[i].typ;
+		ggraph[i].nfi = graph[i].nfi;
+		ggraph[i].nfo = graph[i].nfo;
+		ggraph[i].po = graph[i].po;
+		tmp = graph[i].fin;
+		while (tmp != NULL) {
+			ars.offsets[off] = tmp->line;
+			off++;
+			tmp = tmp->nxt;
+		}
+		tmp = graph[i].fin;
+		while (tmp != NULL) {
+			ars.offsets[off] = tmp->line;
+			off++;
+			tmp = tmp->nxt;
+		}
+	}
+	ars.max_offset = off;
+	ars.graph = ggraph;
+	return ars;
+}
+
 void InitializeLines(LINE *graph,int num)
 {
     graph[num].logic=graph[num].prev=graph[num].next=-1;

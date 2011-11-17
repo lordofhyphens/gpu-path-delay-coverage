@@ -1,5 +1,7 @@
 *.swp
 a.out
 fcount
+tags
+fcount-cpu
 *.o
 *.gch
