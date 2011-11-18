@@ -11,5 +11,5 @@
 int* gpuLoadVectors(int** input, size_t width, size_t height);
 
 int* gpuLoadFans(int* offset, int maxid);
-NODE* gpuLoadCircuit(const NODE* graph, int maxid);
+GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid);
 LINE* gpuLoadLines(LINE* graph, int maxid);

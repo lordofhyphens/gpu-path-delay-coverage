@@ -12,7 +12,7 @@ int procgate(NODE gnode, int settle);
 int main(int argc, char ** argv) {
 	FILE *fisc;
 	int *dres, *fans;
-	NODE *dgraph;
+	GPUNODE *dgraph;
 	LINE *dlines;
 	int** res;
 	NODE graph[Mnod];
@@ -77,10 +77,10 @@ int main(int argc, char ** argv) {
 
 	size_t pitch;
 	dres = gpuLoadVectors(res, lcnt, PATTERNS);
-	dgraph = gpuLoadCircuit(graph,ncnt);
+	dgraph = gpuLoadCircuit(test.graph,ncnt);
 	dlines = gpuLoadLines(lgraph,lcnt);
 	fans = gpuLoadFans(test.offsets,test.max_offset);
-	runGpuSimulation(dres,lcnt,test.graph,ncnt,dlines,lcnt,fans);
+	runGpuSimulation(dres,lcnt,dgraph,test.graph,ncnt,dlines,lcnt,fans);
 	printf ("Max Node ID: %d\tLines: %d\n",ncnt,lcnt);
 	PrintCircuit(graph,ncnt);
 	PrintLines(lgraph,lcnt);

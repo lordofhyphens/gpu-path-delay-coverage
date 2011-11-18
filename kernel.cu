@@ -4,29 +4,25 @@
 #define N 32
 #define PATTERNS 2
 
-__global__ void NAND_gate(int i, int* fans, LINE* line, GPUNODE graph, int *res, size_t width) {
+__global__ void NAND_gate(int i, int* fans, GPUNODE* graph, int *res, size_t width) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x;
 	int *row;
 	while (tid < PATTERNS) {
-		if (tid == 0) 
-		//	printf("TID: %d, %d\n", tid, i);
 		row = (int*)((char*)res + tid*width*sizeof(int));
-		row[fans[graph.offset+graph.nfi]];
+		row[fans[graph[i].offset+graph[i].nfi]] = row[fans[graph[i].offset]];
 	}
 }
 
-__global__ void FROM_gate(int i, int* fans, LINE* line, GPUNODE graph, int *res, size_t width) {
+__global__ void FROM_gate(int i, int* fans,GPUNODE* graph, int *res, size_t width) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x;
 	int *row;
 	while (tid < PATTERNS) {
-		if (tid == 0) 
-	//		printf("TID: %d, %d\n", tid, i);
 		row = (int*)((char*)res + tid*width*sizeof(int)); // get the current row?
-		row[fans[graph.offset+graph.nfi]];
+		row[fans[graph[i].offset+graph[i].nfi]] = row[fans[graph[i].offset]];
 	}
 }
 
-void runGpuSimulation(int* results, size_t width, GPUNODE* graph, int maxid, LINE* line, int maxline, int* fan) {
+void runGpuSimulation(int* results, size_t width, GPUNODE* ggraph, GPUNODE* graph, int maxid, LINE* line, int maxline, int* fan) {
 	printf("Pre-simulation device memory check:\n");
 	int *lvalues1 = (int*)malloc(sizeof(int)*width*2);
 	cudaMemcpy(lvalues1,results,width*2*sizeof(int),cudaMemcpyDeviceToHost);
@@ -39,16 +35,17 @@ void runGpuSimulation(int* results, size_t width, GPUNODE* graph, int maxid, LIN
 		switch (graph[i].type) {
 			case NAND:
 				printf("NAND Gate \n");
-				NAND_gate<<<1,2>>>(i, fan, line, graph[i], results, width);
+				NAND_gate<<<1,2>>>(i, fan, ggraph, results, width);
 				break;
 			case FROM:
 				printf("FROM Gate \n");
-				FROM_gate<<<1,2>>>(i, fan, line, graph[i], results, width);
+				FROM_gate<<<1,2>>>(i, fan, ggraph, results, width);
 				break;
 			default:
 				printf("Other Gate\n");
 				break;
 		}
+		cudaThreadSynchronize();
 	}
 	printf("Post-simulation device memory check:\n");
 	lvalues1 = (int*)malloc(sizeof(int)*width*2);

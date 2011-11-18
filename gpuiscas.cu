@@ -19,10 +19,10 @@ static void HandleError( cudaError_t err,
                                     __FILE__, __LINE__ ); \
                             exit( EXIT_FAILURE );}}
 
-NODE* gpuLoadCircuit(const NODE* graph, int maxid) {
-	NODE *devAr;
-	HANDLE_ERROR(cudaMalloc(&devAr, sizeof(NODE)*maxid));
-	HANDLE_ERROR(cudaMemcpy(devAr, graph, maxid * sizeof(NODE),cudaMemcpyHostToDevice));
+GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid) {
+	GPUNODE *devAr;
+	HANDLE_ERROR(cudaMalloc(&devAr, sizeof(GPUNODE)*maxid));
+	HANDLE_ERROR(cudaMemcpy(devAr, graph, maxid * sizeof(GPUNODE),cudaMemcpyHostToDevice));
 	return devAr;
 }
 LINE* gpuLoadLines(LINE* graph, int maxid) {
@@ -48,12 +48,12 @@ int* gpuLoadVectors(int** input, size_t width, size_t height) {
 	for (int i = 0; i < height; i++) {
 		row = (int*)((char*)tgt + i*width*sizeof(int));
 		cudaMemcpy(row, input[i],sizeof(int)*width,cudaMemcpyHostToDevice);
-		cudaMemcpy(tmp, row, sizeof(int)*width,cudaMemcpyDeviceToHost);
-		printf("Checking copy results:\n");
-		for (int j = 0; j < width; j++) {
-			printf("(%d,%d) ",input[i][j], tmp[j]);
-		}
-		printf("\n");
+//		cudaMemcpy(tmp, row, sizeof(int)*width,cudaMemcpyDeviceToHost);
+//		printf("Checking copy results:\n");
+//		for (int j = 0; j < width; j++) {
+//			printf("(%d,%d) ",input[i][j], tmp[j]);
+//		}
+//		printf("\n");
 	}
 	return tgt;
 }
