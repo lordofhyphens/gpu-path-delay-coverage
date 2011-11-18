@@ -102,7 +102,7 @@ void InitializeCircuit(NODE *,int);
 void InitializeLines(LINE *,int);
 int AssignType(char *);
 void PrintCircuit(NODE *,int);
-int EnumerateLines(NODE *graph, LINE *lgraph);
+int EnumerateLines(NODE *graph, LINE *lgraph,int);
 GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid);
 void PrintLines(LINE* lgraph, int lcnt); 
 int verifyArrays(GPUNODE_INFO info, LINE* lgraph, int maxid);

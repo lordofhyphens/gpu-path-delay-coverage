@@ -25,7 +25,7 @@ int main(int argc, char ** argv) {
 	ncnt = ReadIsc(fisc,graph);
 	for (int i = 0; i < Mnod; i++)
 		InitializeLines(lgraph, i);
-	lcnt = EnumerateLines(graph,lgraph);
+	lcnt = EnumerateLines(graph,lgraph,ncnt);
 
 	test = GraphsetToArrays(graph, lgraph, ncnt);
 /*
@@ -40,6 +40,7 @@ int main(int argc, char ** argv) {
 	}
 	int vecA[5] = {0,1,0,0,0};
 	int vecB[5] = {1,0,0,1,1};
+	int vecC[5] = {1,0,1,0,1};
 	
 	res = (int**)malloc(sizeof(int*)*PATTERNS);
 	for (int i = 0; i < PATTERNS; i++) {
@@ -48,34 +49,32 @@ int main(int argc, char ** argv) {
 			res[i][j] = 0;
 		}
 	}
-	printf("All offsets: \n");
+	printf("All offsets: %d \n",test.max_offset);
 	for (int i = 0; i < test.max_offset; i++){
 		printf("%d\t", test.offsets[i]);
 	}
 	printf("\n");
 	printf("All Nodes offset values: \n");
-	for (int i = 0; i < ncnt; i++) {
+	for (int i = 0; i <= ncnt; i++) {
 		printf("%d: %d\n", i,test.graph[i].offset);
 	}
 	int j = 0;
 	for (int i = 0; i < ncnt; i++) {
 		if (test.graph[i].type == INPT) {
-			printf("line: %d, vecA, %d: %d\t vecB, %d: %d\n",test.offsets[test.graph[i].offset+test.graph[i].nfi],j,vecA[j],j,vecB[j]);
-			printf("Setting res[0].\n");
 			res[0][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = vecA[j];
-			printf("Setting res[1].\n");
 			res[1][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = vecB[j];
+//			res[2][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = vecC[j];
 			j++;
 		}
 	}
+/*
 	printf("Initial: \n");
 	for (int i = 0; i < 2; i++) {
 		for (int j = 0; j < lcnt; j++) {
 			printf("%d:%d\t%d\n", i, j, res[i][j]);
 		}
 	}
-
-	size_t pitch;
+*/
 	dres = gpuLoadVectors(res, lcnt, PATTERNS);
 	dgraph = gpuLoadCircuit(test.graph,ncnt);
 	dlines = gpuLoadLines(lgraph,lcnt);
@@ -83,7 +82,7 @@ int main(int argc, char ** argv) {
 	runGpuSimulation(dres,lcnt,dgraph,test.graph,ncnt,dlines,lcnt,fans);
 	printf ("Max Node ID: %d\tLines: %d\n",ncnt,lcnt);
 	PrintCircuit(graph,ncnt);
-	PrintLines(lgraph,lcnt);
+//	PrintLines(lgraph,lcnt);
 
 	return 0;
 }

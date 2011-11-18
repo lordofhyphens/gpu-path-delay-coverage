@@ -29,8 +29,8 @@ __global__ void FROM_gate(int i, int* fans,GPUNODE* graph, int *res, size_t widt
 }
 
 void runGpuSimulation(int* results, size_t width, GPUNODE* ggraph, GPUNODE* graph, int maxid, LINE* line, int maxline, int* fan) {
-	printf("Pre-simulation device memory check:\n");
 	int *lvalues = (int*)malloc(sizeof(int)*width), *row;
+/*	printf("Pre-simulation device memory check:\n");
 	for (int r = 0;r < PATTERNS; r++) {
 		lvalues = (int*)malloc(sizeof(int)*width);
 		row = (int*)((char*)results + r*width*sizeof(int)); // get the current row?
@@ -39,16 +39,19 @@ void runGpuSimulation(int* results, size_t width, GPUNODE* ggraph, GPUNODE* grap
 			printf("%d,%d:\t%d\n", r, i, lvalues[i]);
 		}
 	}
-
-	for (int i = 0; i < maxid; i++) {
-		printf("ID: %d, Type: %d\t", i, graph[i].type);
+	free(lvalues);
+*/
+	for (int i = 0; i <= maxid; i++) {
+		printf("ID: %d\tFanin: %d\tFanout: %d\tType: %d\t", i, graph[i].nfi, graph[i].nfo,graph[i].type);
 		switch (graph[i].type) {
+			case 0:
+				continue;
 			case NAND:
-				printf("NAND Gate \n");
+				printf("NAND Gate\n");
 				NAND_gate<<<1,2>>>(i, fan, ggraph, results, width);
 				break;
 			case FROM:
-				printf("FROM Gate \n");
+				printf("FROM Gate\n");
 				FROM_gate<<<1,2>>>(i, fan, ggraph, results, width);
 				break;
 			default:
@@ -57,7 +60,7 @@ void runGpuSimulation(int* results, size_t width, GPUNODE* ggraph, GPUNODE* grap
 		}
 		cudaThreadSynchronize();
 	}
-	printf("Post-simulation device memory check:\n");
+	printf("Post-simulation device results:\n");
 	for (int r = 0;r < PATTERNS; r++) {
 		lvalues = (int*)malloc(sizeof(int)*width);
 		row = (int*)((char*)results + r*width*sizeof(int)); // get the current row?
@@ -65,5 +68,6 @@ void runGpuSimulation(int* results, size_t width, GPUNODE* ggraph, GPUNODE* grap
 		for (int i = 0; i < width; i++) {
 			printf("%d,%d:\t%d\n", r, i, lvalues[i]);
 		}
+		free(lvalues);
 	}
 }

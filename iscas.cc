@@ -223,7 +223,6 @@ void PrintCircuit(NODE *graph,int Max)
     }
     return;
 }
-
 /******************************************************
  * Free the memory of all member of graph structure
  ******************************************************/
@@ -249,10 +248,10 @@ void ClearCircuit(NODE *graph,int i)
 }
 // Enumerate (label) every line in the circuit. 
 // Returns the number of lines in the circuit.
-int EnumerateLines(NODE *graph, LINE *lgraph) {
+int EnumerateLines(NODE *graph, LINE *lgraph, int maxid) {
 	// lid is -1 because the algorithm increments before assigning.
 	int lid = -1, init;  
-	for (int i = 0; i < Mnod; i++) {
+	for (int i = 0; i <= maxid; i++) {
 		if (graph[i].typ == 0) 
 			continue;
 		LIST* cur = graph[i].fin;
@@ -277,9 +276,8 @@ int EnumerateLines(NODE *graph, LINE *lgraph) {
 		if (graph[i].po == 1) {
 			// gate is primary output
 			lid++;
-//			printf("%d\n",lid);
 			lgraph[lid].prev = i;
-			graph[i].nfo = 1;
+			graph[i].nfo++;
             InsertList(&graph[i].fot,i,lid);
 		} else {
 			while (cur != NULL) {
@@ -318,43 +316,45 @@ GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid) {
 	GPUNODE_INFO ars;
 	int off = 0;
 	int maxoff = 0;
-	for (int i = 0; i < maxid; i++) {
+	for (int i = 0; i <= maxid; i++) {
 		if (graph[i].typ != 0) {
 			maxoff += (graph[i].nfi + graph[i].nfo);
 		}
 	}
 	ars.offsets = (int*)malloc(sizeof(int)*maxoff); 
-	for (int i = 0; i < maxid; i++) {
+	for (int i = 0; i <= maxid; i++) {
 		LIST* tmp = NULL;
 		ggraph[i].type = graph[i].typ;
 		ggraph[i].nfi = graph[i].nfi;
 		ggraph[i].nfo = graph[i].nfo;
 		ggraph[i].po = graph[i].po;
+		if (graph[i].typ == 0)
+			continue;
 		ggraph[i].offset = off;
 		tmp = graph[i].fin;
 //		printf("Node ID: %d, %s\n",i, graph[i].nam);
 		while (tmp != NULL) {
-//			printf("fin: %d, %d, %d\n", i, off, tmp->line);
+			printf("fin: %d, %d, %d\n", i, off, tmp->line);
 			ars.offsets[off] = tmp->line;
 			off++;
 			tmp = tmp->nxt;
 		}
 		tmp = graph[i].fot;
 		while (tmp != NULL) {
-//			printf("fot: %d, %d, %d\n", i, off, tmp->line);
+			printf("fot: %d, %d, %d\n", i, off, tmp->line);
 			ars.offsets[off] = tmp->line;
 			off++;
 			tmp = tmp->nxt;
 		}
 	}
-	ars.max_offset = maxoff;
+	ars.max_offset = off;
 	ars.graph = ggraph;
 	return ars;
 }
 
 int verifyArrays(GPUNODE_INFO info, LINE* lgraph, int maxid) {
 	int good;
-	for (int i = 0; i < maxid-2; i++) {
+	for (int i = 0; i <= maxid-2; i++) {
 		if (info.graph[i].type != 0)
 			good = (lgraph[info.graph[i].offset+info.graph[i].nfo].prev == i);
 			printf("%d, %d\n", i, lgraph[info.graph[i].offset+info.graph[i].nfo].prev);
