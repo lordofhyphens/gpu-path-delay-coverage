@@ -274,11 +274,13 @@ int EnumerateLines(NODE *graph, LINE *lgraph) {
 		cur = graph[i].fot;
 		tmp = NULL;
 		init = 1;
-		if (cur == NULL) {
+		if (graph[i].po == 1) {
 			// gate is primary output
 			lid++;
 //			printf("%d\n",lid);
 			lgraph[lid].prev = i;
+			graph[i].nfo = 1;
+            InsertList(&graph[i].fot,i,lid);
 		} else {
 			while (cur != NULL) {
 				if (graph[cur->id].typ == FROM) {
