@@ -5,11 +5,16 @@
 #define PATTERNS 2
 
 __global__ void NAND_gate(int i, int* fans, GPUNODE* graph, int *res, size_t width) {
-	int tid = blockIdx.x * gridDim.x + threadIdx.x;
+	int tid = blockIdx.x * gridDim.x + threadIdx.x, j = 0;
 	int *row;
 	while (tid < PATTERNS) {
 		row = (int*)((char*)res + tid*width*sizeof(int));
 		row[fans[graph[i].offset+graph[i].nfi]] = row[fans[graph[i].offset]];
+		while (j < graph[i].nfi) {
+			row[fans[graph[i].offset+graph[i].nfi]] = !(row[fans[graph[i].offset]] && row[fans[graph[i].offset+j]]);
+			j++;
+		}
+		tid += blockDim.x * gridDim.x;
 	}
 }
 
@@ -19,15 +24,20 @@ __global__ void FROM_gate(int i, int* fans,GPUNODE* graph, int *res, size_t widt
 	while (tid < PATTERNS) {
 		row = (int*)((char*)res + tid*width*sizeof(int)); // get the current row?
 		row[fans[graph[i].offset+graph[i].nfi]] = row[fans[graph[i].offset]];
+		tid += blockDim.x * gridDim.x;
 	}
 }
 
 void runGpuSimulation(int* results, size_t width, GPUNODE* ggraph, GPUNODE* graph, int maxid, LINE* line, int maxline, int* fan) {
 	printf("Pre-simulation device memory check:\n");
-	int *lvalues1 = (int*)malloc(sizeof(int)*width*2);
-	cudaMemcpy(lvalues1,results,width*2*sizeof(int),cudaMemcpyDeviceToHost);
-	for (int i = 0; i < 2*width; i++) {
-		printf("%d:\t%d\n", i, lvalues1[i]);
+	int *lvalues = (int*)malloc(sizeof(int)*width), *row;
+	for (int r = 0;r < PATTERNS; r++) {
+		lvalues = (int*)malloc(sizeof(int)*width);
+		row = (int*)((char*)results + r*width*sizeof(int)); // get the current row?
+		cudaMemcpy(lvalues,row,width*sizeof(int),cudaMemcpyDeviceToHost);
+		for (int i = 0; i <width; i++) {
+			printf("%d,%d:\t%d\n", r, i, lvalues[i]);
+		}
 	}
 
 	for (int i = 0; i < maxid; i++) {
@@ -48,9 +58,12 @@ void runGpuSimulation(int* results, size_t width, GPUNODE* ggraph, GPUNODE* grap
 		cudaThreadSynchronize();
 	}
 	printf("Post-simulation device memory check:\n");
-	lvalues1 = (int*)malloc(sizeof(int)*width*2);
-	cudaMemcpy(lvalues1,results,width*2*sizeof(int),cudaMemcpyDeviceToHost);
-	for (int i = 0; i < 2*width; i++) {
-		printf("%d:\t%d\n", i, lvalues1[i]);
+	for (int r = 0;r < PATTERNS; r++) {
+		lvalues = (int*)malloc(sizeof(int)*width);
+		row = (int*)((char*)results + r*width*sizeof(int)); // get the current row?
+		cudaMemcpy(lvalues,row,width*sizeof(int),cudaMemcpyDeviceToHost);
+		for (int i = 0; i < width; i++) {
+			printf("%d,%d:\t%d\n", r, i, lvalues[i]);
+		}
 	}
 }
