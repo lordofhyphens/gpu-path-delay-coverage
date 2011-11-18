@@ -4,50 +4,25 @@
 #define N 32
 #define PATTERNS 2
 
-__global__ void AND_gate(int i, int* fans, LINE* line, GPUNODE graph, int *res, size_t pitch) {
+__global__ void NAND_gate(int i, int* fans, LINE* line, GPUNODE graph, int *res, size_t width) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x;
+	int *row;
 	while (tid < PATTERNS) {
-		int* row = (int*)((char*)res + tid*pitch);
-		int j = 0;
-		while (j < graph.nfi) {
-			j++;
-			row[fans[graph.offset+graph.nfi]] = (row[fans[graph.offset+graph.nfi]] && row[fans[graph.offset+j]]);
-		}
+		if (tid == 0) 
+		//	printf("TID: %d, %d\n", tid, i);
+		row = (int*)((char*)res + tid*width*sizeof(int));
+		row[fans[graph.offset+graph.nfi]];
 	}
 }
 
-__global__ void OR_gate(int i, GPUNODE* graph, LINE* lgraph, int* offsets, int type, int **res) {
-	int tid = blockIdx.x;
-	int cnt = 0;
-	int tmp;
-	while (tid < N) {
-		tmp = res[lgraph[offsets[graph[i].offset+cnt]].prev][tid]; 
-		while (cnt < graph[i].nfi){
-			res[i][tid] = (tmp || res[lgraph[offsets[graph[i].offset+cnt]].prev][tid]);
-			cnt++;
-		}
-		cnt = 0;
-	}
-}
-__global__ void NAND_gate(int i, int* fans, LINE* line, GPUNODE graph, int *res, size_t pitch) {
+__global__ void FROM_gate(int i, int* fans, LINE* line, GPUNODE graph, int *res, size_t width) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x;
+	int *row;
 	while (tid < PATTERNS) {
-		int* row = (int*)((char*)res + tid*pitch);
-		int j = 0;
-		while (j < graph.nfi) {
-			j++;
-			row[fans[graph.offset+graph.nfi]] = !(row[fans[graph.offset+graph.nfi]] && row[fans[graph.offset+j]]);
-		}
-		printf("TID %d:\t%d\n",tid, row[fans[graph.offset+graph.nfi]]);
-	}
-}
-
-__global__ void FROM_gate(int i, int* fans, LINE* line, GPUNODE graph, int *res, size_t pitch) {
-	int tid = blockIdx.x * gridDim.x + threadIdx.x;
-	while (tid < PATTERNS) {
-		int* row = (int*)((char*)res + tid*pitch);
-		row[fans[graph.offset+graph.nfi]] = row[fans[graph.offset]];
-		printf("TID %d:\t%d\n",tid, row[fans[graph.offset+graph.nfi]]);
+		if (tid == 0) 
+	//		printf("TID: %d, %d\n", tid, i);
+		row = (int*)((char*)res + tid*width*sizeof(int)); // get the current row?
+		row[fans[graph.offset+graph.nfi]];
 	}
 }
 
@@ -60,19 +35,18 @@ void runGpuSimulation(int* results, size_t width, GPUNODE* graph, int maxid, LIN
 	}
 
 	for (int i = 0; i < maxid; i++) {
+		printf("ID: %d, Type: %d\t", i, graph[i].type);
 		switch (graph[i].type) {
-			case AND:
-				AND_gate<<<1,2>>>(i, fan, line, graph[i], results, width);
-				break;
-			case OR:
-				break;
 			case NAND:
+				printf("NAND Gate \n");
 				NAND_gate<<<1,2>>>(i, fan, line, graph[i], results, width);
 				break;
 			case FROM:
+				printf("FROM Gate \n");
 				FROM_gate<<<1,2>>>(i, fan, line, graph[i], results, width);
 				break;
 			default:
+				printf("Other Gate\n");
 				break;
 		}
 	}

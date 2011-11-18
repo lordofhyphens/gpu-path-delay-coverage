@@ -34,6 +34,10 @@ int main(int argc, char ** argv) {
 		printf(" %d:\t%d\t%d\t%d\n",i,test.offsets[i],lgraph[test.offsets[i]].prev,lgraph[test.offsets[i]].next );
 	}
 */
+	printf("ID:\tType\n");
+	for(int i = 0; i < ncnt; i++) {
+		printf(" %d:\t%d\n",i,test.graph[i].type);
+	}
 	int vecA[5] = {0,1,0,0,0};
 	int vecB[5] = {1,0,0,1,1};
 	
