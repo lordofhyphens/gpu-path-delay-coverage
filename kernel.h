@@ -3,5 +3,5 @@
 
 #include "iscas.h"
 void runGpuSimulation(int*, size_t, GPUNODE*, GPUNODE*, int, LINE*, int, int*);
-
+void loadLookupTables();
 #endif

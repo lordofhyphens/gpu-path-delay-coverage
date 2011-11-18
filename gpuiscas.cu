@@ -1,4 +1,5 @@
 #include <cuda.h>
+#include <cassert>
 #include "iscas.h"
 #include "gpuiscas.h"
 #define N 32
@@ -20,9 +21,19 @@ static void HandleError( cudaError_t err,
                             exit( EXIT_FAILURE );}}
 
 GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid) {
-	GPUNODE *devAr;
-	HANDLE_ERROR(cudaMalloc(&devAr, sizeof(GPUNODE)*maxid));
-	HANDLE_ERROR(cudaMemcpy(devAr, graph, maxid * sizeof(GPUNODE),cudaMemcpyHostToDevice));
+	GPUNODE *devAr, *testAr;
+	HANDLE_ERROR(cudaMalloc(&devAr, sizeof(GPUNODE)*(1+maxid)));
+	HANDLE_ERROR(cudaMemcpy(devAr, graph, (maxid+1) * sizeof(GPUNODE),cudaMemcpyHostToDevice));
+	printf("Verifying GPUNODE graph copy\n");
+	printf("ID\tTYPE\tFANIN\tFANOUT\tPO\tOFFSET\n");
+	testAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(maxid+1));	
+	HANDLE_ERROR(cudaMemcpy(testAr, devAr, (1+maxid) * sizeof(GPUNODE),cudaMemcpyDeviceToHost));
+
+	for (int i = 0; i <= maxid; i++) {
+//		printf("%d:\t%d\t%d\t%d\t%d\t%d\n", i, testAr[i].type,testAr[i].nfi,testAr[i].nfo,testAr[i].po,testAr[i].offset);
+		assert(testAr[i].type == graph[i].type && testAr[i].nfi == graph[i].nfi &&testAr[i].nfo == graph[i].nfo && testAr[i].po == graph[i].po && testAr[i].offset == graph[i].offset);
+	}
+	free(testAr);
 	return devAr;
 }
 LINE* gpuLoadLines(LINE* graph, int maxid) {
@@ -40,20 +51,20 @@ int* gpuLoadFans(int* offset, int maxid) {
 
 int* gpuLoadVectors(int** input, size_t width, size_t height) {
 	int *tgt;
-	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*width*height));
+	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width+1)*(height+1)));
 	int *row;
 	int *tmp = (int*)malloc(sizeof(int)*width);
-	for (int i =0; i < width; i++)
+	for (int i =0; i <= width; i++)
 		tmp[i] = -1;
 	for (int i = 0; i < height; i++) {
-		row = (int*)((char*)tgt + i*width*sizeof(int));
-		cudaMemcpy(row, input[i],sizeof(int)*width,cudaMemcpyHostToDevice);
-//		cudaMemcpy(tmp, row, sizeof(int)*width,cudaMemcpyDeviceToHost);
-//		printf("Checking copy results:\n");
-//		for (int j = 0; j < width; j++) {
-//			printf("(%d,%d) ",input[i][j], tmp[j]);
-//		}
-//		printf("\n");
+		row = (int*)((char*)tgt + i*(width)*sizeof(int));
+		cudaMemcpy(row, input[i],sizeof(int)*(width+1),cudaMemcpyHostToDevice);
+#ifndef NDEBUG
+		cudaMemcpy(tmp, row, sizeof(int)*(width+1),cudaMemcpyDeviceToHost);
+		for (int j = 0; j <= width; j++) {
+			assert(input[i][j]==tmp[j]);
+		}
+#endif
 	}
 	return tgt;
 }
