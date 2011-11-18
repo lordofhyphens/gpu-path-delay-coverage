@@ -40,8 +40,20 @@ int* gpuLoadFans(int* offset, int maxid) {
 
 int* gpuLoadVectors(int** input, size_t width, size_t height) {
 	int *tgt;
-	size_t pitch;
-	HANDLE_ERROR(cudaMallocPitch(&tgt, &pitch, width, height));
-	HANDLE_ERROR(cudaMemcpy2D(tgt,pitch,input,pitch,width,height,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*width*height));
+	int *row;
+	int *tmp = (int*)malloc(sizeof(int)*width);
+	for (int i =0; i < width; i++)
+		tmp[i] = -1;
+	for (int i = 0; i < height; i++) {
+		row = (int*)((char*)tgt + i*width*sizeof(int));
+		cudaMemcpy(row, input[i],sizeof(int)*width,cudaMemcpyHostToDevice);
+		cudaMemcpy(tmp, row, sizeof(int)*width,cudaMemcpyDeviceToHost);
+		printf("Checking copy results:\n");
+		for (int j = 0; j < width; j++) {
+			printf("(%d,%d) ",input[i][j], tmp[j]);
+		}
+		printf("\n");
+	}
 	return tgt;
 }

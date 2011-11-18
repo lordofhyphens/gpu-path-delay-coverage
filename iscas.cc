@@ -328,6 +328,7 @@ GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid) {
 		ggraph[i].nfi = graph[i].nfi;
 		ggraph[i].nfo = graph[i].nfo;
 		ggraph[i].po = graph[i].po;
+		ggraph[i].offset = off;
 		tmp = graph[i].fin;
 //		printf("Node ID: %d, %s\n",i, graph[i].nam);
 		while (tmp != NULL) {
