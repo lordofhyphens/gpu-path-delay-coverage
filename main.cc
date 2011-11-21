@@ -28,14 +28,14 @@ int main(int argc, char ** argv) {
 
 	test = GraphsetToArrays(graph, lgraph, ncnt);
 /*
-	printf("I\tLineID\tPrev\tNext\n");
+	DPRINT("I\tLineID\tPrev\tNext\n");
 	for(int i = 0; i < test.max_offset; i++) {
-		printf(" %d:\t%d\t%d\t%d\n",i,test.offsets[i],lgraph[test.offsets[i]].prev,lgraph[test.offsets[i]].next );
+		DPRINT(" %d:\t%d\t%d\t%d\n",i,test.offsets[i],lgraph[test.offsets[i]].prev,lgraph[test.offsets[i]].next );
 	}
 */
-	printf("ID:\tType\n");
+	DPRINT("ID:\tType\n");
 	for(int i = 0; i < ncnt; i++) {
-		printf(" %d:\t%d\n",i,test.graph[i].type);
+		DPRINT(" %d:\t%d\n",i,test.graph[i].type);
 	}
 	int vecA[5] = {1,0,0,1,1}; //v0
 	int vecB[5] = {0,1,0,0,0}; //v1
@@ -49,14 +49,14 @@ int main(int argc, char ** argv) {
 			res[i][j] = 0;
 		}
 	}
-	printf("All offsets: %d \n",test.max_offset);
+	DPRINT("All offsets: %d \n",test.max_offset);
 	for (int i = 0; i < test.max_offset; i++){
-		printf("%d\t", test.offsets[i]);
+		DPRINT("%d\t", test.offsets[i]);
 	}
-	printf("\n");
-	printf("All Nodes offset values: \n");
+	DPRINT("\n");
+	DPRINT("All Nodes offset values: \n");
 	for (int i = 0; i <= ncnt; i++) {
-		printf("%d: %d\n", i,test.graph[i].offset);
+		DPRINT("%d: %d\n", i,test.graph[i].offset);
 	}
 	int j = 0;
 	for (int i = 0; i < ncnt; i++) {
@@ -69,10 +69,10 @@ int main(int argc, char ** argv) {
 		}
 	}
 /*
-	printf("Initial: \n");
+	DPRINT("Initial: \n");
 	for (int i = 0; i < 2; i++) {
 		for (int j = 0; j < lcnt; j++) {
-			printf("%d:%d\t%d\n", i, j, res[i][j]);
+			DPRINT("%d:%d\t%d\n", i, j, res[i][j]);
 		}
 	}
 */
@@ -82,7 +82,7 @@ int main(int argc, char ** argv) {
 	fans = gpuLoadFans(test.offsets,test.max_offset);
 	loadLookupTables();
 	runGpuSimulation(dres,lcnt,dgraph,test.graph,ncnt,dlines,lcnt,fans);
-	printf ("Max Node ID: %d\tLines: %d\n",ncnt,lcnt);
+	DPRINT ("Max Node ID: %d\tLines: %d\n",ncnt,lcnt);
 	PrintCircuit(graph,ncnt);
 //	PrintLines(lgraph,lcnt);
 

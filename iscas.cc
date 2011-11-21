@@ -1,4 +1,5 @@
 #include "iscas.h"
+#include "defines.h"
 int counter = 1;
 /*****************************************************
  * Insert an element "x" at end of LIST "l", if "x" is not already in "l".
@@ -7,7 +8,7 @@ void InsertList(LIST **l,int x,int lineid)
 {
     LIST *p,*tl;
     if ((p=(LIST *) malloc(sizeof(LIST)))==NULL) {
-        printf("LIST: Out of memory\n");
+        DPRINT("LIST: Out of memory\n");
         exit(1);
     }
     else {
@@ -41,7 +42,7 @@ void PrintList(LIST *l)
 
     temp=l;
     while(temp!=NULL) {
-        printf("(%d,%d) ", temp->id, temp->line);
+        DPRINT("(%d,%d) ", temp->id, temp->line);
         temp = temp->nxt;
     }
     return;
@@ -114,7 +115,7 @@ int ReadIsc(FILE *fisc,NODE *graph)
         //create fanin and fanout lists
         switch (graph[id].typ)  {
         case 0     :
-            printf("ReadIsc: Error in input file (Node %d)\n",id);
+            DPRINT("ReadIsc: Error in input file (Node %d)\n",id);
             exit(1);
         case INPT  :
             break;
@@ -202,23 +203,23 @@ void PrintCircuit(NODE *graph,int Max)
 {
     LIST *temp;
     int  i;
-    printf("\nID\tNAME\tTYPE\tPO\tIN#\tOUT#\tVAL\tFVAL\tMARK\tFANIN\tFANOUT\n");
+    DPRINT("\nID\tNAME\tTYPE\tPO\tIN#\tOUT#\tVAL\tFVAL\tMARK\tFANIN\tFANOUT\n");
     for(i=0; i<=Max; i++) {
         if(graph[i].typ!=0) {
-            printf("%d\t%s\t%d\t%d\t%d\t%d\t",i,graph[i].nam,graph[i].typ,graph[i].po,graph[i].nfi,graph[i].nfo);
-            printf("%d\t%d\t%d\t",graph[i].val,graph[i].fval,graph[i].mar);
+            DPRINT("%d\t%s\t%d\t%d\t%d\t%d\t",i,graph[i].nam,graph[i].typ,graph[i].po,graph[i].nfi,graph[i].nfo);
+            DPRINT("%d\t%d\t%d\t",graph[i].val,graph[i].fval,graph[i].mar);
             temp=NULL;
             temp=graph[i].fin;
             if(temp!=NULL) {
                 PrintList(temp);
             }
-            printf("\t");
+            DPRINT("\t");
             temp=NULL;
             temp=graph[i].fot;
             if(temp!=NULL) {
                 PrintList(temp);
             }
-            printf("\n");
+            DPRINT("\n");
         }
     }
     return;
@@ -292,18 +293,18 @@ int EnumerateLines(NODE *graph, LINE *lgraph, int maxid) {
 				cur->line = lid;
 				lgraph[lid].prev = i;
 				lgraph[lid].next = cur->id;
-//				printf ("%d,%d\t",lid, cur->id);
+//				DPRINT ("%d,%d\t",lid, cur->id);
 				cur = cur->nxt;
 			}
 		}
-//		printf("\n");
+//		DPRINT("\n");
 	}
 	return lid+1;
 }
 void PrintLines(LINE* lgraph, int lcnt) {
-	printf("ID\tVALUE\tPREV\tNEXT\n");
+	DPRINT("ID\tVALUE\tPREV\tNEXT\n");
 	for (int i = 0; i < lcnt; i++) {
-		printf("%d:\t%d\t%d\t%d\n",i,lgraph[i].logic,lgraph[i].prev,lgraph[i].next);
+		DPRINT("%d:\t%d\t%d\t%d\n",i,lgraph[i].logic,lgraph[i].prev,lgraph[i].next);
 	}
 }
 
@@ -332,16 +333,16 @@ GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid) {
 			continue;
 		ggraph[i].offset = off;
 		tmp = graph[i].fin;
-//		printf("Node ID: %d, %s\n",i, graph[i].nam);
+//		DPRINT("Node ID: %d, %s\n",i, graph[i].nam);
 		while (tmp != NULL) {
-			printf("fin: %d, %d, %d\n", i, off, tmp->line);
+			DPRINT("fin: %d, %d, %d\n", i, off, tmp->line);
 			ars.offsets[off] = tmp->line;
 			off++;
 			tmp = tmp->nxt;
 		}
 		tmp = graph[i].fot;
 		while (tmp != NULL) {
-			printf("fot: %d, %d, %d\n", i, off, tmp->line);
+			DPRINT("fot: %d, %d, %d\n", i, off, tmp->line);
 			ars.offsets[off] = tmp->line;
 			off++;
 			tmp = tmp->nxt;
@@ -357,7 +358,7 @@ int verifyArrays(GPUNODE_INFO info, LINE* lgraph, int maxid) {
 	for (int i = 0; i <= maxid-2; i++) {
 		if (info.graph[i].type != 0)
 			good = (lgraph[info.graph[i].offset+info.graph[i].nfo].prev == i);
-			printf("%d, %d\n", i, lgraph[info.graph[i].offset+info.graph[i].nfo].prev);
+			DPRINT("%d, %d\n", i, lgraph[info.graph[i].offset+info.graph[i].nfo].prev);
 	}
 	return good;
 }

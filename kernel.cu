@@ -160,52 +160,52 @@ void loadLookupTables() {
 void runGpuSimulation(int* results, size_t width, GPUNODE* ggraph, GPUNODE* graph, int maxid, LINE* line, int maxline, int* fan) {
 
 	for (int i = 0; i <= maxid; i++) {
-		printf("ID: %d\tFanin: %d\tFanout: %d\tType: %d\t", i, graph[i].nfi, graph[i].nfo,graph[i].type);
+		DPRINT("ID: %d\tFanin: %d\tFanout: %d\tType: %d\t", i, graph[i].nfi, graph[i].nfo,graph[i].type);
 		switch (graph[i].type) {
 			case 0:
 				continue;
 			case XNOR:
-				printf("XNOR Gate");
+				DPRINT("XNOR Gate");
 				XNOR_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, width);
 			case XOR:
-				printf("XOR Gate");
+				DPRINT("XOR Gate");
 				XOR_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, width);
 			case NOR:
-				printf("NOR Gate");
+				DPRINT("NOR Gate");
 				NOR_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, width);
 			case OR:
-				printf("OR Gate");
+				DPRINT("OR Gate");
 				OR_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, width);
 			case AND:
-				printf("AND Gate");
+				DPRINT("AND Gate");
 				AND_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, width);
 			case NAND:
-				printf("NAND Gate");
+				DPRINT("NAND Gate");
 				NAND_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, width);
 				break;
 			case FROM:
-				printf("FROM Gate");
+				DPRINT("FROM Gate");
 				FROM_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, width);
 				break;
 			default:
-				printf("Other Gate");
+				DPRINT("Other Gate");
 				break;
 		}
-		printf("\n");
+		DPRINT("\n");
 		cudaThreadSynchronize();
 	}
 
 	// Routine to copy contents of our results array into host memory and print
 	// it row-by-row.
 
-	printf("Post-simulation device results:\n");
+	DPRINT("Post-simulation device results:\n");
 	int *lvalues = (int*)malloc(sizeof(int)*width), *row;
 	for (int r = 0;r < PATTERNS; r++) {
 		lvalues = (int*)malloc(sizeof(int)*width);
 		row = (int*)((char*)results + r*width*sizeof(int)); // get the current row?
 		cudaMemcpy(lvalues,row,width*sizeof(int),cudaMemcpyDeviceToHost);
 		for (int i = 0; i < width; i++) {
-			printf("%d,%d:\t%d\n", r, i, lvalues[i]);
+			DPRINT("%d,%d:\t%d\n", r, i, lvalues[i]);
 		}
 		free(lvalues);
 	}

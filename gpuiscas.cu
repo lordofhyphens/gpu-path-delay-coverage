@@ -2,12 +2,13 @@
 #include <cassert>
 #include "iscas.h"
 #include "gpuiscas.h"
+#include "defines.h"
 #define N 32
 static void HandleError( cudaError_t err,
                          const char *file,
                          int line ) {
     if (err != cudaSuccess) {
-        printf( "%s in %s at line %d\n", cudaGetErrorString( err ),
+        DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ),
                 file, line );
         exit( EXIT_FAILURE );
     }
@@ -16,7 +17,7 @@ static void HandleError( cudaError_t err,
 
 
 #define HANDLE_NULL( a ) {if (a == NULL) { \
-                            printf( "Host memory failed in %s at line %d\n", \
+                            DPRINT( "Host memory failed in %s at line %d\n", \
                                     __FILE__, __LINE__ ); \
                             exit( EXIT_FAILURE );}}
 
@@ -24,13 +25,13 @@ GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid) {
 	GPUNODE *devAr, *testAr;
 	HANDLE_ERROR(cudaMalloc(&devAr, sizeof(GPUNODE)*(1+maxid)));
 	HANDLE_ERROR(cudaMemcpy(devAr, graph, (maxid+1) * sizeof(GPUNODE),cudaMemcpyHostToDevice));
-	printf("Verifying GPUNODE graph copy\n");
-	printf("ID\tTYPE\tFANIN\tFANOUT\tPO\tOFFSET\n");
+	DPRINT("Verifying GPUNODE graph copy\n");
+	DPRINT("ID\tTYPE\tFANIN\tFANOUT\tPO\tOFFSET\n");
 	testAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(maxid+1));	
 	HANDLE_ERROR(cudaMemcpy(testAr, devAr, (1+maxid) * sizeof(GPUNODE),cudaMemcpyDeviceToHost));
 
 	for (int i = 0; i <= maxid; i++) {
-//		printf("%d:\t%d\t%d\t%d\t%d\t%d\n", i, testAr[i].type,testAr[i].nfi,testAr[i].nfo,testAr[i].po,testAr[i].offset);
+//		DPRINT("%d:\t%d\t%d\t%d\t%d\t%d\n", i, testAr[i].type,testAr[i].nfi,testAr[i].nfo,testAr[i].po,testAr[i].offset);
 		assert(testAr[i].type == graph[i].type && testAr[i].nfi == graph[i].nfi &&testAr[i].nfo == graph[i].nfo && testAr[i].po == graph[i].po && testAr[i].offset == graph[i].offset);
 	}
 	free(testAr);

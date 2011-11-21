@@ -8,7 +8,7 @@ gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)
 out=fcount
 CFLAGS=-I/opt/net/apps/cuda/include -O2
-NVCFLAGS=-arch=sm_20
+NVCFLAGS=-arch=sm_20 -O2
 LIB=-lcuda
 all: tags $(out)
 
