@@ -1,9 +1,10 @@
 #include <cuda.h>
-#include <cassert>
 #include "iscas.h"
 #include "gpuiscas.h"
+#define NDEBUG
 #include "defines.h"
-#define N 32
+#include <cassert>
+
 static void HandleError( cudaError_t err,
                          const char *file,
                          int line ) {
@@ -31,7 +32,7 @@ GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid) {
 	HANDLE_ERROR(cudaMemcpy(testAr, devAr, (1+maxid) * sizeof(GPUNODE),cudaMemcpyDeviceToHost));
 
 	for (int i = 0; i <= maxid; i++) {
-//		DPRINT("%d:\t%d\t%d\t%d\t%d\t%d\n", i, testAr[i].type,testAr[i].nfi,testAr[i].nfo,testAr[i].po,testAr[i].offset);
+		DPRINT("%d:\t%d\t%d\t%d\t%d\t%d\n", i, testAr[i].type,testAr[i].nfi,testAr[i].nfo,testAr[i].po,testAr[i].offset);
 		assert(testAr[i].type == graph[i].type && testAr[i].nfi == graph[i].nfi &&testAr[i].nfo == graph[i].nfo && testAr[i].po == graph[i].po && testAr[i].offset == graph[i].offset);
 	}
 	free(testAr);
@@ -54,18 +55,19 @@ int* gpuLoadVectors(int** input, size_t width, size_t height) {
 	int *tgt;
 	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width+1)*(height+1)));
 	int *row;
-	int *tmp = (int*)malloc(sizeof(int)*width);
-	for (int i =0; i <= width; i++)
-		tmp[i] = -1;
 	for (int i = 0; i < height; i++) {
 		row = (int*)((char*)tgt + i*(width)*sizeof(int));
 		cudaMemcpy(row, input[i],sizeof(int)*(width+1),cudaMemcpyHostToDevice);
 #ifndef NDEBUG
+		int *tmp = (int*)malloc(sizeof(int)*width);
+		for (int i =0; i <= width; i++)
+			tmp[i] = -1;
 		cudaMemcpy(tmp, row, sizeof(int)*(width+1),cudaMemcpyDeviceToHost);
 		for (int j = 0; j <= width; j++) {
 			assert(input[i][j]==tmp[j]);
 		}
-#endif
+		free(tmp);
+#endif // debugging memory check and assertion
 	}
 	return tgt;
 }

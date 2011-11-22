@@ -1,5 +1,8 @@
 #include "iscas.h"
+
+// NDEBUG should go here if wanting to remove comments.
 #include "defines.h"
+
 int counter = 1;
 /*****************************************************
  * Insert an element "x" at end of LIST "l", if "x" is not already in "l".

@@ -9,7 +9,7 @@
 #include "defines.h"
 int procgate(NODE gnode, int settle); 
 int main(int argc, char ** argv) {
-	FILE *fisc;
+	FILE *fisc, *fvec;
 	int *dres, *fans;
 	GPUNODE *dgraph;
 	LINE *dlines;
@@ -18,6 +18,7 @@ int main(int argc, char ** argv) {
 	LINE lgraph[Mnod];
 	GPUNODE_INFO test;
 	int lcnt, ncnt; // count of lines in the circuit
+	int PATTERNS = 4;
 
 	// Load circuit from file
 	fisc=fopen(argv[1],"r");
@@ -27,16 +28,16 @@ int main(int argc, char ** argv) {
 	lcnt = EnumerateLines(graph,lgraph,ncnt);
 
 	test = GraphsetToArrays(graph, lgraph, ncnt);
-/*
+
 	DPRINT("I\tLineID\tPrev\tNext\n");
 	for(int i = 0; i < test.max_offset; i++) {
 		DPRINT(" %d:\t%d\t%d\t%d\n",i,test.offsets[i],lgraph[test.offsets[i]].prev,lgraph[test.offsets[i]].next );
 	}
-*/
 	DPRINT("ID:\tType\n");
 	for(int i = 0; i < ncnt; i++) {
 		DPRINT(" %d:\t%d\n",i,test.graph[i].type);
 	}
+
 	int vecA[5] = {1,0,0,1,1}; //v0
 	int vecB[5] = {0,1,0,0,0}; //v1
 	int vecC[5] = {1,0,1,0,1}; //v2
@@ -66,22 +67,20 @@ int main(int argc, char ** argv) {
 			res[2][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = vecC[j];
 			res[3][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = vecD[j];
 			j++;
+		} else if(test.graph[i].type != 0) {
+			res[0][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = -1;
+			res[1][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = -1;
+			res[2][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = -1;
+			res[3][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = -1;
 		}
 	}
-/*
-	DPRINT("Initial: \n");
-	for (int i = 0; i < 2; i++) {
-		for (int j = 0; j < lcnt; j++) {
-			DPRINT("%d:%d\t%d\n", i, j, res[i][j]);
-		}
-	}
-*/
+
 	dres = gpuLoadVectors(res, lcnt, PATTERNS);
 	dgraph = gpuLoadCircuit(test.graph,ncnt);
 	dlines = gpuLoadLines(lgraph,lcnt);
 	fans = gpuLoadFans(test.offsets,test.max_offset);
 	loadLookupTables();
-	runGpuSimulation(dres,lcnt,dgraph,test.graph,ncnt,dlines,lcnt,fans);
+	runGpuSimulation(dres, PATTERNS, lcnt,dgraph,test.graph,ncnt,dlines,lcnt,fans, 1);
 	DPRINT ("Max Node ID: %d\tLines: %d\n",ncnt,lcnt);
 	PrintCircuit(graph,ncnt);
 //	PrintLines(lgraph,lcnt);

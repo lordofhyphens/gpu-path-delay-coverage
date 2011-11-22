@@ -28,10 +28,7 @@ Constant Declarations
 #define Mpo       140			// max number of primary outputs
 #define Mpt       10			// max number of input patterns in .vec file
 #define Mft       10			// max number of stuck at faults in .faults file
-#define UP	 3	// 0->1 transition
-#define DOWN 2	// 1->0 transition
-#define S0	0	// no transition, stable 0
-#define S1	1	// no transition, stable 1
+
 // NODE TYPE CONSTANTS 
 #define INPT 1				// Primary Input
 #define AND  2				// AND 
@@ -43,6 +40,12 @@ Constant Declarations
 #define BUFF 8				// BUFFER 
 #define NOT  9				// INVERTER 
 #define FROM 10				// STEM BRANCH
+
+// Signal type constants
+#define S0 0
+#define S1 1
+#define T0 2 // 1->0 transition, or "Transition to 0"
+#define T1 3 // 0->1 transition, or "Transition to 1"
 /*************************************************************
 Structure Declarations 
 *************************************************************/
