@@ -2,6 +2,6 @@
 #define KERNEL_H
 
 #include "iscas.h"
-void runGpuSimulation(int*, size_t, GPUNODE*, GPUNODE*, int, LINE*, int, int*);
+void runGpuSimulation(int*, int, size_t, GPUNODE*, GPUNODE*, int, LINE*, int, int*,int);
 void loadLookupTables();
 #endif
