@@ -37,11 +37,15 @@ int main(int argc, char ** argv) {
 	for(int i = 0; i < ncnt; i++) {
 		DPRINT(" %d:\t%d\n",i,test.graph[i].type);
 	}
-
+	int **vec = (int**)malloc(sizeof(int*)*4);
 	int vecA[5] = {1,0,0,1,1}; //v0
 	int vecB[5] = {0,1,0,0,0}; //v1
 	int vecC[5] = {1,0,1,0,1}; //v2
 	int vecD[5] = {0,0,1,1,1}; //v3
+	vec[0] = vecA;
+	vec[1] = vecB;
+	vec[2] = vecC;
+	vec[3] = vecD;
 	
 	res = (int**)malloc(sizeof(int*)*PATTERNS);
 	for (int i = 0; i < PATTERNS; i++) {
@@ -59,28 +63,16 @@ int main(int argc, char ** argv) {
 	for (int i = 0; i <= ncnt; i++) {
 		DPRINT("%d: %d\n", i,test.graph[i].offset);
 	}
-	int j = 0;
-	for (int i = 0; i < ncnt; i++) {
-		if (test.graph[i].type == INPT) {
-			res[0][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = vecA[j];
-			res[1][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = vecB[j];
-			res[2][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = vecC[j];
-			res[3][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = vecD[j];
-			j++;
-		} else if(test.graph[i].type != 0) {
-			res[0][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = -1;
-			res[1][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = -1;
-			res[2][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = -1;
-			res[3][test.offsets[test.graph[i].offset+test.graph[i].nfi]] = -1;
-		}
-	}
+
 
 	dres = gpuLoadVectors(res, lcnt, PATTERNS);
+	int* dvec = gpuLoadVectors(vec, 5, 4);
+	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, 4, 5);
 	dgraph = gpuLoadCircuit(test.graph,ncnt);
 	dlines = gpuLoadLines(lgraph,lcnt);
 	fans = gpuLoadFans(test.offsets,test.max_offset);
 	loadLookupTables();
-	runGpuSimulation(dres, PATTERNS, lcnt,dgraph,test.graph,ncnt,dlines,lcnt,fans, 1);
+	runGpuSimulation(ARRAY2D<int>(dres,PATTERNS,lcnt), inputArray, test.graph,ARRAY2D<GPUNODE>(dgraph,1,ncnt),ARRAY2D<LINE>(dlines,PATTERNS,lcnt),fans, 1);
 	DPRINT ("Max Node ID: %d\tLines: %d\n",ncnt,lcnt);
 	PrintCircuit(graph,ncnt);
 //	PrintLines(lgraph,lcnt);

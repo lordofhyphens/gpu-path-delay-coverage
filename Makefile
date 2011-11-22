@@ -13,7 +13,7 @@ LIB=-lcuda
 all: tags $(out)
 
 test: tags $(out)
-	./${out} data/c17.isc
+	./${out} data/c17.isc 2> file
 
 cpu: tags $(out)-cpu
 

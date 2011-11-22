@@ -11,7 +11,6 @@ texture<int, 2> nor2LUT;
 texture<int, 2> xor2LUT;
 texture<int, 2> xnor2LUT;
 texture<int, 2> stableLUT;
-
 __global__ void XOR_gate(int i, int* fans, GPUNODE* graph, int *res, int PATTERNS,size_t width) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x, j = 1;
 	int *row;
@@ -92,13 +91,14 @@ __global__ void AND_gate(int i, int* fans, GPUNODE* graph, int *res, int PATTERN
 		__syncthreads();
 	}
 }
-__global__ void NAND_gate(int i, int* fans, GPUNODE* graph, int *res, int PATTERNS, size_t width , int pass) {
+__global__ void NAND_gate(int i, int* fans, GPUNODE* graph, int *res, int PATTERNS, size_t width , int pass, int* g) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x, j = 1;
 	int *row;
 	int val;
-	while (tid < PATTERNS) {
+	if (tid < PATTERNS) {
 		row = (int*)((char*)res + tid*(width)*sizeof(int));
 		val = row[fans[graph[i].offset]];
+		g[tid] = fans[graph[i].offset];
 		while (j < graph[i].nfi) {
 			val = tex2D(nand2LUT, val, row[fans[graph[i].offset+j]]);
 			j++;
@@ -108,21 +108,35 @@ __global__ void NAND_gate(int i, int* fans, GPUNODE* graph, int *res, int PATTER
 		} else {
 			row[fans[graph[i].offset+graph[i].nfi]] = tex2D(stableLUT, row[fans[graph[i].offset+graph[i].nfi]], val);  
 		}
-		tid += blockDim.x * gridDim.x;
 		__syncthreads();
 	}
 }
 
-__global__ void FROM_gate(int i, int* fans,GPUNODE* graph, int *res, int PATTERNS, size_t width, int pass) {
+__global__ void FROM_gate(int i, int* fans,GPUNODE* graph, int *res, int PATTERNS, size_t width, int pass, int* g) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x;
 	int *row;
-	while (tid < PATTERNS) {
+	if (tid < PATTERNS) {
+		g[tid] = fans[graph[i].offset+graph[i].nfi];
 		row = (int*)((char*)res + tid*width*sizeof(int)); // get the current row?
 		row[fans[graph[i].offset+graph[i].nfi]] = row[fans[graph[i].offset]];
 		tid += blockDim.x * gridDim.x;
 		__syncthreads();
 	}
 }
+__global__ void INPT_gate(int i, int pi, ARRAY2D<int> results, ARRAY2D<int> input, GPUNODE* graph, int* fans,int pass, int* g) {
+	int tid = blockIdx.x * gridDim.x + threadIdx.x, val;
+	int *row;
+	if (tid < results.height) {
+		row = (int*)((char*)results.data + tid*results.width*sizeof(int)); // get the current row?
+		val = *(input.data+(pi+input.width*tid));
+		g[tid] = fans[graph[i].offset+graph[i].nfi];
+		row[fans[graph[i].offset+graph[i].nfi]] = val;
+	}
+	printf("Hello thread %d, i=%d, input count: %d/%d input value=%d\n", threadIdx.x, i,pi+1,input.width, input.data[pi]) ;
+	__syncthreads();
+}
+
+
 
 void loadLookupTables() {
 	// Creating a set of static arrays that represent our LUTs
@@ -166,42 +180,64 @@ void loadLookupTables() {
 	cudaBindTextureToArray(xnor2LUT,cuXnorArray,channelDesc);
 	cudaBindTextureToArray(stableLUT,cuStableArray,channelDesc);
 }
-void runGpuSimulation(int* results,  int PATTERNS, size_t width, GPUNODE* ggraph, GPUNODE* graph, int maxid, LINE* line, int maxline, int* fan, int pass) {
-
-	for (int i = 0; i <= maxid; i++) {
+void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, ARRAY2D<LINE> line, int* fan, int pass = 1) {
+	// Allocate a buffer memory for printf statements
+	int *g;
+	int piNumber = 0, curPI = 0;
+	cudaMalloc((void**)&g,results.bwidth());
+	cudaMemset(g, -1, sizeof(int)*results.height);
+	for (int i = 0; i <= dgraph.width; i++) {
 		DPRINT("ID: %d\tFanin: %d\tFanout: %d\tType: %d\t", i, graph[i].nfi, graph[i].nfo,graph[i].type);
+		curPI = piNumber;
 		switch (graph[i].type) {
 			case 0:
 				continue;
+			case INPT:
+				DPRINT("INPT Gate");
+				INPT_gate<<<1,results.height>>>(i, curPI, results, inputs, dgraph.data, fan, 1, g);
+				piNumber++;
+				break;
 			case XNOR:
 				DPRINT("XNOR Gate");
-				XNOR_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, PATTERNS, width);
+				XNOR_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
 			case XOR:
 				DPRINT("XOR Gate");
-				XOR_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, PATTERNS, width);
+				XOR_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
 			case NOR:
 				DPRINT("NOR Gate");
-				NOR_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, PATTERNS, width);
+				NOR_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
 			case OR:
 				DPRINT("OR Gate");
-				OR_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, PATTERNS, width);
+				OR_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
 			case AND:
 				DPRINT("AND Gate");
-				AND_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, PATTERNS, width);
+				AND_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
 			case NAND:
 				DPRINT("NAND Gate");
-				NAND_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, PATTERNS, width, 1);
+				NAND_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width, 1,g);
 				break;
 			case FROM:
 				DPRINT("FROM Gate");
-				FROM_gate<<<1,PATTERNS>>>(i, fan, ggraph, results, PATTERNS, width, 1);
+				FROM_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width, 1,g);
 				break;
 			default:
 				DPRINT("Other Gate");
 				break;
 		}
 		DPRINT("\n");
-		cudaThreadSynchronize();
+	#ifndef NDEBUG
+	// Routine to copy contents of our results array into host memory and print
+	// it row-by-row.
+
+	DPRINT("Post-simulation inspection results:\n");
+	int *gres = (int*)malloc(sizeof(int)*results.height);
+	cudaMemcpy(gres,g,results.height*sizeof(int),cudaMemcpyDeviceToHost);
+	for (int r = 0;r < results.height; r++) {
+		DPRINT("Gate %d: %d,%d\n", i, r, gres[r]);
+	}
+	free(gres);
+#endif 	
+	cudaThreadSynchronize();
 	}
 
 #ifndef NDEBUG
@@ -209,12 +245,12 @@ void runGpuSimulation(int* results,  int PATTERNS, size_t width, GPUNODE* ggraph
 	// it row-by-row.
 
 	DPRINT("Post-simulation device results:\n");
-	int *lvalues = (int*)malloc(sizeof(int)*width), *row;
-	for (int r = 0;r < PATTERNS; r++) {
-		lvalues = (int*)malloc(sizeof(int)*width);
-		row = (int*)((char*)results + r*width*sizeof(int)); // get the current row?
-		cudaMemcpy(lvalues,row,width*sizeof(int),cudaMemcpyDeviceToHost);
-		for (int i = 0; i < width; i++) {
+	int *lvalues, *row;
+	for (int r = 0;r < results.height; r++) {
+		lvalues = (int*)malloc(results.bwidth());
+		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
+		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
+		for (int i = 0; i < results.width; i++) {
 			DPRINT("%d,%d:\t%d\n", r, i, lvalues[i]);
 		}
 		free(lvalues);
