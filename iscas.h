@@ -109,4 +109,5 @@ int EnumerateLines(NODE *graph, LINE *lgraph,int);
 GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid);
 void PrintLines(LINE* lgraph, int lcnt); 
 int verifyArrays(GPUNODE_INFO info, LINE* lgraph, int maxid);
+int readVectors(int** vecs, FILE* fvec);
 #endif

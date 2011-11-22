@@ -1,7 +1,5 @@
 #ifndef DEFINES_H
 #define DEFINES_H
-#define N 32
-//#define PATTERNS 4
 
 #ifdef NDEBUG 
 	#define DPRINT(...) 

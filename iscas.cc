@@ -227,6 +227,46 @@ void PrintCircuit(NODE *graph,int Max)
     }
     return;
 }
+/* Read a simple text file formatted with input patterns.
+ * This modifies the array in vecs, allocating it. 
+ * It returns the count of input patterns. All don'tcares 
+ * are set to '0'.
+ */
+int readVectors(int** vecs, FILE* fvec) {
+    char str1[Mlin];
+	int* currentRow;
+	int width = 0, count = 0, posCount = 1, vecLength=Mlin, curCount=0;
+	*vecs = (int*)calloc(sizeof(int),Mlin);
+	while (!feof(fvec)) {
+		// read the next Mlin bytes from the file.
+		curCount = fread(str1, posCount, Mlin, fvec);
+		for (int i = 0; i < curCount; i++) {
+			switch (str1[i]) {
+				case (int)'X':
+				case (int)'x':
+				case (int)'0':
+				case (int)'1':
+					if (count >= vecLength) {
+						vecLength += Mlin;
+						DPRINT("Allocating more memory.\n");
+						(*vecs)=(int*)realloc(*vecs, sizeof(int)*vecLength);
+					}
+					if (str1[i] == '1') {
+						(*vecs)[count] = 1;
+					} else {
+						(*vecs)[count] = 0;
+					}
+					count++;
+					width++;
+					break;
+				default:
+					width = 0;
+			}
+		}
+	}
+	for (int i = 0; i < count; i++)
+	return count;
+}
 /******************************************************
  * Free the memory of all member of graph structure
  ******************************************************/
