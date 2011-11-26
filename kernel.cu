@@ -186,6 +186,7 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 	int piNumber = 0, curPI = 0;
 	cudaMalloc((void**)&g,results.bwidth());
 	cudaMemset(g, -1, sizeof(int)*results.height);
+	DPRINT("Pattern Count: %d\n", results.height );
 	for (int i = 0; i <= dgraph.width; i++) {
 		DPRINT("ID: %d\tFanin: %d\tFanout: %d\tType: %d\t", i, graph[i].nfi, graph[i].nfo,graph[i].type);
 		curPI = piNumber;

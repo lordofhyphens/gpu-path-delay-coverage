@@ -23,6 +23,7 @@ int main(int argc, char ** argv) {
 	fisc=fopen(argv[1],"r");
 	fvec=fopen(argv[2],"r");
 	vcnt = readVectors(&vec, fvec);
+	DPRINT("Vector count: %d, %d\n", vcnt, vcnt/5);
 
 	ncnt = ReadIsc(fisc,graph);
 	for (int i = 0; i < Mnod; i++)
@@ -60,13 +61,13 @@ int main(int argc, char ** argv) {
 	}
 
 	dres = gpuLoadVectors(res, lcnt, vcnt);
-	int* dvec = gpu1DLoadVector(vec, pis, vcnt / pis);
+	int* dvec = gpuLoad1DVector(vec, pis, vcnt / pis);
 	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, 4, 5);
 	dgraph = gpuLoadCircuit(test.graph,ncnt);
 	dlines = gpuLoadLines(lgraph,lcnt);
 	fans = gpuLoadFans(test.offsets,test.max_offset);
 	loadLookupTables();
-	runGpuSimulation(ARRAY2D<int>(dres,vcnt,lcnt), inputArray, test.graph,ARRAY2D<GPUNODE>(dgraph,1,ncnt),ARRAY2D<LINE>(dlines,vcnt,lcnt),fans, 1);
+	runGpuSimulation(ARRAY2D<int>(dres,vcnt/pis,lcnt), inputArray, test.graph,ARRAY2D<GPUNODE>(dgraph,1,ncnt),ARRAY2D<LINE>(dlines,vcnt,lcnt),fans, 1);
 	DPRINT ("Max Node ID: %d\tLines: %d\n",ncnt,lcnt);
 	PrintCircuit(graph,ncnt);
 //	PrintLines(lgraph,lcnt);
