@@ -6,6 +6,7 @@ int* gpuLoadVectors(int** input, size_t width, size_t height);
 int* gpuLoad1DVector(int* input, size_t width, size_t height);
 
 int* gpuLoadFans(int* offset, int maxid);
+void gpuShiftVectors(int* input, size_t width, size_t height);
 GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid);
 LINE* gpuLoadLines(LINE* graph, int maxid);
 template <class t>

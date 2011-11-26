@@ -68,6 +68,9 @@ int main(int argc, char ** argv) {
 	fans = gpuLoadFans(test.offsets,test.max_offset);
 	loadLookupTables();
 	runGpuSimulation(ARRAY2D<int>(dres,vcnt/pis,lcnt), inputArray, test.graph,ARRAY2D<GPUNODE>(dgraph,1,ncnt),ARRAY2D<LINE>(dlines,vcnt,lcnt),fans, 1);
+
+	gpuShiftVectors(dvec, pis, vcnt/pis);
+	runGpuSimulation(ARRAY2D<int>(dres,vcnt/pis,lcnt), inputArray, test.graph,ARRAY2D<GPUNODE>(dgraph,1,ncnt),ARRAY2D<LINE>(dlines,vcnt,lcnt),fans, 2);
 	DPRINT ("Max Node ID: %d\tLines: %d\n",ncnt,lcnt);
 	PrintCircuit(graph,ncnt);
 //	PrintLines(lgraph,lcnt);

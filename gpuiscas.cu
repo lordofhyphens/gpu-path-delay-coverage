@@ -50,7 +50,7 @@ int* gpuLoadFans(int* offset, int maxid) {
 	HANDLE_ERROR(cudaMemcpy(devAr, offset, sizeof(int)*maxid,cudaMemcpyHostToDevice));
 	return devAr;
 }
-void gpuShiftVectors(int* loca, size_t width, size_t height) {
+void gpuShiftVectors(int* input, size_t width, size_t height) {
 	int* tgt;
 	// create a temporary buffer area on the device
 	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width+1)));
