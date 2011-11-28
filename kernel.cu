@@ -93,23 +93,24 @@ __global__ void AND_gate(int i, int* fans, GPUNODE* graph, int *res, int PATTERN
 }
 __global__ void NAND_gate(int i, int* fans, GPUNODE* graph, int *res, int PATTERNS, size_t width , int pass, int* g) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x, j = 1;
+	int goffset = graph[i].offset, nfi = graph[i].nfi;
 	int *row;
 	int val;
 	if (tid < PATTERNS) {
 		row = (int*)((char*)res + tid*(width)*sizeof(int));
-		val = row[fans[graph[i].offset]];
-		g[tid] = fans[graph[i].offset];
-		while (j < graph[i].nfi) {
-			val = tex2D(nand2LUT, val, row[fans[graph[i].offset+j]]);
+		val = row[fans[goffset]];
+		g[tid] = fans[goffset];
+		while (j < nfi) {
+			val = tex2D(nand2LUT, val, row[fans[goffset+j]]);
 			j++;
 		}
 		if (pass > 1) {
-			row[fans[graph[i].offset+graph[i].nfi]] = tex2D(stableLUT, row[fans[graph[i].offset+graph[i].nfi]], val);  
+			row[fans[goffset+nfi]] = tex2D(stableLUT, row[fans[goffset+nfi]], val);  
 		} else {
-			row[fans[graph[i].offset+graph[i].nfi]] = val;
+			row[fans[goffset+nfi]] = val;
 		}
-		__syncthreads();
 	}
+	__syncthreads();
 }
 
 __global__ void FROM_gate(int i, int* fans,GPUNODE* graph, int *res, int PATTERNS, size_t width, int pass, int* g) {
@@ -120,7 +121,8 @@ __global__ void FROM_gate(int i, int* fans,GPUNODE* graph, int *res, int PATTERN
 		row = (int*)((char*)res + tid*width*sizeof(int)); // get the current row?
 		val = row[fans[graph[i].offset]];
 		if (pass > 1) {
-			row[fans[graph[i].offset+graph[i].nfi]] = tex2D(stableLUT, row[fans[graph[i].offset+graph[i].nfi]], val);  
+//			row[fans[graph[i].offset+graph[i].nfi]] = tex2D(stableLUT, row[fans[graph[i].offset+graph[i].nfi]], val);
+			row[fans[graph[i].offset+graph[i].nfi]] = val;
 		} else {
 			row[fans[graph[i].offset+graph[i].nfi]] = val;
 		}
@@ -140,11 +142,11 @@ __global__ void INPT_gate(int i, int pi, ARRAY2D<int> results, ARRAY2D<int> inpu
 			row[fans[graph[i].offset+graph[i].nfi]] = val;
 		}
 	}
+#ifdef GDEBUG // turn on GPU debugging printf statements.
 	printf("Hello thread %d, i=%d, input count: %d/%d input value=%d\n", threadIdx.x, i,pi+1,input.width, input.data[pi]) ;
+#endif
 	__syncthreads();
 }
-
-
 
 void loadLookupTables() {
 	// Creating a set of static arrays that represent our LUTs
@@ -240,20 +242,6 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 				break;
 		}
 		DPRINT("\n");
-	/*
-	#ifndef NDEBUG
-	// Routine to copy contents of our results array into host memory and print
-	// it row-by-row.
-
-	DPRINT("Post-simulation inspection results:\n");
-	int *gres = (int*)malloc(sizeof(int)*results.height);
-	cudaMemcpy(gres,g,results.height*sizeof(int),cudaMemcpyDeviceToHost);
-	for (int r = 0;r < results.height; r++) {
-		DPRINT("Gate %d: %d,%d\n", i, r, gres[r]);
-	}
-	free(gres);
-#endif
-	*/
 	cudaThreadSynchronize();
 	}
 
@@ -263,23 +251,43 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 	// Routine to copy contents of our results array into host memory and print
 	// it row-by-row.
 
-	DPRINT("Post-simulation device results:\n");
+	DPRINT("Post-simulation device results, pass %d:\n\n", pass);
+	DPRINT("Line:   \t");
+	for (int i = 0; i < results.width; i++) {
+		DPRINT("%2d ", i);
+	}
+	DPRINT("\n");
 	int *lvalues, *row;
 	for (int r = 0;r < results.height; r++) {
 		lvalues = (int*)malloc(results.bwidth());
 		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
 		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
+		
 		DPRINT("Pattern %d:\t",r);
 		for (int i = 0; i < results.width; i++) {
-			DPRINT("%d", lvalues[i]);
+			switch(lvalues[i]) {
+				case S0:
+					DPRINT("S0 ", lvalues[i]); break;
+				case S1:
+					DPRINT("S1 ", lvalues[i]); break;
+				case T0:
+					DPRINT("T0 ", lvalues[i]); break;
+				case T1:
+					DPRINT("T1 ", lvalues[i]); break;
+			}
 		}
 		DPRINT("\n");
 		free(lvalues);
 	}
 	float elapsedTime;
 	cudaEventElapsedTime(&elapsedTime,start,stop);
-	DPRINT("Simulation time: %fms\n", elapsedTime);
+	DPRINT("Simulation time (pass %d): %fms\n", pass, elapsedTime);
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);
 #endif 
+}
+
+/* For each gate, color each line if a path would propagate for that TID. 
+*/
+void gpuColorLines(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph) {
 }

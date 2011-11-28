@@ -7,7 +7,7 @@
 #include "gpuiscas.h"
 
 #include "defines.h"
-int procgate(NODE gnode, int settle); 
+
 int main(int argc, char ** argv) {
 	FILE *fisc, *fvec;
 	int *dres, *fans, *vec;
