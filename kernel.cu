@@ -103,23 +103,27 @@ __global__ void NAND_gate(int i, int* fans, GPUNODE* graph, int *res, int PATTER
 			val = tex2D(nand2LUT, val, row[fans[graph[i].offset+j]]);
 			j++;
 		}
-		if (pass == 1) {
-			row[fans[graph[i].offset+graph[i].nfi]] = val;
-		} else {
+		if (pass > 1) {
 			row[fans[graph[i].offset+graph[i].nfi]] = tex2D(stableLUT, row[fans[graph[i].offset+graph[i].nfi]], val);  
+		} else {
+			row[fans[graph[i].offset+graph[i].nfi]] = val;
 		}
 		__syncthreads();
 	}
 }
 
 __global__ void FROM_gate(int i, int* fans,GPUNODE* graph, int *res, int PATTERNS, size_t width, int pass, int* g) {
-	int tid = blockIdx.x * gridDim.x + threadIdx.x;
+	int tid = blockIdx.x * gridDim.x + threadIdx.x, val;
 	int *row;
 	if (tid < PATTERNS) {
 		g[tid] = fans[graph[i].offset+graph[i].nfi];
 		row = (int*)((char*)res + tid*width*sizeof(int)); // get the current row?
-		row[fans[graph[i].offset+graph[i].nfi]] = row[fans[graph[i].offset]];
-		tid += blockDim.x * gridDim.x;
+		val = row[fans[graph[i].offset]];
+		if (pass > 1) {
+			row[fans[graph[i].offset+graph[i].nfi]] = tex2D(stableLUT, row[fans[graph[i].offset+graph[i].nfi]], val);  
+		} else {
+			row[fans[graph[i].offset+graph[i].nfi]] = val;
+		}
 		__syncthreads();
 	}
 }
@@ -130,7 +134,11 @@ __global__ void INPT_gate(int i, int pi, ARRAY2D<int> results, ARRAY2D<int> inpu
 		row = (int*)((char*)results.data + tid*results.width*sizeof(int)); // get the current row?
 		val = *(input.data+(pi+input.width*tid));
 		g[tid] = fans[graph[i].offset+graph[i].nfi];
-		row[fans[graph[i].offset+graph[i].nfi]] = val;
+		if (pass > 1) {
+			row[fans[graph[i].offset+graph[i].nfi]] = tex2D(stableLUT, row[fans[graph[i].offset+graph[i].nfi]], val);  
+		} else {
+			row[fans[graph[i].offset+graph[i].nfi]] = val;
+		}
 	}
 	printf("Hello thread %d, i=%d, input count: %d/%d input value=%d\n", threadIdx.x, i,pi+1,input.width, input.data[pi]) ;
 	__syncthreads();
@@ -187,6 +195,12 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 	cudaMalloc((void**)&g,results.bwidth());
 	cudaMemset(g, -1, sizeof(int)*results.height);
 	DPRINT("Pattern Count: %d\n", results.height );
+#ifndef NDEBUG
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	cudaEventRecord(start,0);
+#endif // NDEBUG
 	for (int i = 0; i <= dgraph.width; i++) {
 		DPRINT("ID: %d\tFanin: %d\tFanout: %d\tType: %d\t", i, graph[i].nfi, graph[i].nfo,graph[i].type);
 		curPI = piNumber;
@@ -195,7 +209,7 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 				continue;
 			case INPT:
 				DPRINT("INPT Gate");
-				INPT_gate<<<1,results.height>>>(i, curPI, results, inputs, dgraph.data, fan, 1, g);
+				INPT_gate<<<1,results.height>>>(i, curPI, results, inputs, dgraph.data, fan, pass, g);
 				piNumber++;
 				break;
 			case XNOR:
@@ -215,11 +229,11 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 				AND_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
 			case NAND:
 				DPRINT("NAND Gate");
-				NAND_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width, 1,g);
+				NAND_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width, pass,g);
 				break;
 			case FROM:
 				DPRINT("FROM Gate");
-				FROM_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width, 1,g);
+				FROM_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width, pass,g);
 				break;
 			default:
 				DPRINT("Other Gate");
@@ -244,6 +258,8 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 	}
 
 #ifndef NDEBUG
+	cudaEventRecord(stop,0);
+	cudaEventSynchronize(stop);
 	// Routine to copy contents of our results array into host memory and print
 	// it row-by-row.
 
@@ -260,5 +276,10 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 		DPRINT("\n");
 		free(lvalues);
 	}
+	float elapsedTime;
+	cudaEventElapsedTime(&elapsedTime,start,stop);
+	DPRINT("Simulation time: %fms\n", elapsedTime);
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
 #endif 
 }
