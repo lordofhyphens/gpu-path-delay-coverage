@@ -18,7 +18,7 @@ static void HandleError( cudaError_t err,
 
 
 #define HANDLE_NULL( a ) {if (a == NULL) { \
-                            DPRINT( "Host memory failed in %s at line %d\n", \
+                            printf("Host memory failed in %s at line %d\n", \
                                     __FILE__, __LINE__ ); \
                             exit( EXIT_FAILURE );}}
 
@@ -53,10 +53,10 @@ int* gpuLoadFans(int* offset, int maxid) {
 void gpuShiftVectors(int* input, size_t width, size_t height) {
 	int* tgt;
 	// create a temporary buffer area on the device
-	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width+1)));
-	cudaMemcpy(tgt, input+sizeof(int)*(width+1)*(height+1)-sizeof(int)*(width+1),sizeof(int)*(width+1),cudaMemcpyDeviceToDevice);
-	cudaMemcpy(input, input+(sizeof(int)*width+1),sizeof(int)*(width+1)*(height+1) - sizeof(int)*(width+1),cudaMemcpyDeviceToDevice);
-	cudaMemcpy(input+sizeof(int)*(width+1)*(height+1)-sizeof(int)*(width+1),tgt, sizeof(int)*(width+1), cudaMemcpyDeviceToDevice);
+	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width)));
+	HANDLE_ERROR(cudaMemcpy(tgt, input,sizeof(int)*(width),cudaMemcpyDeviceToDevice));
+	HANDLE_ERROR(cudaMemcpy(input, input+width,sizeof(int)*(width)*(height-1),cudaMemcpyDeviceToDevice));
+	HANDLE_ERROR(cudaMemcpy(input+(height-1)*(width),tgt, sizeof(int)*(width), cudaMemcpyDeviceToDevice));
 	cudaFree(tgt);
 }
 int* gpuLoadVectors(int** input, size_t width, size_t height) {
@@ -80,7 +80,7 @@ int* gpuLoadVectors(int** input, size_t width, size_t height) {
 	return tgt;
 }
 int* gpuLoad1DVector(int* input, size_t width, size_t height) {
-	int *tgt, *row;
+	int *tgt;
 	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width+1)*(height+1)));
 	cudaMemcpy(tgt, input,sizeof(int)*(width+1)*(height+1),cudaMemcpyHostToDevice);
 	return tgt;

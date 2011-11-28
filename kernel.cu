@@ -226,6 +226,7 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 				break;
 		}
 		DPRINT("\n");
+	/*
 	#ifndef NDEBUG
 	// Routine to copy contents of our results array into host memory and print
 	// it row-by-row.
@@ -237,7 +238,8 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 		DPRINT("Gate %d: %d,%d\n", i, r, gres[r]);
 	}
 	free(gres);
-#endif 	
+#endif
+	*/
 	cudaThreadSynchronize();
 	}
 
@@ -251,9 +253,11 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 		lvalues = (int*)malloc(results.bwidth());
 		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
 		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
+		DPRINT("Pattern %d:\t",r);
 		for (int i = 0; i < results.width; i++) {
-			DPRINT("%d,%d:\t%d\n", r, i, lvalues[i]);
+			DPRINT("%d", lvalues[i]);
 		}
+		DPRINT("\n");
 		free(lvalues);
 	}
 #endif 

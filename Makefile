@@ -14,6 +14,7 @@ all: tags $(out)
 
 test: tags $(out)
 	./${out} data/c17.isc data/c17.vec 2> file
+	grep "Pattern " file > patternoutput && tail -n55 patternoutput > p2 && head -n55 patternoutput > p1 && diff p1 p2
 
 cpu: tags $(out)-cpu
 
