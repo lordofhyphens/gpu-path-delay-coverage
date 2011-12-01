@@ -13,8 +13,8 @@ LIB=-lcuda
 all: tags $(out)
 
 test: tags $(out)
-	./${out} data/c17.isc data/c17.vec 2> file
-	grep "Pattern " file > patternoutput && tail -n55 patternoutput > p2 && head -n55 patternoutput > p1 && diff p1 p2
+	@./${out} data/c17.isc data/c17.vec 2> file
+	@egrep -e "Simulation time" -e "Pattern [0-9]{1,2}:" -e "Line:" file | tail -n58 
 
 cpu: tags $(out)-cpu
 

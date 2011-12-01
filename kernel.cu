@@ -129,13 +129,12 @@ __global__ void FROM_gate(int i, int* fans,GPUNODE* graph, int *res, int PATTERN
 		__syncthreads();
 	}
 }
-__global__ void INPT_gate(int i, int pi, ARRAY2D<int> results, ARRAY2D<int> input, GPUNODE* graph, int* fans,int pass, int* g) {
+__global__ void INPT_gate(int i, int pi, ARRAY2D<int> results, ARRAY2D<int> input, GPUNODE* graph, int* fans,int pass) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x, val;
 	int *row;
 	if (tid < results.height) {
 		row = (int*)((char*)results.data + tid*results.width*sizeof(int)); // get the current row?
 		val = *(input.data+(pi+input.width*tid));
-		g[tid] = fans[graph[i].offset+graph[i].nfi];
 		if (pass > 1) {
 			row[fans[graph[i].offset+graph[i].nfi]] = tex2D(stableLUT, row[fans[graph[i].offset+graph[i].nfi]], val);  
 		} else {
@@ -190,12 +189,45 @@ void loadLookupTables() {
 	cudaBindTextureToArray(xnor2LUT,cuXnorArray,channelDesc);
 	cudaBindTextureToArray(stableLUT,cuStableArray,channelDesc);
 }
+
+__global__ void LOGIC_gate(int i, GPUNODE* node, int* fans, int* res, size_t height, size_t width , int pass) {
+	int tid = blockIdx.x * gridDim.x + threadIdx.x, j = 1;
+	int *row;
+	int goffset,nfi;
+	int val;
+	if (tid < height) {
+		goffset = node[i].offset;
+		nfi = node[i].nfi;
+		row = (int*)((char*)res + tid*(width)*sizeof(int));
+		val = row[fans[goffset]];
+		while (j < nfi) {
+			switch(node[i].type) {
+				case XOR:
+					val = tex2D(xor2LUT, val, row[fans[goffset+j]]);
+				case XNOR:
+					val = tex2D(xnor2LUT, val, row[fans[goffset+j]]);
+				case OR:
+					val = tex2D(or2LUT, val, row[fans[goffset+j]]);
+				case NOR:
+					val = tex2D(nor2LUT, val, row[fans[goffset+j]]);
+				case AND:
+					val = tex2D(and2LUT, val, row[fans[goffset+j]]);
+				case NAND:
+					val = tex2D(nand2LUT, val, row[fans[goffset+j]]);
+			}
+			j++;
+		}
+		if (pass > 1 && node[i].type != FROM) {
+			row[fans[goffset+nfi]] = tex2D(stableLUT, row[fans[goffset+nfi]], val);  
+		} else {
+			row[fans[goffset+nfi]] = val;
+		}
+	}
+	__syncthreads();
+}
 void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, ARRAY2D<LINE> line, int* fan, int pass = 1) {
 	// Allocate a buffer memory for printf statements
-	int *g;
 	int piNumber = 0, curPI = 0;
-	cudaMalloc((void**)&g,results.bwidth());
-	cudaMemset(g, -1, sizeof(int)*results.height);
 	DPRINT("Pattern Count: %d\n", results.height );
 #ifndef NDEBUG
 	cudaEvent_t start, stop;
@@ -211,39 +243,17 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 				continue;
 			case INPT:
 				DPRINT("INPT Gate");
-				INPT_gate<<<1,results.height>>>(i, curPI, results, inputs, dgraph.data, fan, pass, g);
+				INPT_gate<<<1,results.height>>>(i, curPI, results, inputs, dgraph.data, fan, pass);
 				piNumber++;
 				break;
-			case XNOR:
-				DPRINT("XNOR Gate");
-				XNOR_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
-			case XOR:
-				DPRINT("XOR Gate");
-				XOR_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
-			case NOR:
-				DPRINT("NOR Gate");
-				NOR_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
-			case OR:
-				DPRINT("OR Gate");
-				OR_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
-			case AND:
-				DPRINT("AND Gate");
-				AND_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width);
-			case NAND:
-				DPRINT("NAND Gate");
-				NAND_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width, pass,g);
-				break;
-			case FROM:
-				DPRINT("FROM Gate");
-				FROM_gate<<<1,results.height>>>(i, fan, dgraph.data, results.data, results.height, results.width, pass,g);
-				break;
 			default:
-				DPRINT("Other Gate");
+				LOGIC_gate<<<1,results.height>>>(i, dgraph.data, fan, results.data, results.height, results.width, pass);
 				break;
 		}
 		DPRINT("\n");
-	cudaThreadSynchronize();
+		cudaThreadSynchronize();
 	}
+	cudaThreadSynchronize();
 
 #ifndef NDEBUG
 	cudaEventRecord(stop,0);
