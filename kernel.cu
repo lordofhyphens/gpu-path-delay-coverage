@@ -39,14 +39,17 @@ void loadLookupTables() {
 	int xnor2[16] = {1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1};
 	int xor2[16]  = {0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0};
 	int stable[4] = {S0, T0, T1, S1};
-
-	int nand2_prop[32] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
-
+	// Addressing for the propagations:
+	// 2 4x4 groups such that 
+	int nand2_prop[32] = {-2,-2,-2,-2,-2,-2,-2,-2,-2,-2,-2,-2,-2,-2,-2,-2,-1,-1,5,-1,-1,-1,5,5,5,5,5,5,-1,5,5,5};
+//	int nand2_prop[32] = {-1,-2,-3,-4,-5,-6,-7,-8,-9,-10,-11,-12,-13,-14,-15,-16,-17,-18,-19,-20,-21,-22,-23,-24,-25,-26,-27,-28,-29,-30,-31,-32};
+	cudaExtent volumeSize = make_cudaExtent(4,4,2);
 	// device memory arrays, required. 
 	cudaArray *cuNandArray, *cuAndArray,*cuNorArray, *cuOrArray,*cuXnorArray,*cuXorArray, *cuStableArray;
 	cudaArray *cuNandProp;
 	// generic formatting information. All of our arrays are the same, so sharing it shouldn't be a problem.
-	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(sizeof(int)*8,0,0,0,cudaChannelFormatKindUnsigned);
+	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
+	DPRINT("%d,%d", volumeSize.height, volumeSize.width);
 	
 	// Allocating memory on the device.
 	cudaMallocArray(&cuNandArray, &channelDesc, 4,4);
@@ -56,7 +59,18 @@ void loadLookupTables() {
 	cudaMallocArray(&cuXnorArray, &channelDesc, 4,4);
 	cudaMallocArray(&cuXorArray, &channelDesc, 4,4);
 	cudaMallocArray(&cuStableArray, &channelDesc, 2,2);
-	cudaMallocArray(&cuNandProp, &channelDesc, 4,4,2);
+	
+	cudaMalloc3DArray(&cuNandProp, &channelDesc, volumeSize);
+
+	cudaMemcpy3DParms copyParams = {0};
+	copyParams.srcPtr = make_cudaPitchedPtr((void*)nand2_prop, volumeSize.width*sizeof(int), volumeSize.width, volumeSize.height);
+	copyParams.dstArray = cuNandProp;
+	copyParams.extent =  volumeSize;
+	copyParams.kind = cudaMemcpyHostToDevice;
+	cudaMemcpy3D(&copyParams);
+	nand2PropLUT.addressMode[2]=cudaAddressModeClamp;
+	nand2PropLUT.addressMode[0]=cudaAddressModeClamp;
+	nand2PropLUT.addressMode[1]=cudaAddressModeClamp;
 
 	// Copying the LUTs Host->Device
 	cudaMemcpyToArray(cuNandArray, 0,0, nand2, sizeof(int)*16,cudaMemcpyHostToDevice);
@@ -66,7 +80,6 @@ void loadLookupTables() {
 	cudaMemcpyToArray(cuXnorArray, 0,0, xnor2, sizeof(int)*16,cudaMemcpyHostToDevice);
 	cudaMemcpyToArray(cuXorArray, 0,0, xor2, sizeof(int)*16,cudaMemcpyHostToDevice);
 	cudaMemcpyToArray(cuStableArray, 0,0, stable, sizeof(int)*4,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuNandProp, 0,0, nand2_prop, sizeof(int)*32,cudaMemcpyHostToDevice);
 
 	// Marking them as textures. LUTs should be in texture memory and cached on
 	// access.
@@ -124,14 +137,23 @@ __global__ void gpuMarkPathSegments(int *results, GPUNODE* node, int* fans, size
 	if (tid < height) {
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		rowResults = (int*)malloc(sizeof(int)*width);
-		for (int i = ncount-1; i >= 0; i--) {
+		for (int i = 0; i < width; i++) {
+			rowResults[i] = -7;
+		}
+		for (int i = ncount; i >= 0; i--) {
 			goffset = node[i].offset;
 			nfi = node[i].nfi;
 			// switching based on value causes divergence, switch based on node type.
 			switch(node[i].type) {
 				case NAND:
-					val = tex3D(nand2PropLUT, row[fans[goffset+nfi]], row[fans[goffset]], row[fans[goffset+1]]);
-					printf("%d, Line Value: %d; LUT Response: %d\n", tid, row[fans[goffset+nfi]], val);
+					val = tex3D(nand2PropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1);
+					printf("(%d, %d, %d) = %d\n",row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1,val);
+					rowResults[fans[goffset+nfi]] = val;
+					//rowResults[fans[goffset]] = val;
+					//rowResults[fans[goffset+1]] = val;
+				case FROM:
+					rowResults[fans[goffset]] = rowResults[fans[goffset+nfi]];
+					break;
 				case AND:
 				case OR:
 				case NOR:
@@ -142,7 +164,10 @@ __global__ void gpuMarkPathSegments(int *results, GPUNODE* node, int* fans, size
 					break;
 			}
 		}
-//		memcpy(row,rowResults,sizeof(int)*width);
+		__syncthreads();
+		for (int i = 0; i < width; i++) {
+			row[i] = rowResults[i];
+		}
 		free(rowResults);
 	}
 }
@@ -172,11 +197,11 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 				break;
 		}
 		DPRINT("\n");
-		cudaThreadSynchronize();
+		cudaDeviceSynchronize();
 	}
 	if (pass > 1) {
 		gpuMarkPathSegments<<<1,results.height>>>(results.data, dgraph.data, fan, results.width, results.height, dgraph.width);
-		cudaThreadSynchronize();
+		cudaDeviceSynchronize();
 	}
 #ifndef NDEBUG
 	cudaEventRecord(stop,0);
@@ -200,13 +225,15 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 		for (int i = 0; i < results.width; i++) {
 			switch(lvalues[i]) {
 				case S0:
-					DPRINT("S0 ", lvalues[i]); break;
+					DPRINT("S0 "); break;
 				case S1:
-					DPRINT("S1 ", lvalues[i]); break;
+					DPRINT("S1 "); break;
 				case T0:
-					DPRINT("T0 ", lvalues[i]); break;
+					DPRINT("T0 "); break;
 				case T1:
-					DPRINT("T1 ", lvalues[i]); break;
+					DPRINT("T1 "); break;
+				default:
+					DPRINT("%2d ", lvalues[i]); break;
 			}
 		}
 		DPRINT("\n");
