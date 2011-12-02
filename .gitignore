@@ -3,5 +3,6 @@ a.out
 fcount
 tags
 fcount-cpu
+log.txt
 *.o
 *.gch

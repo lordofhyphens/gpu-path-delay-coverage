@@ -1,6 +1,7 @@
 CC=g++-4.4
 GPUCC=nvcc
 header=iscas.h gpuiscas.h kernel.h
+logfile=log.txt
 src=main.cc iscas.cc
 gsrc=kernel.cu gpuiscas.cu
 obj=$(src:.cc=.o)
@@ -13,8 +14,8 @@ LIB=-lcuda
 all: tags $(out)
 
 test: tags $(out)
-	@./${out} data/c17.isc data/c17.vec 2> file
-	@egrep -e "Simulation time" -e "Pattern [0-9]{1,2}:" -e "Line:" file | tail -n58 
+	@./${out} data/c17.isc data/c17.vec 2> ${logfile}
+	@egrep -e "Simulation time" -e "Pattern [0-9]{1,2}:" -e "Line:" ${logfile} | tail -n58 
 
 cpu: tags $(out)-cpu
 
@@ -30,4 +31,4 @@ ${gobj}: ${gsrc}
 tags: ${src} ${gsrc} ${header}
 	ctags ${src} ${gsrc}
 clean:
-	rm -f ${out} ${out}-cpu ${obj} ${gobj} $(header:.h=.h.gch)
+	rm -f ${out} ${out}-cpu ${obj} ${gobj} $(header:.h=.h.gch) ${logfile}
