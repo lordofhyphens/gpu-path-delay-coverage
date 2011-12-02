@@ -16,6 +16,7 @@ texture<int, 3> and2InputPropLUT;
 texture<int, 3> or2OutputPropLUT;
 texture<int, 3> or2InputPropLUT;
 texture<int, 2> fromPropLUT;
+texture<int, 2> inptPropLUT;
 
 __global__ void INPT_gate(int i, int pi, ARRAY2D<int> results, ARRAY2D<int> input, GPUNODE* graph, int* fans,int pass) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x, val;
@@ -51,11 +52,12 @@ void loadLookupTables() {
 	int or2_output_prop[32] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 1, 1,0,0,0,0, 1,0, 1, 1, 1,0, 1, 1};
 	int or2_input_prop[32] =  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 1, 1,0,0,0,0,0,0, 1, 1,0,0,0, 1};
 	int from_prop[16]      =  {0,0,0,0,0,0,0,0,0,0, 1, 1,0,0, 1, 1};
+	int inpt_prop[8] = {0,0,0,0,0,0,1,1};
 
 	cudaExtent volumeSize = make_cudaExtent(4,4,2);
 	// device memory arrays, required. 
 	cudaArray *cuNandArray, *cuAndArray,*cuNorArray, *cuOrArray,*cuXnorArray,*cuXorArray, *cuStableArray;
-	cudaArray *cuAndInptProp, *cuAndOutpProp, *cuOrInptProp, *cuOrOutpProp, *cuFromProp;
+	cudaArray *cuAndInptProp, *cuAndOutpProp, *cuOrInptProp, *cuOrOutpProp, *cuFromProp, *cuInptProp;
 	// generic formatting information. All of our arrays are the same, so sharing it shouldn't be a problem.
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
 	DPRINT("%d,%d", volumeSize.height, volumeSize.width);
@@ -67,9 +69,10 @@ void loadLookupTables() {
 	cudaMallocArray(&cuOrArray, &channelDesc, 4,4);
 	cudaMallocArray(&cuXnorArray, &channelDesc, 4,4);
 	cudaMallocArray(&cuXorArray, &channelDesc, 4,4);
-	cudaMallocArray(&cuFromProp, &channelDesc, 4,4);
 	cudaMallocArray(&cuStableArray, &channelDesc, 2,2);
 	
+	cudaMallocArray(&cuFromProp, &channelDesc, 4,4);
+	cudaMallocArray(&cuInptProp, &channelDesc, 4,2);
 	cudaMalloc3DArray(&cuAndInptProp, &channelDesc, volumeSize);
 	cudaMalloc3DArray(&cuAndOutpProp, &channelDesc, volumeSize);
 	cudaMalloc3DArray(&cuOrInptProp, &channelDesc, volumeSize);
@@ -120,6 +123,7 @@ void loadLookupTables() {
 	cudaMemcpyToArray(cuXnorArray, 0,0, xnor2, sizeof(int)*16,cudaMemcpyHostToDevice);
 	cudaMemcpyToArray(cuXorArray, 0,0, xor2, sizeof(int)*16,cudaMemcpyHostToDevice);
 	cudaMemcpyToArray(cuFromProp, 0,0, from_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuInptProp, 0,0, inpt_prop, sizeof(int)*8,cudaMemcpyHostToDevice);
 	cudaMemcpyToArray(cuStableArray, 0,0, stable, sizeof(int)*4,cudaMemcpyHostToDevice);
 
 	// Marking them as textures. LUTs should be in texture memory and cached on
@@ -136,6 +140,7 @@ void loadLookupTables() {
 	cudaBindTextureToArray(or2OutputPropLUT,cuOrOutpProp,channelDesc);
 	cudaBindTextureToArray(or2InputPropLUT,cuOrInptProp,channelDesc);
 	cudaBindTextureToArray(fromPropLUT,cuFromProp,channelDesc);
+	cudaBindTextureToArray(inptPropLUT,cuInptProp,channelDesc);
 }
 
 __global__ void LOGIC_gate(int i, GPUNODE* node, int* fans, int* res, size_t height, size_t width , int pass) {
@@ -191,25 +196,24 @@ __global__ void gpuMarkPathSegments(int *results, GPUNODE* node, int* fans, size
 			// switching based on value causes divergence, switch based on node type.
 			switch(node[i].type) {
 				case NAND:
-					rowResults[fans[goffset]] = tex3D(and2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) *(tid+1);
-					rowResults[fans[goffset+1]] = tex3D(and2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1) *(tid+1);
-					rowResults[fans[goffset+nfi]] = tex3D(and2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) *(tid+1);
+					rowResults[fans[goffset]] = tex3D(and2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1);
+					rowResults[fans[goffset+1]] = tex3D(and2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1) ;
+					rowResults[fans[goffset+nfi]] = tex3D(and2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) ;
 				case FROM:
-					rowResults[fans[goffset]] = tex2D(fromPropLUT, row[fans[goffset]],row[fans[goffset+nfi]]) *(tid+1);
+					rowResults[fans[goffset]] = tex2D(inptPropLUT, row[fans[goffset]],rowResults[fans[goffset+nfi]]) ;
 					break;
-				case INPT:
 				case AND:
-					rowResults[fans[goffset]] = tex3D(and2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1)*(tid+1);
-					rowResults[fans[goffset+1]] = tex3D(and2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1)*(tid+1);
-					rowResults[fans[goffset+nfi]] = tex3D(and2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1)*(tid+1);
+					rowResults[fans[goffset]] = tex3D(and2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1);
+					rowResults[fans[goffset+1]] = tex3D(and2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1);
+					rowResults[fans[goffset+nfi]] = tex3D(and2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1);
 				case OR:
-					rowResults[fans[goffset]] = tex3D(or2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) *(tid+1);
-					rowResults[fans[goffset+1]] = tex3D(or2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1) *(tid+1);
-					rowResults[fans[goffset+nfi]] = tex3D(or2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) *(tid+1);
+					rowResults[fans[goffset]] = tex3D(or2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) ;
+					rowResults[fans[goffset+1]] = tex3D(or2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1) ;
+					rowResults[fans[goffset+nfi]] = tex3D(or2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) ;
 				case NOR:
-					rowResults[fans[goffset]] = tex3D(or2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) *(tid+1);
-					rowResults[fans[goffset+1]] = tex3D(or2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1) *(tid+1);
-					rowResults[fans[goffset+nfi]] = tex3D(or2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) *(tid+1);
+					rowResults[fans[goffset]] = tex3D(or2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) ;
+					rowResults[fans[goffset+1]] = tex3D(or2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1) ;
+					rowResults[fans[goffset+nfi]] = tex3D(or2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) ;
 				case XOR:
 				case XNOR:
 				default:
@@ -219,7 +223,7 @@ __global__ void gpuMarkPathSegments(int *results, GPUNODE* node, int* fans, size
 		}
 		__syncthreads();
 		for (int i = 0; i < width; i++) {
-			row[i] = rowResults[i];
+			row[i] = rowResults[i] * (tid+1);
 		}
 		free(rowResults);
 	}
@@ -257,6 +261,39 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 #ifndef NDEBUG
 	cudaEventRecord(eventQueue[1], 0);
 	cudaEventSynchronize(eventQueue[1]);
+
+	DPRINT("Post-simulation device results, pass %d:\n\n", pass);
+	DPRINT("Line:   \t");
+	for (int i = 0; i < results.width; i++) {
+		DPRINT("%2d ", i);
+	}
+	DPRINT("\n");
+	int *lvalues, *row;
+	for (int r = 0;r < results.height; r++) {
+		lvalues = (int*)malloc(results.bwidth());
+		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
+		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
+		
+		DPRINT("%s %d:\t", pass > 1 ? "Vector" : "Pattern",r);
+		for (int i = 0; i < results.width; i++) {
+				switch(lvalues[i]) {
+					case S0:
+						DPRINT("S0 "); break;
+					case S1:
+						DPRINT("S1 "); break;
+					case T0:
+						DPRINT("T0 "); break;
+					case T1:
+						DPRINT("T1 "); break;
+					default:
+						DPRINT("%2d ", lvalues[i]); break;
+				}
+
+		}
+		DPRINT("\n");
+		free(lvalues);
+	}
+
 	cudaEventCreate(eventQueue+2);
 	cudaEventCreate(eventQueue+3);
 	eventCount++;
@@ -278,16 +315,15 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 		DPRINT("%2d ", i);
 	}
 	DPRINT("\n");
-	int *lvalues, *row;
 	for (int r = 0;r < results.height; r++) {
 		lvalues = (int*)malloc(results.bwidth());
 		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
 		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
 		
-		DPRINT("Pattern %d:\t",r);
+		DPRINT("%s %d:\t", pass > 1 ? "Vector" : "Pattern",r);
 		for (int i = 0; i < results.width; i++) {
 			if (pass > 1) {
-				DPRINT("%2d ", lvalues[i]);
+				DPRINT("%2c ", lvalues[i] == 0 ? 'N':'S'  );
 			} else {
 				switch(lvalues[i]) {
 					case S0:
