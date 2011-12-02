@@ -176,10 +176,12 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 	int piNumber = 0, curPI = 0;
 	DPRINT("Pattern Count: %d\n", results.height );
 #ifndef NDEBUG
-	cudaEvent_t start, stop;
-	cudaEventCreate(&start);
-	cudaEventCreate(&stop);
-	cudaEventRecord(start,0);
+	int eventCount = 0;
+	cudaEvent_t* eventQueue = malloc(sizeof(cudaEvent_t)*10);
+	cudaEventCreate(eventQueue);
+	cudaEventCreate(eventQueue+1);
+	eventCount++;
+	cudaEventRecord(eventQueue,0);
 #endif // NDEBUG
 	for (int i = 0; i <= dgraph.width; i++) {
 		DPRINT("ID: %d\tFanin: %d\tFanout: %d\tType: %d\t", i, graph[i].nfi, graph[i].nfo,graph[i].type);
@@ -199,13 +201,21 @@ void runGpuSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph,
 		DPRINT("\n");
 		cudaDeviceSynchronize();
 	}
+#ifndef NDEBUG
+	cudaEventRecord(eventQueue+1, 0);
+	cudaEventSynchronize(eventQueue+1)
+	cudaEventCreate(eventQueue+2);
+	cudaEventCreate(eventQueue+3);
+	eventCount++;
+	cudaEventRecord(eventQueue+2,0);
+#endif
 	if (pass > 1) {
 		gpuMarkPathSegments<<<1,results.height>>>(results.data, dgraph.data, fan, results.width, results.height, dgraph.width);
 		cudaDeviceSynchronize();
 	}
 #ifndef NDEBUG
-	cudaEventRecord(stop,0);
-	cudaEventSynchronize(stop);
+	cudaEventRecord(eventQueue+3,0);
+	cudaEventSynchronize(eventQueue+3);
 	// Routine to copy contents of our results array into host memory and print
 	// it row-by-row.
 
