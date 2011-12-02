@@ -15,7 +15,7 @@ all: tags $(out)
 
 test: tags $(out)
 	@./${out} data/c17.isc data/c17.vec 2> ${logfile}
-	@egrep -e "Simulation time" -e "Pattern [0-9]{1,2}:" -e "Line:" ${logfile} | tail -n58 
+	@egrep -e "Path Marking time" -e "Simulation time" -e "Pattern [0-9]{1,2}:" -e "Line:" ${logfile} | tail -n60
 
 cpu: tags $(out)-cpu
 
