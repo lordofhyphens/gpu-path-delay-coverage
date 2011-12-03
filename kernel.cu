@@ -182,15 +182,16 @@ __device__ int willPathPropagate(int tid, int* results, GPUNODE* node, int* fans
 	return -1;
 }
 __global__ void gpuMarkPathSegments(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
-	int tid = blockIdx.x * gridDim.x + threadIdx.x, nfi, goffset;
+	int tid = blockIdx.x * gridDim.x + threadIdx.x, nfi, goffset,val;
 	int *rowResults, *row;
 	if (tid < height) {
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		rowResults = (int*)malloc(sizeof(int)*width);
 		for (int i = 0; i < width; i++) {
-			rowResults[i] = -7;
+			rowResults[i] = UNINITIALIZED;
 		}
 		for (int i = ncount; i >= 0; i--) {
+			val = UNINITIALIZED;
 			goffset = node[i].offset;
 			nfi = node[i].nfi;
 			// switching based on value causes divergence, switch based on node type.
@@ -199,21 +200,32 @@ __global__ void gpuMarkPathSegments(int *results, GPUNODE* node, int* fans, size
 					rowResults[fans[goffset]] = tex3D(and2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1);
 					rowResults[fans[goffset+1]] = tex3D(and2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1) ;
 					rowResults[fans[goffset+nfi]] = tex3D(and2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) ;
+					break;
 				case FROM:
-					rowResults[fans[goffset]] = tex2D(inptPropLUT, row[fans[goffset]],rowResults[fans[goffset+nfi]]) ;
+					if (rowResults[fans[goffset]] == UNINITIALIZED) {
+						val = tex2D(inptPropLUT, row[fans[goffset]],rowResults[fans[goffset+nfi]]);
+						rowResults[fans[goffset]] = val;
+						rowResults[fans[goffset+nfi]] = val;
+					} else {
+						val = tex2D(inptPropLUT, row[fans[goffset]],rowResults[fans[goffset+nfi]]);
+						rowResults[fans[goffset+nfi]] = val;
+					}
 					break;
 				case AND:
 					rowResults[fans[goffset]] = tex3D(and2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1);
 					rowResults[fans[goffset+1]] = tex3D(and2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1);
 					rowResults[fans[goffset+nfi]] = tex3D(and2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1);
+					break;
 				case OR:
 					rowResults[fans[goffset]] = tex3D(or2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) ;
 					rowResults[fans[goffset+1]] = tex3D(or2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1) ;
 					rowResults[fans[goffset+nfi]] = tex3D(or2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) ;
+					break;
 				case NOR:
 					rowResults[fans[goffset]] = tex3D(or2InputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) ;
 					rowResults[fans[goffset+1]] = tex3D(or2InputPropLUT, row[fans[goffset+1]],row[fans[goffset]],row[fans[goffset+nfi]]-1) ;
 					rowResults[fans[goffset+nfi]] = tex3D(or2OutputPropLUT, row[fans[goffset]],row[fans[goffset+1]],row[fans[goffset+nfi]]-1) ;
+					break;
 				case XOR:
 				case XNOR:
 				default:
