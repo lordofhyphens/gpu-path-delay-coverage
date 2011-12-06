@@ -1,12 +1,12 @@
 
 #include <stdio.h>
 #include <stdbool.h>
-
-#include "kernel.h"
+#include "defines.h"
+#include "simkernel.h"
+#include "markkernel.h"
 #include "iscas.h"
 #include "gpuiscas.h"
 
-#include "defines.h"
 
 int main(int argc, char ** argv) {
 	FILE *fisc, *fvec;
@@ -62,17 +62,27 @@ int main(int argc, char ** argv) {
 
 	dres = gpuLoadVectors(res, lcnt, vcnt);
 	int* dvec = gpuLoad1DVector(vec, pis, vcnt / pis);
+	int *mergeresult;
 	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, 4, 5);
 	dgraph = gpuLoadCircuit(test.graph,ncnt);
 	dlines = gpuLoadLines(lgraph,lcnt);
 	fans = gpuLoadFans(test.offsets,test.max_offset);
-	loadLookupTables();
-	runGpuSimulation(ARRAY2D<int>(dres,vcnt/pis,lcnt), inputArray, test.graph,ARRAY2D<GPUNODE>(dgraph,1,ncnt),ARRAY2D<LINE>(dlines,vcnt,lcnt),fans, 1);
+	ARRAY2D<int> resArray = ARRAY2D<int>(dres,vcnt/pis,lcnt);
+	ARRAY2D<GPUNODE> graphArray = ARRAY2D<GPUNODE>(dgraph,1,ncnt);
 
+	TPRINT("Simulation Pass 1 %fms\n",gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 1));
+//	debugSimulationOutput(resArray,1);
 	gpuShiftVectors(dvec, pis, vcnt/pis);
-	runGpuSimulation(ARRAY2D<int>(dres,vcnt/pis,lcnt), inputArray, test.graph,ARRAY2D<GPUNODE>(dgraph,1,ncnt),ARRAY2D<LINE>(dlines,vcnt,lcnt),fans, 2);
-	DPRINT ("Max Node ID: %d\tLines: %d\n",ncnt,lcnt);
-	PrintCircuit(graph,ncnt);
+	TPRINT("Simulation Pass 2 %fms\n",gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 2));
+//	debugSimulationOutput(resArray,2);
+	TPRINT("Path Mark %fms\n",gpuMarkPaths(resArray, test.graph, graphArray, fans));
+	TPRINT("Path Merge %fms\n",gpuMergeHistory(resArray, &mergeresult, test.graph, graphArray, fans));
+
+	debugMarkOutput(resArray);
+	debugUnionOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
+	
+
+	//	PrintCircuit(graph,ncnt);
 //	PrintLines(lgraph,lcnt);
 
 	return 0;

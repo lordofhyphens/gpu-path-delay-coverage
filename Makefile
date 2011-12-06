@@ -1,9 +1,10 @@
 CC=g++-4.4
+CTAG_FLAGS=--langmap=C++:+.cu
 GPUCC=nvcc
-header=iscas.h gpuiscas.h kernel.h
+header=iscas.h gpuiscas.h simkernel.h markkernel.h
 logfile=log.txt
 src=main.cc iscas.cc
-gsrc=kernel.cu gpuiscas.cu
+gsrc=gpuiscas.cu simkernel.cu markkernel.cu
 obj=$(src:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)
@@ -15,7 +16,7 @@ all: tags $(out)
 
 test: tags $(out)
 	@./${out} data/c17.isc data/c17.vec 2> ${logfile}
-	@egrep -e "Path Marking time" -e "Simulation time" -e "Vector [0-9]{1,2}:" -e "Line:" ${logfile} | tail -n60
+	@egrep -e "time " -e "Vector [0-9]{1,2}:" -e "Line:" ${logfile} | tail -n60
 
 cpu: tags $(out)-cpu
 
@@ -29,6 +30,6 @@ ${obj}: ${src} ${header}
 ${gobj}: ${gsrc}
 	${GPUCC} ${NVCFLAGS} -ccbin g++-4.4 -c $^
 tags: ${src} ${gsrc} ${header}
-	ctags ${src} ${gsrc}
+	ctags ${CTAG_FLAGS} ${src} ${gsrc}
 clean:
 	rm -f ${out} ${out}-cpu ${obj} ${gobj} $(header:.h=.h.gch) ${logfile}
