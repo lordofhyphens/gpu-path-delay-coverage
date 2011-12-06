@@ -35,7 +35,30 @@ __global__ void INPT_gate(int i, int pi, ARRAY2D<int> results, ARRAY2D<int> inpu
 #endif
 	__syncthreads();
 }
+texture<short, 1> mergeLUT;
 
+void loadMergeTable() {
+	short merge[2] = {0,1,1,1};
+	cudaArray *cuMerge;
+	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<short>();	
+	cudaMallocArray(&cuMerge,&channelDesc, 2, 2);
+	cudaMemcpyToArray(cuNandArray, 0,0, nand2, sizeof(short)*2,cudaMemcpyHostToDevice);
+	mergeLUT.addressMode[0]=cudaAddressModeClamp;
+	cudaBindTextureToArray(mergeLUT,cuMerge,channelDesc);
+}
+
+// group all results together, this implementation will fail if # of lines > 1024
+// will need to group lines into groups of 1024 or less
+__global__ void gpuMerge(int lineCount, int* input, int* results, int width) {
+	if (threadIdx < lineCount) {
+		int result = 0;
+		for (int i = 0; i < blockIdx; i++) {
+			result = tex2D(mergeLUT,result,*((int*)((char*)input + sizeof(int)*i*width + sizeof(int)*threadIdx)));
+		}
+	}
+	r = (int*)((char*)results + sizeof(int)*width*blockIdx);
+	r[threadIdx] = result * blockIdx;
+}
 void loadLookupTables() {
 	// Creating a set of static arrays that represent our LUTs
 	int nand2[16] = {1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0};
