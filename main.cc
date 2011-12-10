@@ -4,6 +4,7 @@
 #include "defines.h"
 #include "simkernel.h"
 #include "markkernel.h"
+#include "coverkernel.h"
 #include "iscas.h"
 #include "gpuiscas.h"
 
@@ -69,20 +70,28 @@ int main(int argc, char ** argv) {
 	fans = gpuLoadFans(test.offsets,test.max_offset);
 	ARRAY2D<int> resArray = ARRAY2D<int>(dres,vcnt/pis,lcnt);
 	ARRAY2D<GPUNODE> graphArray = ARRAY2D<GPUNODE>(dgraph,1,ncnt);
-
-	TPRINT("Simulation Pass 1 %fms\n",gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 1));
+	float alltime, pass1, pass2, mark, merge,cover;
+	pass1 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 1);
+	TPRINT("Simulation Pass 1 time %fms\n", pass1);
 //	debugSimulationOutput(resArray,1);
 	gpuShiftVectors(dvec, pis, vcnt/pis);
-	TPRINT("Simulation Pass 2 %fms\n",gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 2));
+	pass2 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 2);
+	TPRINT("Simulation Pass 2 time %fms\n", pass2);
 //	debugSimulationOutput(resArray,2);
-	TPRINT("Path Mark %fms\n",gpuMarkPaths(resArray, test.graph, graphArray, fans));
-	TPRINT("Path Merge %fms\n",gpuMergeHistory(resArray, &mergeresult, test.graph, graphArray, fans));
+	mark = gpuMarkPaths(resArray, test.graph, graphArray, fans);
+	TPRINT("Path Mark time %fms\n",mark);
+	merge = gpuMergeHistory(resArray, &mergeresult, test.graph, graphArray, fans);
+	TPRINT("Path Merge time %fms\n",merge);
 
-	debugMarkOutput(resArray);
-	debugUnionOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
-	
-
-	//	PrintCircuit(graph,ncnt);
+//	debugMarkOutput(resArray);
+//	debugUnionOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
+	cover = gpuCountPaths(resArray,ARRAY2D<int>(mergeresult,resArray.height, resArray.width),test.graph,graphArray,fans);
+	TPRINT("Path Coverage time %fms\n",cover);
+	alltime = pass1 + pass2 + mark + merge + cover;
+//	debugCoverOutput(resArray);
+	TPRINT("Total Path Count for vectors: %d\n", returnPathCount(resArray));
+	TPRINT("Total time : %fms\n", alltime);
+	PrintCircuit(graph,ncnt);
 //	PrintLines(lgraph,lcnt);
 
 	return 0;

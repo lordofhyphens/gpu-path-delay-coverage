@@ -1,10 +1,10 @@
 CC=g++-4.4
 CTAG_FLAGS=--langmap=C++:+.cu
 GPUCC=nvcc
-header=iscas.h gpuiscas.h simkernel.h markkernel.h
+header=iscas.h gpuiscas.h simkernel.h markkernel.h coverkernel.h
 logfile=log.txt
 src=main.cc iscas.cc
-gsrc=gpuiscas.cu simkernel.cu markkernel.cu
+gsrc=gpuiscas.cu simkernel.cu markkernel.cu coverkernel.cu
 obj=$(src:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)
@@ -16,7 +16,7 @@ all: tags $(out)
 
 test: tags $(out)
 	@./${out} data/c17.isc data/c17.vec 2> ${logfile}
-	@egrep -e "time " -e "Vector [0-9]{1,2}:" -e "Line:" ${logfile} | tail -n60
+	@egrep -e "Total" -e "time " -e "Vector [0-9]{1,2}:" -e "Line:" ${logfile} | tail -n60
 
 cpu: tags $(out)-cpu
 

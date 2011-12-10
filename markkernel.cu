@@ -211,6 +211,9 @@ float gpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 	cudaEventElapsedTime(&elapsed,start,stop);
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);
+#endif
+	cudaMemcpy(*mergeresult, input.data, input.bwidth(), cudaMemcpyDeviceToDevice);
+#ifndef NTIMING
 	return elapsed;
 #else 
 	return 0.0;
