@@ -1,0 +1,46 @@
+* iscas "torture test" (to test handling of gates)
+*---------------------------------------------------
+*    ID    Name    TYPE FO FI    Stuckats
+    1    Ainp    inpt 1    0    >sa1
+    2    Binp    inpt 2    0    >sa1
+    3    Bfro1    from    Binp    >sa1
+    4    Bfro2    from    Binp    >sa1
+    5    Cinp    inpt 1    0    >sa1
+    6    Dinp    inpt 3    0    >sa1
+    7    Dfro1    from    Dinp    >sa1
+    8    Dfro2    from    Dinp    >sa1
+    9    Einp    inpt 2     0    >sa1
+    10    Efro3    from    Einp    >sa1
+    11    Efro1    from    Einp    >sa1
+    12    Efro2    from    Einp    >sa1
+    13    13nand nand    2 2    >sa1
+    1 3
+    14    13fan1    from    13nand
+    15    13fan2    from    13nand
+    16    14nor    nor    2    2    >sa1
+    7    12
+    17    15inv    not    1    1    >sa1
+    24
+    18    16and    and    2    2    >sa1
+    17    28
+    19    16fan1    from    16and    >sa1
+    20    Fout    from    16and    >sa1
+    21    17not    not    0    1    >sa1
+    19
+    22    18buf    buff    1    1    >sa1
+    29
+    23    19nand   nand    1    3    >sa1
+    30    5 16
+    24    20or    or    2    2    >sa1
+    22    23
+    25    20fan1    from    20or    >sa1
+    26    Gout    from    20or    >sa1
+    27    21or    or    2    2    >sa1
+    4    15
+    28    21fan1    from    21or    >sa1
+    29    21fan2    from    21or    >sa1
+    30    21fan3    from    21or    >sa1
+    31    Hout    xnor    0    2    >sa1 >sa0
+    11    25
+    32    Iout    xor    0    2    >sa1 >sa0 
+    8    10

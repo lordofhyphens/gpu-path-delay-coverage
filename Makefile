@@ -9,8 +9,8 @@ obj=$(src:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)
 out=fcount
-CFLAGS=-I/opt/net/apps/cuda/include -O2
-NVCFLAGS=-arch=sm_20 -O2
+CFLAGS=-I/opt/net/apps/cuda/include -g
+NVCFLAGS=-arch=sm_20 -g
 LIB=-lcuda
 all: tags $(out)
 

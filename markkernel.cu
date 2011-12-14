@@ -42,6 +42,8 @@ void loadPropLUTs() {
 	int and2_input_prop[32] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,0,0,0,1,1};
 	int or2_output_prop[32] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
 	int or2_input_prop[32] =  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	int xor2_input_prop[32] =  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	int xor2_output_prop[32] =  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
 	int from_prop[16]      =  {0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1};
 	int inpt_prop[8] = {0,0,0,0,0,0,1,1};
 
@@ -157,6 +159,12 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 					break;
 				case XOR:
 				case XNOR:
+				case BUFF:
+				case NOT:
+						val = tex2D(inptPropLUT, row[fans[goffset]],rowResults[fans[goffset+nfi]]);
+						rowResults[fans[goffset]] = val;
+						rowResults[fans[goffset+nfi]] = val;
+					break;
 				default:
 					// if there is a transition that will propagate, set = to some positive #?
 					break;
