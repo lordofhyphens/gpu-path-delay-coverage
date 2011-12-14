@@ -63,6 +63,7 @@ typedef struct NODE_type
 	int typ,nfi,nfo,po;     //type, nooffanins, nooffanouts,primaryo/p
 	int mar,val,fval;       //marker,correctvalue,faultvalue
 	LIST *fin,*fot;         //fanin members, fanout members 
+	NODE_type(const NODE_type& n);
 } NODE;
 typedef struct LINE_type {
 	int logic; // logic value for this line.

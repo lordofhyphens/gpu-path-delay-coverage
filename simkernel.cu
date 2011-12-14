@@ -11,6 +11,7 @@ texture<int, 2> nor2LUT;
 texture<int, 2> xor2LUT;
 texture<int, 2> xnor2LUT;
 texture<int, 2> stableLUT;
+texture<int, 1> notLUT;
 __global__ void INPT_gate(int i, int pi, ARRAY2D<int> results, ARRAY2D<int> input, GPUNODE* graph, int* fans,int pass) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x, val;
 	int *row;
@@ -38,7 +39,11 @@ __global__ void LOGIC_gate(int i, GPUNODE* node, int* fans, int* res, size_t hei
 		goffset = node[i].offset;
 		nfi = node[i].nfi;
 		row = (int*)((char*)res + tid*(width)*sizeof(int));
-		val = row[fans[goffset]];
+		if (node[i].type != NOT) {
+			val = row[fans[goffset]];
+		} else {
+			val = tex1D(notLUT, row[fans[goffset]]);
+		}
 		while (j < nfi) {
 			switch(node[i].type) {
 				case XOR:
@@ -53,10 +58,13 @@ __global__ void LOGIC_gate(int i, GPUNODE* node, int* fans, int* res, size_t hei
 					val = tex2D(and2LUT, val, row[fans[goffset+j]]);
 				case NAND:
 					val = tex2D(nand2LUT, val, row[fans[goffset+j]]);
+				case NOT:
+					val = tex2D(nand2LUT, val, row[fans[goffset+j]]);
+
 			}
 			j++;
 		}
-		if (pass > 1 && node[i].type != FROM) {
+		if (pass > 1 && node[i].type != FROM && node[i].type != BUFF) {
 			row[fans[goffset+nfi]] = tex2D(stableLUT, row[fans[goffset+nfi]], val);  
 		} else {
 			row[fans[goffset+nfi]] = val;
@@ -73,9 +81,10 @@ void loadSimLUTs() {
 	int xnor2[16] = {1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1};
 	int xor2[16]  = {0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0};
 	int stable[4] = {S0, T0, T1, S1};
+	int not_gate[4] = {1, 1, 0, 0};
 
 	// device memory arrays, required. 
-	cudaArray *cuNandArray, *cuAndArray,*cuNorArray, *cuOrArray,*cuXnorArray,*cuXorArray, *cuStableArray;
+	cudaArray *cuNandArray, *cuAndArray,*cuNorArray, *cuOrArray,*cuXnorArray,*cuXorArray, *cuNotArray,*cuStableArray;
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
 
 	// Allocate space in device memory for the LUTs. 
@@ -86,6 +95,7 @@ void loadSimLUTs() {
 	cudaMallocArray(&cuXnorArray, &channelDesc, 4,4);
 	cudaMallocArray(&cuXorArray, &channelDesc, 4,4);
 	cudaMallocArray(&cuStableArray, &channelDesc, 2,2);
+	cudaMallocArray(&cuNotArray, &channelDesc, 4,1);
 
 	// Copying the static arrays given to device memory.
 	cudaMemcpyToArray(cuNandArray, 0,0, nand2, sizeof(int)*16,cudaMemcpyHostToDevice);
@@ -95,6 +105,7 @@ void loadSimLUTs() {
 	cudaMemcpyToArray(cuXnorArray, 0,0, xnor2, sizeof(int)*16,cudaMemcpyHostToDevice);
 	cudaMemcpyToArray(cuXorArray, 0,0, xor2, sizeof(int)*16,cudaMemcpyHostToDevice);
 	cudaMemcpyToArray(cuStableArray, 0,0, stable, sizeof(int)*4,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuNotArray, 0,0, not_gate, sizeof(int)*4,cudaMemcpyHostToDevice);
 
 	cudaBindTextureToArray(and2LUT,cuAndArray,channelDesc);
 	cudaBindTextureToArray(nand2LUT,cuNandArray,channelDesc);
@@ -103,6 +114,7 @@ void loadSimLUTs() {
 	cudaBindTextureToArray(xor2LUT,cuXorArray,channelDesc);
 	cudaBindTextureToArray(xnor2LUT,cuXnorArray,channelDesc);
 	cudaBindTextureToArray(stableLUT,cuStableArray,channelDesc);
+	cudaBindTextureToArray(notLUT,cuNotArray,channelDesc);
 }
 
 float gpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int pass = 1) {

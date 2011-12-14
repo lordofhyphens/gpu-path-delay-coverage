@@ -7,7 +7,7 @@
 #include "coverkernel.h"
 #include "iscas.h"
 #include "gpuiscas.h"
-
+#include "sort.h"
 
 int main(int argc, char ** argv) {
 	FILE *fisc, *fvec;
@@ -15,7 +15,8 @@ int main(int argc, char ** argv) {
 	GPUNODE *dgraph;
 	LINE *dlines;
 	int** res;
-	NODE graph[Mnod];
+	NODE* graph;
+	graph = (NODE*)malloc(sizeof(NODE)*Mnod);
 	LINE lgraph[Mnod];
 	GPUNODE_INFO test;
 	int vcnt, lcnt, ncnt, pis = 0; // count of lines in the circuit
@@ -27,6 +28,8 @@ int main(int argc, char ** argv) {
 	DPRINT("Vector count: %d, %d\n", vcnt, vcnt/5);
 
 	ncnt = ReadIsc(fisc,graph);
+	ncnt = topologicalSort(graph, ncnt);
+	
 	for (int i = 0; i < Mnod; i++)
 		InitializeLines(lgraph, i);
 	lcnt = EnumerateLines(graph,lgraph,ncnt);
@@ -83,15 +86,15 @@ int main(int argc, char ** argv) {
 	merge = gpuMergeHistory(resArray, &mergeresult, test.graph, graphArray, fans);
 	TPRINT("Path Merge time %fms\n",merge);
 
-//	debugMarkOutput(resArray);
-//	debugUnionOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
+	debugMarkOutput(resArray);
+	debugUnionOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
 	cover = gpuCountPaths(resArray,ARRAY2D<int>(mergeresult,resArray.height, resArray.width),test.graph,graphArray,fans);
 	TPRINT("Path Coverage time %fms\n",cover);
 	alltime = pass1 + pass2 + mark + merge + cover;
-//	debugCoverOutput(resArray);
+	debugCoverOutput(resArray);
 	TPRINT("Total Path Count for vectors: %d\n", returnPathCount(resArray));
 	TPRINT("Total time : %fms\n", alltime);
-	PrintCircuit(graph,ncnt);
+//	PrintCircuit(graph,ncnt);
 //	PrintLines(lgraph,lcnt);
 
 	return 0;

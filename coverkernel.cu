@@ -16,6 +16,7 @@ __global__ void kernSumAll(int toffset, int *results, int *history, GPUNODE* nod
 				nfi = node[c].nfi;
 				if (node[c].type == INPT)
 					sum = sum + row[fans[goffset+nfi]];
+				//printf("Sum Count: %d\n",sum);
 			}
 		}
 		row = (int*)((char*)results);

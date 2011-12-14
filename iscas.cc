@@ -405,3 +405,16 @@ int verifyArrays(GPUNODE_INFO info, LINE* lgraph, int maxid) {
 	}
 	return good;
 }
+
+NODE_type::NODE_type(const NODE_type& n) {
+	strcpy(nam,n.nam);
+	typ = n.typ;
+	nfi = n.nfi;
+	nfo = n.nfo;
+	po = n.po;
+	fin = n.fin;
+	fot = n.fot;
+	mar = 0;
+	val = 0;
+	fval = 0;
+}
