@@ -10,9 +10,10 @@ void cpuMerge(int h, int w, int* input, int* results, int width) {
 	int *r,result, i;
 	if (w < width) {
 		result = 0;
-		for (i = 0; i < h; i++) {
+		for (i = 0; i <= h; i++) {
 			r = (int*)(input + i*width);
-			assert(r[w] < 2 && result < 2);
+			DPRINT("r[w] = %d, result = %d\n",r[w],result);
+			assert(r[w] < 2 && result < 2 && r[w] >= 0 && result >= 0);
 			result = merge[result][r[w]];
 		}
 		r = (int*)((char*)results + sizeof(int)*width*h);
@@ -29,6 +30,7 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 	int nfi, goffset,val;
 	int *rowResults, *row;
 	if (tid < height) {
+		DPRINT("TID: %d\n", tid);
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		rowResults = (int*)malloc(sizeof(int)*width);
 		for (int i = 0; i < width; i++) {
@@ -75,7 +77,7 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 			}
 		}
 		for (int i = 0; i < width; i++) {
-			row[i] = rowResults[i];// * (tid+1);
+			row[i] = rowResults[i] * (tid+1);
 		}
 		free(rowResults);
 	}
@@ -182,7 +184,7 @@ void sINPT_gate(int i, int j, int pi, int* row, int height, ARRAY2D<int> input, 
 	int stable[2][2] = {{S0, T0}, {T1, S1}};
 	int from[4] = {0, 0, 1, 1};
 	val = *(input.data+(pi+input.width*j));
-	DPRINT(" val: %d\n", val);
+//	DPRINT(" val: %d\n", val);
 	if (pass > 1) {
 		assert(row[fans[goffset+nfi]] < 4);
 	} else {
@@ -229,14 +231,12 @@ void sLOGIC_gate(int i, int tid, GPUNODE* node, int* fans, int* results, size_t 
 			case AND:
 				val = and2[val][row[fans[goffset+j]]]; break;
 			case NAND:
-				DPRINT("TEST %d %d-%d %d\n",val,j, row[fans[goffset+j]],fans[goffset+j]);
 				val = nand2[val][row[fans[goffset+j]]]; break;
 			default:
 				val = from[row[fans[goffset+j]]];
 		}
 		j++;
 	}
-	DPRINT("node id: %d goffset: %d, nfi: %d, fans[]: %d, row[]: %d, val: %d\n",i, goffset, nfi, fans[goffset+nfi], row[fans[goffset+nfi]], val);
 
 	assert(row[fans[goffset+nfi]] < 4);
 	assert(val < 2);
@@ -252,7 +252,7 @@ float cpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 	int *row;
 	float elapsed = 0.0;
 	timespec start, stop;
-	clock_gettime(CLOCK_REALTIME, &start);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	for (int j = 0; j < results.height; j++) {
 		for (int i = 0; i < dgraph.width; i++) {
 			curPI = piNumber;
@@ -260,21 +260,21 @@ float cpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 				case 0:
 					continue;
 				case INPT:
-					DPRINT("INPT Gate");
+//					DPRINT("INPT Gate");
 					sINPT_gate(i, j, curPI, results.data, results.height, inputs, dgraph.data, fan, pass);
 					piNumber++;
 					break;
 				default:
-					DPRINT("Logic Gate, %d - %d type %d\n", j, i, graph[i].type);
+//					DPRINT("Logic Gate, %d - %d type %d\n", j, i, graph[i].type);
 					sLOGIC_gate(i, j, dgraph.data, fan, results.data, results.height, results.width, pass);
 					break;
 			}
-			DPRINT("\n");
+//			DPRINT("\n");
 		}
 		piNumber = 0;
 	}
-	clock_gettime(CLOCK_REALTIME, &stop);
-	elapsed = (stop.tv_nsec - start.tv_nsec) / 1000000.0;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
 	return elapsed;
 }
 
@@ -310,16 +310,7 @@ GPUNODE* cpuLoadCircuit(const GPUNODE* graph, int maxid) {
 	GPUNODE *devAr, *testAr;
 	devAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(1+maxid));
 	memcpy(devAr, graph, (maxid+1) * sizeof(GPUNODE));
-	DPRINT("Verifying GPUNODE graph copy\n");
-	DPRINT("ID\tTYPE\tFANIN\tFANOUT\tPO\tOFFSET\n");
-	testAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(maxid+1));	
-	memcpy(testAr, devAr, (1+maxid) * sizeof(GPUNODE));
-
-	for (int i = 0; i <= maxid; i++) {
-		DPRINT("%d:\t%d\t%d\t%d\t%d\t%d\n", i, testAr[i].type,testAr[i].nfi,testAr[i].nfo,testAr[i].po,testAr[i].offset);
-		assert(testAr[i].type == graph[i].type && testAr[i].nfi == graph[i].nfi &&testAr[i].nfo == graph[i].nfo && testAr[i].po == graph[i].po && testAr[i].offset == graph[i].offset);
-	}
-	free(testAr);
+	
 	return devAr;
 }
 LINE* cpuLoadLines(LINE* graph, int maxid) {
@@ -349,26 +340,29 @@ void cpuShiftVectors(int* input, size_t width, size_t height) {
 float cpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan) {
 	float elapsed = 0.0;
 	timespec start, stop;
-	clock_gettime(CLOCK_REALTIME, &start);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	for (int i = 0; i < results.height; i++) {
+		DPRINT("Running TID: %d ", i);
 		cpuMarkPathSegments(results.data, i, dgraph.data, fan, results.width, results.height, dgraph.width);
 	}
-	clock_gettime(CLOCK_REALTIME, &stop);
-	elapsed = (stop.tv_nsec - start.tv_nsec) / 1000000.0;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
 	return elapsed;
 }
 float cpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
 	float elapsed;
 	timespec start, stop;
-	clock_gettime(CLOCK_REALTIME, &start);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	*(mergeresult) = (int*)malloc(sizeof(int)*input.height*input.width);
 	for (int i = 0; i < input.height; i++)
 		for (int j = 0; j< input.width; j++) {
+			DPRINT("Beginning merge %d,%d\n", i, j);
 			cpuMerge(i,j,input.data, *mergeresult, input.width);
+			DPRINT("Finished merge %d,%d\n", i, j);
 			memcpy(*mergeresult, input.data, input.bwidth());
 		}
-	clock_gettime(CLOCK_REALTIME, &stop);
-	elapsed = (stop.tv_nsec - start.tv_nsec) / 1000000.0;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
 	return elapsed;
 }
 
@@ -396,14 +390,14 @@ void cpuSumAll(int toffset, int tid, int *results, int *history, GPUNODE* node, 
 float cpuCountPaths(ARRAY2D<int> results, ARRAY2D<int> history, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
 	float elapsed = 0.0;
 	timespec start, stop;
-	clock_gettime(CLOCK_REALTIME, &start);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	DPRINT("rw %d, rh %d, gw %d, gh %d\n", results.width, results.height, dgraph.width, dgraph.height);
 	for (int j = 0; j < results.height; j++) {
 		cpuCountCoverage(0, j,results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
 	}
 	cpuSumAll(0, 0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
 
-	clock_gettime(CLOCK_REALTIME, &stop);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = (stop.tv_nsec - start.tv_nsec) / 1000000.0;
 	return elapsed;
 }
@@ -412,4 +406,24 @@ int sReturnPathCount(ARRAY2D<int> results) {
 	int tmp;
 	memcpy(&tmp, results.data, sizeof(int));
 	return tmp;
+}
+
+void debugCpuMark(ARRAY2D<int> results) {
+#ifndef NDEBUG
+	int *row;
+	DPRINT("Post-mark results\n");
+	DPRINT("Line:   \t");
+	for (int i = 0; i < results.width; i++) {
+		DPRINT("%2d ", i);
+	}
+	DPRINT("\n");
+	for (int r = 0;r < results.height; r++) {
+		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
+		DPRINT("%s %d:\t","Vector",r);
+		for (int i = 0; i < results.width; i++) {
+			DPRINT("%2d ", row[i]);
+		}
+		DPRINT("\n");
+	}
+#endif
 }

@@ -27,12 +27,10 @@ GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid) {
 	HANDLE_ERROR(cudaMalloc(&devAr, sizeof(GPUNODE)*(1+maxid)));
 	HANDLE_ERROR(cudaMemcpy(devAr, graph, (maxid+1) * sizeof(GPUNODE),cudaMemcpyHostToDevice));
 	DPRINT("Verifying GPUNODE graph copy\n");
-	DPRINT("ID\tTYPE\tFANIN\tFANOUT\tPO\tOFFSET\n");
 	testAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(maxid+1));	
 	HANDLE_ERROR(cudaMemcpy(testAr, devAr, (1+maxid) * sizeof(GPUNODE),cudaMemcpyDeviceToHost));
 
 	for (int i = 0; i <= maxid; i++) {
-		DPRINT("%d:\t%d\t%d\t%d\t%d\t%d\n", i, testAr[i].type,testAr[i].nfi,testAr[i].nfo,testAr[i].po,testAr[i].offset);
 		assert(testAr[i].type == graph[i].type && testAr[i].nfi == graph[i].nfi &&testAr[i].nfo == graph[i].nfo && testAr[i].po == graph[i].po && testAr[i].offset == graph[i].offset);
 	}
 	free(testAr);

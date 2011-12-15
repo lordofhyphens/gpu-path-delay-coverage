@@ -19,4 +19,5 @@ float cpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph
 float cpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan);
 
 int sReturnPathCount(ARRAY2D<int> results);
+void debugCpuMark(ARRAY2D<int> results);
 #endif

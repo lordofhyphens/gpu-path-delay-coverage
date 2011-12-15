@@ -70,7 +70,6 @@ __global__ void LOGIC_gate(int i, GPUNODE* node, int* fans, int* res, size_t hei
 			row[fans[goffset+nfi]] = val;
 		}
 	}
-	__syncthreads();
 }
 
 void loadSimLUTs() {
@@ -128,22 +127,18 @@ float gpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 	cudaEventRecord(start,0);
 #endif // NTIMING
 	for (int i = 0; i <= dgraph.width; i++) {
-		DPRINT("ID: %d\tFanin: %d\tFanout: %d\tType: %d\t", i, graph[i].nfi, graph[i].nfo,graph[i].type);
 		curPI = piNumber;
 		switch (graph[i].type) {
 			case 0:
 				continue;
 			case INPT:
-				DPRINT("INPT Gate");
 				INPT_gate<<<1,results.height>>>(i, curPI, results, inputs, dgraph.data, fan, pass);
 				piNumber++;
 				break;
 			default:
-				DPRINT("Logic Gate");
 				LOGIC_gate<<<1,results.height>>>(i, dgraph.data, fan, results.data, results.height, results.width, pass);
 				break;
 		}
-		DPRINT("\n");
 		cudaDeviceSynchronize();
 	}
 	// We're done simulating at this point.

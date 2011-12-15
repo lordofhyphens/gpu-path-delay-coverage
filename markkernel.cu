@@ -12,6 +12,9 @@ texture<int, 2> fromPropLUT;
 texture<int, 2> inptPropLUT;
 texture<int, 2> mergeLUT;
 
+__device__ void faninRemake(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
+
+}
 // group all results together, this implementation will fail if # of lines > 1024
 // will need to group lines into groups of 1024 or less
 __global__ void kernMerge(int* input, int* results, int width) {

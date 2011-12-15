@@ -13,26 +13,39 @@ typedef deque<nodepair>::iterator pairiter;
 
 int topologicalSort(NODE *graph, int ncount) {
 	deque<nodepair> nodes;
+	int ncnt = 0;
 	int mappings[ncount];
-
-	for (int c = 0; c <= ncount; c++) {
-		if (graph[c].typ == 0) {
-			continue; // ignore blanks
-		}
-		pairiter pos = nodes.end(); // default to the front of the queue.
-		LIST* tmp = NULL;
-		for (pairiter i = nodes.begin(); i < nodes.end(); i++) {
-			if (pos < i && pos != nodes.end()) continue;
-			tmp = i->second.fin;
-			while (tmp != NULL) {
-				if (tmp->id == i->first)
-					pos = i;
-				tmp = tmp->nxt;
+	for (int i = 0; i <= ncount;i++){
+		if (graph[i].typ != 0)
+			ncnt++;
+	}
+	while (nodes.size() < ncnt) {
+		for (int c = 0; c <= ncount; c++) {
+			if (graph[c].typ == 0) {
+				continue; // ignore blanks
+			}
+			if (graph[c].typ == INPT) {
+				nodes.push_back(make_pair(c, graph[c]));
+				graph[c].typ = 0;
+				continue;
+			}
+			LIST* fin = graph[c].fin;
+			int supported = 0;
+			while (fin != NULL) {
+				for (pairiter i = nodes.begin(); i< nodes.end(); i++) {
+					if(fin->id == i->first) {
+						supported += 1;
+						break;
+					}
+				}
+				fin = fin->nxt;
+			}
+			if (supported >= graph[c].nfi) {
+				nodes.push_back(make_pair(c, graph[c]));
+				graph[c].typ = 0;
+				continue;
 			}
 		}
-
-		pos = nodes.insert(pos, make_pair(c, graph[c]));
-		assert((pos)->second.typ == graph[c].typ);
 	}
 	int j = 0;
 	for (pairiter i = nodes.begin(); i < nodes.end(); i++) {
@@ -59,6 +72,6 @@ int topologicalSort(NODE *graph, int ncount) {
 		assert(graph[j].typ != 0);
 		j++;
 
-	}
+ 	}
 	return nodes.size();
 }
