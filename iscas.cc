@@ -376,16 +376,13 @@ GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid) {
 			continue;
 		ggraph[i].offset = off;
 		tmp = graph[i].fin;
-//		DPRINT("Node ID: %d, %s\n",i, graph[i].nam);
 		while (tmp != NULL) {
-			DPRINT("fin: %d, %d, %d\n", i, off, tmp->line);
 			ars.offsets[off] = tmp->line;
 			off++;
 			tmp = tmp->nxt;
 		}
 		tmp = graph[i].fot;
 		while (tmp != NULL) {
-			DPRINT("fot: %d, %d, %d\n", i, off, tmp->line);
 			ars.offsets[off] = tmp->line;
 			off++;
 			tmp = tmp->nxt;
