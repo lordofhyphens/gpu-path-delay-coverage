@@ -1,7 +1,7 @@
 CC=g++-4.4
 CTAG_FLAGS=--langmap=C++:+.cu --append=yes
 GPUCC=/opt/net/apps/cuda/bin/nvcc
-header=iscas.h gpuiscas.h simkernel.h markkernel.h coverkernel.h sort.h serial.h
+header=iscas.h gpuiscas.h simkernel.h markkernel.h coverkernel.h sort.h serial.h defines.h
 logfile=log.txt
 src=main.cc iscas.cc sort.cc serial.cc
 gsrc=gpuiscas.cu simkernel.cu markkernel.cu coverkernel.cu

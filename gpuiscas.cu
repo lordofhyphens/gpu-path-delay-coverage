@@ -26,7 +26,7 @@ GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid) {
 	GPUNODE *devAr, *testAr;
 	HANDLE_ERROR(cudaMalloc(&devAr, sizeof(GPUNODE)*(1+maxid)));
 	HANDLE_ERROR(cudaMemcpy(devAr, graph, (maxid+1) * sizeof(GPUNODE),cudaMemcpyHostToDevice));
-	DPRINT("Verifying GPUNODE graph copy\n");
+//	DPRINT("Verifying GPUNODE graph copy\n");
 	testAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(maxid+1));	
 	HANDLE_ERROR(cudaMemcpy(testAr, devAr, (1+maxid) * sizeof(GPUNODE),cudaMemcpyDeviceToHost));
 

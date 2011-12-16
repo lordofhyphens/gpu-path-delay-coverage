@@ -30,7 +30,6 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 	int nfi, goffset,val;
 	int *rowResults, *row;
 	if (tid < height) {
-		DPRINT("TID: %d\n", tid);
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		rowResults = (int*)malloc(sizeof(int)*width);
 		for (int i = 0; i < width; i++) {
@@ -42,7 +41,6 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 			nfi = node[i].nfi;
 			// switching based on value causes divergence, switch based on node type.
 			switch(node[i].type) {
-				
 				case FROM:
 					// For FROM, only set the "input" line if it hasn't already
 					// been set (otherwise it'll overwrite the decision of
@@ -342,7 +340,7 @@ float cpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	for (int i = 0; i < results.height; i++) {
-		DPRINT("Running TID: %d ", i);
+//		DPRINT("Running TID: %d ", i);
 		cpuMarkPathSegments(results.data, i, dgraph.data, fan, results.width, results.height, dgraph.width);
 	}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
@@ -356,9 +354,9 @@ float cpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 	*(mergeresult) = (int*)malloc(sizeof(int)*input.height*input.width);
 	for (int i = 0; i < input.height; i++)
 		for (int j = 0; j< input.width; j++) {
-			DPRINT("Beginning merge %d,%d\n", i, j);
+//			DPRINT("Beginning merge %d,%d\n", i, j);
 			cpuMerge(i,j,input.data, *mergeresult, input.width);
-			DPRINT("Finished merge %d,%d\n", i, j);
+//			DPRINT("Finished merge %d,%d\n", i, j);
 			memcpy(*mergeresult, input.data, input.bwidth());
 		}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
@@ -391,7 +389,7 @@ float cpuCountPaths(ARRAY2D<int> results, ARRAY2D<int> history, GPUNODE* graph, 
 	float elapsed = 0.0;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-	DPRINT("rw %d, rh %d, gw %d, gh %d\n", results.width, results.height, dgraph.width, dgraph.height);
+//	DPRINT("rw %d, rh %d, gw %d, gh %d\n", results.width, results.height, dgraph.width, dgraph.height);
 	for (int j = 0; j < results.height; j++) {
 		cpuCountCoverage(0, j,results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
 	}

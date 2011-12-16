@@ -248,7 +248,7 @@ int readVectors(int** vecs, FILE* fvec) {
 				case (int)'1':
 					if (count >= vecLength) {
 						vecLength += Mlin;
-						DPRINT("Allocating more memory.\n");
+//						DPRINT("Allocating more memory.\n");
 						(*vecs)=(int*)realloc(*vecs, sizeof(int)*vecLength);
 					}
 					if (str1[i] == '1') {

@@ -29,10 +29,10 @@ int main(int argc, char ** argv) {
 
 	ncnt = ReadIsc(fisc,graph);
 	ncnt = topologicalSort(graph, ncnt);
-	DPRINT("Initializing line structure.\n");	
+//	DPRINT("Initializing line structure.\n");	
 	for (int i = 0; i < ncnt; i++)
 		InitializeLines(lgraph, i);
-	DPRINT("Enumerating lines.\n");
+//	DPRINT("Enumerating lines.\n");
 	lcnt = EnumerateLines(graph,lgraph,ncnt);
 
 	test = GraphsetToArrays(graph, lgraph, ncnt);
@@ -50,21 +50,31 @@ int main(int argc, char ** argv) {
 		}
 	}
 
-	PrintCircuit(graph,ncnt);
+//	PrintCircuit(graph,ncnt);
 #ifndef CPUCOMPILE
 // GPU implementation
 	float alltime, pass1, pass2, mark, merge,cover;
 	int* dvec = gpuLoad1DVector(vec, pis, vcnt / pis);
 	int *mergeresult;
 
+
 	DPRINT("Begin GPU Calculations\n");
-	dres = gpuLoadVectors(res, lcnt, vcnt);
-	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, 4, 5);
+	DPRINT("Load data into GPU Memory....");
+	float elapsed = 0.0;
+	timespec start, stop;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+
 	dgraph = gpuLoadCircuit(test.graph,ncnt);
-	dlines = gpuLoadLines(lgraph,lcnt);
 	fans = gpuLoadFans(test.offsets,test.max_offset);
+	dres = gpuLoadVectors(res, lcnt, vcnt);
+
+	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, vcnt/pis, pis);
 	ARRAY2D<int> resArray = ARRAY2D<int>(dres,vcnt/pis,lcnt);
 	ARRAY2D<GPUNODE> graphArray = ARRAY2D<GPUNODE>(dgraph,1,ncnt);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
+	DPRINT("...complete. Took %f ms\n", elapsed);
+
 	pass1 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 1);
 	
 	TPRINT("Simulation Pass 1 time (GPU) %fms\n", pass1);
@@ -78,6 +88,7 @@ int main(int argc, char ** argv) {
 	TPRINT("Path Mark time (GPU): %fms\n",mark);
 	debugMarkOutput(resArray);
 	merge = gpuMergeHistory(resArray, &mergeresult, test.graph, graphArray, fans);
+//	debugMarkOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
 	TPRINT("Path Merge time (GPU): %fms\n",merge);
 	cover = gpuCountPaths(resArray,ARRAY2D<int>(mergeresult,resArray.height, resArray.width),test.graph,graphArray,fans);
 	TPRINT("Path Coverage time (GPU): %fms\n",cover);
@@ -108,7 +119,7 @@ int main(int argc, char ** argv) {
 	TPRINT("Simulation Pass 2 time (serial) %fms\n", pass2_s);
 	mark_s = cpuMarkPaths(sResArray, test.graph, sGraphArray, cfans);
 	TPRINT("Path Mark time (serial) %fms\n",mark_s);
-	debugCpuMark(sResArray);
+//	debugCpuMark(sResArray);
 	merge_s = cpuMergeHistory(sResArray, &mergeserial, test.graph, sGraphArray, cfans);
 	TPRINT("Path Merge time %fms\n",merge);
 

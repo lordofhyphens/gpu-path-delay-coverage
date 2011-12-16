@@ -4,6 +4,7 @@
 #include "iscas.h"
 #include "simkernel.h"
 
+#define THREAD_PER_BLOCK 256
 texture<int, 2> and2LUT;
 texture<int, 2> nand2LUT;
 texture<int, 2> or2LUT;
@@ -12,62 +13,72 @@ texture<int, 2> xor2LUT;
 texture<int, 2> xnor2LUT;
 texture<int, 2> stableLUT;
 texture<int, 1> notLUT;
-__global__ void INPT_gate(int i, int pi, ARRAY2D<int> results, ARRAY2D<int> input, GPUNODE* graph, int* fans,int pass) {
-	int tid = blockIdx.x * gridDim.x + threadIdx.x, val;
-	int *row;
-	if (tid < results.height) {
-		row = (int*)((char*)results.data + tid*results.width*sizeof(int)); // get the current row?
-		val = *(input.data+(pi+input.width*tid));
-		if (pass > 1) {
-			row[fans[graph[i].offset+graph[i].nfi]] = tex2D(stableLUT, row[fans[graph[i].offset+graph[i].nfi]], val);  
-		} else {
-			row[fans[graph[i].offset+graph[i].nfi]] = val;
-		}
-#ifdef GDEBUG // turn on GPU debugging printf statements.
-		printf("Hello thread %d, i=%d, input count: %d/%d input value=%d\n", threadIdx.x, i,pi+1,input.width, input.data[pi]) ;
-#endif
-	}
-	__syncthreads();
-}
 
-__global__ void LOGIC_gate(int i, GPUNODE* node, int* fans, int* res, size_t height, size_t width , int pass) {
-	int tid = blockIdx.x * gridDim.x + threadIdx.x, j = 1;
+__global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, int pass) {
+	int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
+	__shared__ char rowids[1000]; // handle up to fanins of 1000 / 
+	int piNumber = 0, pi = 0;
 	int *row;
-	int goffset,nfi;
-	int val;
+	int goffset, nfi, val, j,type, r;
 	if (tid < height) {
-		goffset = node[i].offset;
-		nfi = node[i].nfi;
-		row = (int*)((char*)res + tid*(width)*sizeof(int));
-		if (node[i].type != NOT) {
-			val = row[fans[goffset]];
-		} else {
-			val = tex1D(notLUT, row[fans[goffset]]);
-		}
-		while (j < nfi) {
-			switch(node[i].type) {
-				case XOR:
-					val = tex2D(xor2LUT, val, row[fans[goffset+j]]);
-				case XNOR:
-					val = tex2D(xnor2LUT, val, row[fans[goffset+j]]);
-				case OR:
-					val = tex2D(or2LUT, val, row[fans[goffset+j]]);
-				case NOR:
-					val = tex2D(nor2LUT, val, row[fans[goffset+j]]);
-				case AND:
-					val = tex2D(and2LUT, val, row[fans[goffset+j]]);
-				case NAND:
-					val = tex2D(nand2LUT, val, row[fans[goffset+j]]);
-				case NOT:
-					val = tex2D(nand2LUT, val, row[fans[goffset+j]]);
+		row = (int*)((char*)res + tid*width*sizeof(int)); // get the current row?
+		for (int i = 0; i <= width; i++) {
+			nfi = graph[i].nfi;
 
+			if (tid == 0) {
+				goffset = graph[i].offset;
+				// preload all of the fanin line #s for this gate to shared memory.
+				for (int j = 0; j < nfi;j++) 
+					rowids[j] = (char)fans[goffset+j];
 			}
-			j++;
-		}
-		if (pass > 1 && node[i].type != FROM && node[i].type != BUFF) {
-			row[fans[goffset+nfi]] = tex2D(stableLUT, row[fans[goffset+nfi]], val);  
-		} else {
-			row[fans[goffset+nfi]] = val;
+			__syncthreads();
+			type = graph[i].type;
+			switch (type) {
+				case 0: break;
+				case INPT:
+						pi = piNumber;
+						val = *(input+(pi+iwidth*tid));
+						if (pass > 1) {
+							row[i] = tex2D(stableLUT, row[i], val);  
+						} else {
+							row[i] = val;
+						}
+						piNumber++;
+						__syncthreads();
+						break;
+				default: 
+						// we're guaranteed at least one fanin per 
+						// gate if not on an input.
+						if (graph[i].type != NOT) {
+							val =  row[rowids[0]];
+						} else {
+							val = tex1D(notLUT, row[rowids[0]]);
+						}
+						j = 1;
+						while (j < nfi) {
+							r = row[rowids[j]]; 
+							switch(type) {
+								case XOR:
+									val = tex2D(xor2LUT, val, r );
+								case XNOR:
+									val = tex2D(xnor2LUT, val, r);
+								case OR:
+									val = tex2D(or2LUT, val, r);
+								case NOR:
+									val = tex2D(nor2LUT, val, r);
+								case AND:
+									val = tex2D(and2LUT, val, r);
+								case NAND:
+									val = tex2D(nand2LUT, val, r);
+							}
+							j++;
+						}
+						if (pass > 1 && type != FROM && type != BUFF) {
+							row[i] = tex2D(stableLUT, row[i], val);  
+						} else {
+							row[i] = val;
+						}
+			}
 		}
 	}
 }
@@ -118,7 +129,6 @@ void loadSimLUTs() {
 
 float gpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int pass = 1) {
 	loadSimLUTs(); // set up our lookup tables for simulation.
-	int piNumber = 0, curPI = 0;
 #ifndef NTIMING
 	float elapsed;
 	cudaEvent_t start, stop;
@@ -126,21 +136,11 @@ float gpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 	cudaEventCreate(&stop);
 	cudaEventRecord(start,0);
 #endif // NTIMING
-	for (int i = 0; i <= dgraph.width; i++) {
-		curPI = piNumber;
-		switch (graph[i].type) {
-			case 0:
-				continue;
-			case INPT:
-				INPT_gate<<<1,results.height>>>(i, curPI, results, inputs, dgraph.data, fan, pass);
-				piNumber++;
-				break;
-			default:
-				LOGIC_gate<<<1,results.height>>>(i, dgraph.data, fan, results.data, results.height, results.width, pass);
-				break;
-		}
-		cudaDeviceSynchronize();
-	}
+	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
+	DPRINT("Block count: %d, threads: %d\n", blockcount, THREAD_PER_BLOCK);
+	kernSimulate<<<blockcount,THREAD_PER_BLOCK>>>(dgraph.data,results.data, inputs.data,fan,inputs.width, results.width, results.height, pass);
+	cudaDeviceSynchronize();
+
 	// We're done simulating at this point.
 #ifndef NTIMING
 	cudaEventRecord(stop, 0);
