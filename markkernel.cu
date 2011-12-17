@@ -5,28 +5,35 @@
 #include "markkernel.h"
 
 #define THREAD_PER_BLOCK 256
-texture<int, 3> and2OutputPropLUT;
-texture<int, 3> and2InputPropLUT;
-texture<int, 3> or2OutputPropLUT;
-texture<int, 3> or2InputPropLUT;
-texture<int, 3> xor2OutputPropLUT;
-texture<int, 3> xor2InputPropLUT;
+texture<int, 2> and2OutputPropLUT;
+texture<int, 2> and2InputPropLUT;
+texture<int, 2> or2OutputPropLUT;
+texture<int, 2> or2InputPropLUT;
+texture<int, 2> xor2OutputPropLUT;
+texture<int, 2> xor2InputPropLUT;
 texture<int, 2> fromPropLUT;
 texture<int, 2> inptPropLUT;
 texture<int, 2> mergeLUT;
+
+texture<int, 2> AndInChainLUT;
+texture<int, 2> AndOutChainLUT;
+texture<int, 2> OrInChainLUT;
+texture<int, 2> OrOutChainLUT;
+texture<int, 2> XorInChainLUT;
+texture<int, 2> XorOutChainLUT;
 
 __device__ void faninRemake(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
 
 }
 // group all results together, this implementation will fail if # of lines > 1024
 // will need to group lines into groups of 1024 or less
-__global__ void kernMerge(int* input, int* results, int width) {
+__global__ void kernMerge(int* input, int* results, int width, int height) {
 	int *r,result, i;
 	if (threadIdx.x < width) {
 		result = 0;
-		for (i = 0; i < blockIdx.x; i++) {
+		for (i = 0; i <= blockIdx.x; i++) {
 			r = (int*)((char*)input + sizeof(int)*i*width);
-			result = tex2D(mergeLUT,result,r[threadIdx.x]);
+			result = (result || r[threadIdx.x]);
 		}
 		r = (int*)((char*)results + sizeof(int)*width*blockIdx.x);
 		r[threadIdx.x] = result;
@@ -44,88 +51,63 @@ void loadPropLUTs() {
 	// Creating a set of static arrays that represent our LUTs
 		// Addressing for the propagations:
 	// 2 4x4 groups such that 
-	int and2_output_prop[32] ={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,1,1,1,1,1,0,1,1,1};
-	int and2_input_prop[32] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,0,0,0,1,1};
-	int or2_output_prop[32] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
-	int or2_input_prop[32] =  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
-	int xor2_input_prop[32] =  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
-	int xor2_output_prop[32] =  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
-	int from_prop[16]      =  {0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1};
-	int inpt_prop[8] = {0,0,0,0,0,0,1,1};
+	int and2_output_prop[16]= {0,0,1,0,0,0,1,1,1,1,1,1,0,1,1,1};
+	int and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,1,1};
+	int or2_output_prop[16] = {0,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
+	int or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	int xor2_input_prop[16] = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	int xor2_output_prop[16]= {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	int from_prop[16]       = {0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1};
+	int inpt_prop[8]        = {0,0,0,0,0,0,1,1};
+
+	int and_outp_chain[8]   = {0,0,1,0,0,1,1,1};
+	int and_inp_chain[8]    = {0,0,0,0,0,1,1,1};
+	int or_outp_chain[8]    = {0,0,0,1,1,0,1,1};
+	int or_inp_chain[8]     = {0,0,0,0,1,0,1,1};
+	int xor_outp_chain[8]   = {0,0,0,0,0,0,0,0};
+	int xor_inp_chain[8]    = {0,0,0,0,0,0,0,0};
 
 	cudaExtent volumeSize = make_cudaExtent(4,4,2);
 	// device memory arrays, required. 
 	cudaArray *cuAndInptProp, *cuAndOutpProp, *cuOrInptProp, *cuOrOutpProp, *cuFromProp, *cuInptProp, *cuXorInptProp, *cuXorOutpProp;
+	cudaArray *cuAndOutChain, *cuAndInChain, *cuOrInChain, *cuOrOutChain, *cuXorInChain, *cuXorOutChain;
 	// generic formatting information. All of our arrays are the same, so sharing it shouldn't be a problem.
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
 	// Allocating memory on the device.
 		
 	cudaMallocArray(&cuFromProp, &channelDesc, 4,4);
 	cudaMallocArray(&cuInptProp, &channelDesc, 4,2);
-	cudaMalloc3DArray(&cuAndInptProp, &channelDesc, volumeSize);
-	cudaMalloc3DArray(&cuAndOutpProp, &channelDesc, volumeSize);
-	cudaMalloc3DArray(&cuOrInptProp, &channelDesc, volumeSize);
-	cudaMalloc3DArray(&cuOrOutpProp, &channelDesc, volumeSize);
-	cudaMalloc3DArray(&cuXorInptProp, &channelDesc, volumeSize);
-	cudaMalloc3DArray(&cuXorOutpProp, &channelDesc, volumeSize);
+	cudaMallocArray(&cuAndInptProp, &channelDesc, 4,4);
+	cudaMallocArray(&cuAndOutpProp, &channelDesc, 4,4);
+	cudaMallocArray(&cuOrInptProp, &channelDesc, 4,4);
+	cudaMallocArray(&cuOrOutpProp, &channelDesc, 4,4);
+	cudaMallocArray(&cuXorInptProp, &channelDesc, 4,4);
+	cudaMallocArray(&cuXorOutpProp, &channelDesc, 4,4);
 
-	cudaMemcpy3DParms copyParams = {0};
-	copyParams.srcPtr = make_cudaPitchedPtr((void*)and2_output_prop, volumeSize.width*sizeof(int), volumeSize.width, volumeSize.height);
-	copyParams.dstArray = cuAndOutpProp;
-	copyParams.extent =  volumeSize;
-	copyParams.kind = cudaMemcpyHostToDevice;
-	cudaMemcpy3D(&copyParams);
-	and2OutputPropLUT.addressMode[2]=cudaAddressModeClamp;
-	and2OutputPropLUT.addressMode[0]=cudaAddressModeClamp;
-	and2OutputPropLUT.addressMode[1]=cudaAddressModeClamp;
+	cudaMallocArray(&cuXorOutChain, &channelDesc, 4,2);
+	cudaMallocArray(&cuXorInChain, &channelDesc, 4,2);
+	cudaMallocArray(&cuOrInChain, &channelDesc, 4,2);
+	cudaMallocArray(&cuOrOutChain, &channelDesc, 4,2);
+	cudaMallocArray(&cuAndInChain, &channelDesc, 4,2);
+	cudaMallocArray(&cuAndOutChain, &channelDesc, 4,2);
 
-	copyParams.srcPtr = make_cudaPitchedPtr((void*)and2_input_prop, volumeSize.width*sizeof(int), volumeSize.width, volumeSize.height);
-	copyParams.dstArray = cuAndInptProp;
-	copyParams.extent =  volumeSize;
-	copyParams.kind = cudaMemcpyHostToDevice;
-	cudaMemcpy3D(&copyParams);
-	and2OutputPropLUT.addressMode[2]=cudaAddressModeClamp;
-	and2OutputPropLUT.addressMode[0]=cudaAddressModeClamp;
-	and2OutputPropLUT.addressMode[1]=cudaAddressModeClamp;
-
-	copyParams.srcPtr = make_cudaPitchedPtr((void*)or2_output_prop, volumeSize.width*sizeof(int), volumeSize.width, volumeSize.height);
-	copyParams.dstArray = cuOrOutpProp;
-	copyParams.extent =  volumeSize;
-	copyParams.kind = cudaMemcpyHostToDevice;
-	cudaMemcpy3D(&copyParams);
-	or2OutputPropLUT.addressMode[2]=cudaAddressModeClamp;
-	or2OutputPropLUT.addressMode[0]=cudaAddressModeClamp;
-	or2OutputPropLUT.addressMode[1]=cudaAddressModeClamp;
-
-	copyParams.srcPtr = make_cudaPitchedPtr((void*)or2_input_prop, volumeSize.width*sizeof(int), volumeSize.width, volumeSize.height);
-	copyParams.dstArray = cuOrInptProp;
-	copyParams.extent =  volumeSize;
-	copyParams.kind = cudaMemcpyHostToDevice;
-	cudaMemcpy3D(&copyParams);
-	or2OutputPropLUT.addressMode[2]=cudaAddressModeClamp;
-	or2OutputPropLUT.addressMode[0]=cudaAddressModeClamp;
-	or2OutputPropLUT.addressMode[1]=cudaAddressModeClamp;
-
-	copyParams.srcPtr = make_cudaPitchedPtr((void*)xor2_input_prop, volumeSize.width*sizeof(int), volumeSize.width, volumeSize.height);
-	copyParams.dstArray = cuXorInptProp;
-	copyParams.extent =  volumeSize;
-	copyParams.kind = cudaMemcpyHostToDevice;
-	cudaMemcpy3D(&copyParams);
-	or2OutputPropLUT.addressMode[2]=cudaAddressModeClamp;
-	or2OutputPropLUT.addressMode[0]=cudaAddressModeClamp;
-	or2OutputPropLUT.addressMode[1]=cudaAddressModeClamp;
 	// Copying the LUTs Host->Device
 	cudaMemcpyToArray(cuFromProp, 0,0, from_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuAndInptProp, 0,0, and2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuAndOutpProp, 0,0, and2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuOrInptProp, 0,0, or2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuOrOutpProp, 0,0, or2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuXorInptProp, 0,0, xor2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuXorOutpProp, 0,0, xor2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
 	cudaMemcpyToArray(cuInptProp, 0,0, inpt_prop, sizeof(int)*8,cudaMemcpyHostToDevice);
+	
+	cudaMemcpyToArray(cuXorInChain, 0,0, xor_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuXorOutChain, 0,0, xor_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuOrInChain, 0,0, or_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuOrOutChain, 0,0, or_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuAndInChain, 0,0, and_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
+	cudaMemcpyToArray(cuAndOutChain, 0,0, and_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
 
-	copyParams.srcPtr = make_cudaPitchedPtr((void*)xor2_output_prop, volumeSize.width*sizeof(int), volumeSize.width, volumeSize.height);
-	copyParams.dstArray = cuXorOutpProp;
-	copyParams.extent =  volumeSize;
-	copyParams.kind = cudaMemcpyHostToDevice;
-	cudaMemcpy3D(&copyParams);
-	or2OutputPropLUT.addressMode[2]=cudaAddressModeClamp;
-	or2OutputPropLUT.addressMode[0]=cudaAddressModeClamp;
-	or2OutputPropLUT.addressMode[1]=cudaAddressModeClamp;
 	// Marking them as textures. LUTs should be in texture memory and cached on
 	// access.
 	cudaBindTextureToArray(and2OutputPropLUT,cuAndOutpProp,channelDesc);
@@ -136,49 +118,51 @@ void loadPropLUTs() {
 	cudaBindTextureToArray(xor2OutputPropLUT,cuXorOutpProp,channelDesc);
 	cudaBindTextureToArray(fromPropLUT,cuFromProp,channelDesc);
 	cudaBindTextureToArray(inptPropLUT,cuInptProp,channelDesc);
+	
+	cudaBindTextureToArray(XorOutChainLUT,cuXorOutChain,channelDesc);
+	cudaBindTextureToArray(XorInChainLUT,cuXorInChain,channelDesc);
+	cudaBindTextureToArray(OrOutChainLUT,cuOrOutChain,channelDesc);
+	cudaBindTextureToArray(OrInChainLUT,cuOrInChain,channelDesc);
+	cudaBindTextureToArray(AndOutChainLUT,cuAndOutChain,channelDesc);
+	cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc);
 }
+
+
 
 __device__ int willPathPropagate(int tid, int* results, GPUNODE* node, int* fans, size_t width) {
 	return -1;
 }
 __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
-	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val, type;
+	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val;
 	__shared__ char rowids[1000]; // handle up to fanins of 1000 / 
 	int *rowResults, *row;
-	__shared__ int fan[20];
 	if (tid < height) {
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		rowResults = (int*)malloc(sizeof(int)*width);
-		for (int i = 0; i < width; i++) {
-			rowResults[i] = UNINITIALIZED;
-		}
 		for (int i = ncount; i >= 0; i--) {
+			nfi = node[i].nfi;
 			if (tid == 0) {
 				goffset = node[i].offset;
 				// preload all of the fanin line #s for this gate to shared memory.
-				for (int j = 0; j < nfi;j++) 
+				for (int j = 0; j < nfi;j++) {
 					rowids[j] = (char)fans[goffset+j];
+				}
 			}
 			__syncthreads();
-			val = UNINITIALIZED;
-			goffset = node[i].offset;
-			for (int j = 0; j < nfi; j++) {
-				fan[j] = fans[goffset+j];
-			}
 			// switching based on value causes divergence, switch based on node type.
+			val = (row[i] > 1);
+			if (node[i].po) {
+				rowResults[i] = val;
+			}
 			switch(node[i].type) {
 				case FROM:
 					// For FROM, only set the "input" line if it hasn't already
 					// been set (otherwise it'll overwrite the decision of
 					// another system somewhere else.
-					if (rowResults[fans[goffset]] == UNINITIALIZED) {
-						val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]);
-						rowResults[rowids[0]] = val;
-						rowResults[i] = val;
-					} else {
-						val = tex2D(inptPropLUT, row[fans[goffset]],rowResults[i]);
-						rowResults[i] = val;
-					}
+					val = tex2D(inptPropLUT, row[rowids[0]],row[i]);
+					rowResults[rowids[0]] |= val;
+					rowResults[i] &= val;
+//					printf("T: %d (FROM), %d val=%d %d=%d, %d=%d\n", tid, i, val, rowids[0],rowResults[rowids[0]],i,rowResults[i]);
 					break;
 
 					// For the standard gates, setting three values -- both the
@@ -199,30 +183,52 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 
 				case NAND:
 				case AND:
-					rowResults[rowids[0]] = tex3D(and2InputPropLUT, row[rowids[0]],row[rowids[1]],row[i]-1);
-					rowResults[rowids[1]] = tex3D(and2InputPropLUT, row[rowids[1]],row[rowids[0]],row[i]-1);
-					rowResults[i] = tex3D(and2OutputPropLUT, row[rowids[0]],row[rowids[1]],row[i]-1);
+					rowResults[i] &= val && tex2D(and2OutputPropLUT, row[rowids[0]],row[rowids[1]]);
+					rowResults[rowids[0]] = val && tex2D(and2InputPropLUT, row[rowids[0]],row[rowids[1]]);
+					rowResults[rowids[1]] = val && tex2D(and2InputPropLUT, row[rowids[1]],row[rowids[0]]);
+//					printf("T: %d (NAND), %d %d=%d, %d=%d, %d=%d\n", tid, i, rowids[0],rowResults[rowids[0]],rowids[1],rowResults[rowids[1]],i,rowResults[i]);
 					break;
 				case OR:
 				case NOR:
-					rowResults[rowids[0]] = tex3D(or2InputPropLUT, row[rowids[0]],row[rowids[1]],row[i]-1);
-					rowResults[rowids[1]] = tex3D(or2InputPropLUT, row[rowids[1]],row[rowids[0]],row[i]-1);
-					rowResults[i] = tex3D(or2OutputPropLUT, row[rowids[0]],row[rowids[1]],row[i]-1);
+					rowResults[rowids[0]] = val && tex2D(or2InputPropLUT, row[rowids[0]],row[rowids[1]]);
+					rowResults[rowids[1]] = val && tex2D(or2InputPropLUT, row[rowids[1]],row[rowids[0]]);
+					rowResults[i] = val && tex2D(or2OutputPropLUT, row[rowids[0]],row[rowids[1]]);
 					break;
 				case XOR:
 				case XNOR:
-					rowResults[rowids[0]] = tex3D(xor2InputPropLUT, row[rowids[0]],row[rowids[1]],row[i]-1);
-					rowResults[rowids[1]] = tex3D(xor2InputPropLUT, row[rowids[1]],row[rowids[0]],row[i]-1);
-					rowResults[i] = tex3D(xor2OutputPropLUT, row[rowids[0]],row[rowids[1]],row[i]-1);
+					rowResults[rowids[0]] = val && tex2D(xor2InputPropLUT, row[rowids[0]],row[rowids[1]]);
+					rowResults[rowids[1]] = val && tex2D(xor2InputPropLUT, row[rowids[1]],row[rowids[0]]);
+					rowResults[i] = val && tex2D(xor2OutputPropLUT, row[rowids[0]],row[rowids[1]]);
+					break;
 				case BUFF:
 				case NOT:
-						val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]);
-						rowResults[rowids[0]] = val;
-						rowResults[i] = val;
+					val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]);
+					rowResults[rowids[0]] = val;
+					rowResults[i] = val;
 					break;
 				default:
 					// if there is a transition that will propagate, set = to some positive #?
 					break;
+			}
+		}
+		// routine to clear false paths
+		// work back from POs again. If this path is not marked AND any fanins are marked, clear
+		// that mark. 
+		for (int i = ncount; i >= 0; i--) {
+			nfi = node[i].nfi;
+			if (tid == 0) {
+				goffset = node[i].offset;
+				// preload all of the fanin line #s for this gate to shared memory.
+				for (int j = 0; j < nfi;j++) 
+					rowids[j] = (char)fans[goffset+j];
+			}
+			__syncthreads();
+			int bin = rowResults[i];
+			if (node[i].type == INPT) {
+				continue;
+			}
+			for (int j = 0; j < node[i].nfi; j++) {
+				rowResults[rowids[j]] &= bin;
 			}
 		}
 		// replace our working set.
@@ -267,7 +273,8 @@ float gpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 	cudaEventCreate(&stop);
 	cudaEventRecord(start,0);
 #endif // NTIMING
-	kernMerge<<<input.height,input.width>>>(input.data, *mergeresult, input.width);
+	DPRINT("height: %d width: %d\n", input.height, input.width);
+	kernMerge<<<input.height,input.width>>>(input.data, *mergeresult, input.width, input.height);
 	cudaDeviceSynchronize();
 #ifndef NTIMING
 	cudaEventRecord(stop, 0);

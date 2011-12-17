@@ -22,7 +22,7 @@ cpu: CFLAGS = -DCPUCOMPILE -g
 cpu: tags $(out)-cpu
 
 ${out}: $(obj) ${gobj} 
-	${GPUCC} ${NVCFLAGS} -o ${out} ${obj} ${gobj}
+	@${GPUCC} ${NVCFLAGS} -o ${out} ${obj} ${gobj}
 ${out}-cpu: $(obj) 
 	${CC} -lrt -o ${out}-cpu ${obj} 
 ${obj}: ${src} ${header}

@@ -81,14 +81,13 @@ int main(int argc, char ** argv) {
 //	debugSimulationOutput(resArray,1);
 	gpuShiftVectors(dvec, pis, vcnt/pis);
 	pass2 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 2);
-
 	TPRINT("Simulation Pass 2 time (GPU): %fms\n", pass2);
 //	debugSimulationOutput(resArray,2);
 	mark = gpuMarkPaths(resArray, test.graph, graphArray, fans);
 	TPRINT("Path Mark time (GPU): %fms\n",mark);
 	debugMarkOutput(resArray);
 	merge = gpuMergeHistory(resArray, &mergeresult, test.graph, graphArray, fans);
-//	debugMarkOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
+	debugMarkOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
 	TPRINT("Path Merge time (GPU): %fms\n",merge);
 	cover = gpuCountPaths(resArray,ARRAY2D<int>(mergeresult,resArray.height, resArray.width),test.graph,graphArray,fans);
 	TPRINT("Path Coverage time (GPU): %fms\n",cover);
@@ -114,14 +113,17 @@ int main(int argc, char ** argv) {
 
 	pass1_s = cpuRunSimulation(sResArray, sInputArray, test.graph,sGraphArray,cfans, 1);
 	TPRINT("Simulation Pass 1 time (serial) %fms\n", pass1_s);
+	debugCpuSimulationOutput(sResArray,1);
 	cpuShiftVectors(cvec, pis, vcnt/pis);
 	pass2_s = cpuRunSimulation(sResArray, sInputArray, test.graph,sGraphArray,cfans, 2);
+	debugCpuSimulationOutput(sResArray,2);
 	TPRINT("Simulation Pass 2 time (serial) %fms\n", pass2_s);
 	mark_s = cpuMarkPaths(sResArray, test.graph, sGraphArray, cfans);
 	TPRINT("Path Mark time (serial) %fms\n",mark_s);
-//	debugCpuMark(sResArray);
+	debugCpuMark(sResArray);
 	merge_s = cpuMergeHistory(sResArray, &mergeserial, test.graph, sGraphArray, cfans);
 	TPRINT("Path Merge time %fms\n",merge);
+	debugCpuMark(sResArray);
 
 	cover = cpuCountPaths(sResArray,ARRAY2D<int>(mergeserial,sResArray.height, sResArray.width),test.graph,sGraphArray,fans);
 	TPRINT("Path Coverage time (serial) %fms\n",cover_s);

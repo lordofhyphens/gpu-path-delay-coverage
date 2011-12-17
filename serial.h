@@ -20,4 +20,5 @@ float cpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 
 int sReturnPathCount(ARRAY2D<int> results);
 void debugCpuMark(ARRAY2D<int> results);
+void debugCpuSimulationOutput(ARRAY2D<int> results, int pass);
 #endif
