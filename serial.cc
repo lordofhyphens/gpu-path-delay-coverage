@@ -201,7 +201,7 @@ void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth,
 	int or2[4][4]   = {{0, 1, 0, 1}, {1, 1, 1, 1}, {0, 1, 0, 1}, {1, 1, 1, 1}};
 	int xnor2[4][4] = {{1, 0, 1, 0}, {0, 1, 0, 1}, {1, 0, 1, 0}, {0, 1, 0, 1}};
 	int xor2[4][4]  = {{0, 1, 0, 1}, {1, 0, 1, 0}, {0, 1, 0, 1}, {1, 0, 1, 0}};
-	int stable[2][2] = {{S0, T0}, {T1, S1}};
+	int stable[2][2] = {{S0, T1}, {T0, S1}};
 	int from[4] = {0, 0, 1, 1};
 	int notl[4] = {1, 0, 1, 0};
 	char rowids[1000]; // handle up to fanins of 1000 / 
@@ -209,8 +209,8 @@ void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth,
 	int *row;
 	int goffset, nfi, val, j,type, r;
 	if (tid < height) {
-		row = (res + tid*width); // get the current row?
-		for (int i = 0; i <= width; i++) {
+		row = res + tid*width; // get the current row?
+		for (int i = 0; i < width; i++) {
 			nfi = graph[i].nfi;
 			goffset = graph[i].offset;
 			// preload all of the fanin line #s for this gate to shared memory.
@@ -223,13 +223,12 @@ void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth,
 						pi = piNumber;
 						val = *(input+(pi+iwidth*tid));
 						if (pass > 1) {
-							row[i] = stable[(row[i] > 1)][val];
-//							DPRINT("row[%d] = %d \n",i, row[i]);
+							row[i] = stable[row[i]][val];  
 						} else {
 							row[i] = val;
 						}
 						piNumber++;
-						break;
+						continue;
 				default: 
 						// we're guaranteed at least one fanin per 
 						// gate if not on an input.
@@ -257,15 +256,26 @@ void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth,
 							}
 							j++;
 						}
-						if (pass > 1 && type != FROM && type != BUFF) {
-							row[i] = stable[(row[i] > 1)][val];
-						} else {
-							row[i] = val;
-						}
+			}
+			switch (pass) {
+				case 1:
+					assert(val < 2);
+					row[i] = val;
+					assert(row[i] < 2);
+					break;
+				default:
+					if (type != FROM && type != BUFF) {
+						assert(row[i] < 2);
+						assert(val < 2);
+						row[i] = stable[row[i]][val];
+					}  else {
+						row[i] = val;
+					}
 			}
 		}
 	}
 }
+
 
 float cpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int pass) {
 	int piNumber = 0, curPI = 0;
@@ -274,9 +284,7 @@ float cpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	for (int j = 0; j < results.height; j++) {
-		for (int i = 0; i < dgraph.width; i++) {
-			cpuSimulate(dgraph.data, results.data, inputs.data, fan, inputs.width, results.width,results.height,pass, j);
-		}
+		cpuSimulate(dgraph.data, results.data, inputs.data, fan, inputs.width, results.width,results.height,pass,j);
 	}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
