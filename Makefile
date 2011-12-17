@@ -39,7 +39,7 @@ ${gobj}: ${gsrc}
 tags: ${src} ${gsrc} ${header}
 	ctags ${CTAG_FLAGS} $?
 clean:
-	rm -f ${out} ${out}-cpu ${obj} ${gobj} $(header:.h=.h.gch) ${logfile} ${gsrc:.cu=_wrap.cu} ${src:.cc=_wrap.cxx} ${PYLIB} ${gsrc:.cu=_wrap.o}  ${src:.cu=_wrap.o}
+	rm -f ${out} ${out}-cpu ${obj} ${gobj} $(header:.h=.h.gch) ${logfile} ${gsrc:.cu=_wrap.cu} ${src:.cc=_wrap.cxx} ${PYLIB} ${gsrc:.cu=_wrap.o}  ${src:.cc=_wrap.o} swig_*.py
 
 
 

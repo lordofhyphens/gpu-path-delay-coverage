@@ -1,8 +1,11 @@
 *.swp
+swig_*
+*_wrap.*
 a.out
 fcount
 tags
 fcount-cpu
+_fsim.so
 log.txt
 *.o
 *.gch

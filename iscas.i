@@ -1,4 +1,4 @@
-%module iscas
+%module swig_iscas
 %{
     #include "iscas.h"
 %}
