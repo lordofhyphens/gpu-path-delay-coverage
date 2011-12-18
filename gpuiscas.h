@@ -1,8 +1,10 @@
 #ifndef GPUISCAS_H
 #define GPUISCAS_H
 #include "iscas.h"
+#include <cuda.h>
 int* gpuLoadVectors(int** input, size_t width, size_t height);
 int* gpuLoad1DVector(int* input, size_t width, size_t height);
+int* loadPinned(int*, size_t);
 
 int* gpuLoadFans(int* offset, int maxid);
 void gpuShiftVectors(int* input, size_t width, size_t height);
@@ -31,4 +33,7 @@ template <class t>
 size_t ARRAY2D<t>::bwidth() {
 	return (sizeof(t) * width);
 }
+
+void freeMemory(int* data);
+void freeMemory(GPUNODE* data);
 #endif

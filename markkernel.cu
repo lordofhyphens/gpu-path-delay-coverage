@@ -22,9 +22,6 @@ texture<int, 2> OrOutChainLUT;
 texture<int, 2> XorInChainLUT;
 texture<int, 2> XorOutChainLUT;
 
-__device__ void faninRemake(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
-
-}
 // group all results together, this implementation will fail if # of lines > 1024
 // will need to group lines into groups of 1024 or less
 __global__ void kernMerge(int* input, int* results, int width, int height) {
@@ -127,11 +124,6 @@ void loadPropLUTs() {
 	cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc);
 }
 
-
-
-__device__ int willPathPropagate(int tid, int* results, GPUNODE* node, int* fans, size_t width) {
-	return -1;
-}
 __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val;
 	__shared__ char rowids[1000]; // handle up to fanins of 1000 / 
@@ -159,7 +151,9 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 					// For FROM, only set the "input" line if it hasn't already
 					// been set (otherwise it'll overwrite the decision of
 					// another system somewhere else.
-					val = tex2D(inptPropLUT, row[rowids[0]],row[i]);
+
+					val = (rowResults[i] > 0 && row[rowids[0]] > 1);
+					printf("T: %d G %d rowResults[i]: %d row[rowids[0]]: %d val: %d\n",tid,i, rowResults[i], row[rowids[0]],val);
 					rowResults[rowids[0]] |= val;
 					rowResults[i] &= val;
 //					printf("T: %d (FROM), %d val=%d %d=%d, %d=%d\n", tid, i, val, rowids[0],rowResults[rowids[0]],i,rowResults[i]);
@@ -186,7 +180,6 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 					rowResults[i] &= val && tex2D(and2OutputPropLUT, row[rowids[0]],row[rowids[1]]);
 					rowResults[rowids[0]] = val && tex2D(and2InputPropLUT, row[rowids[0]],row[rowids[1]]);
 					rowResults[rowids[1]] = val && tex2D(and2InputPropLUT, row[rowids[1]],row[rowids[0]]);
-//					printf("T: %d (NAND), %d %d=%d, %d=%d, %d=%d\n", tid, i, rowids[0],rowResults[rowids[0]],rowids[1],rowResults[rowids[1]],i,rowResults[i]);
 					break;
 				case OR:
 				case NOR:
@@ -214,6 +207,7 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 		// routine to clear false paths
 		// work back from POs again. If this path is not marked AND any fanins are marked, clear
 		// that mark. 
+		// if this segment is marked AND NONE of its fanins are marked, clear this mark.
 		for (int i = ncount; i >= 0; i--) {
 			nfi = node[i].nfi;
 			if (tid == 0) {
@@ -229,6 +223,13 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 			}
 			for (int j = 0; j < node[i].nfi; j++) {
 				rowResults[rowids[j]] &= bin;
+			}
+			if (node[i].type != INPT) {
+				bin = rowResults[rowids[0]];
+				for (int j = 1; j < node[i].nfi; j++) {
+					bin |= rowResults[rowids[j]];
+				}
+				rowResults[i] &= bin;
 			}
 		}
 		// replace our working set.

@@ -2,12 +2,12 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "defines.h"
+#include "iscas.h"
+#include "gpuiscas.h"
 #include "simkernel.h"
 #include "markkernel.h"
 #include "coverkernel.h"
-#include "iscas.h"
 #include "serial.h"
-#include "gpuiscas.h"
 #include "sort.h"
 
 int main(int argc, char ** argv) {
@@ -26,22 +26,27 @@ int main(int argc, char ** argv) {
 	fisc=fopen(argv[1],"r");
 	fvec=fopen(argv[2],"r");
 	vcnt = readVectors(&vec, fvec);
+//	vec = loadPinned(vec, vcnt);
+	
 
 	ncnt = ReadIsc(fisc,graph);
 	ncnt = topologicalSort(graph, ncnt);
 //	DPRINT("Initializing line structure.\n");	
 	for (int i = 0; i < ncnt; i++)
 		InitializeLines(lgraph, i);
-//	DPRINT("Enumerating lines.\n");
+//	DPRINT("Enumerating lines....");
 	lcnt = EnumerateLines(graph,lgraph,ncnt);
-
+//	DPRINT("complete.\n");
+//	DPRINT("Copying to flat arrays...");
+//	PrintCircuit(graph, ncnt);
 	test = GraphsetToArrays(graph, lgraph, ncnt);
+//	DPRINT("complete.\n");
 
 	for(int i = 0; i < ncnt; i++) {
 		if (graph[i].typ == INPT)
 			pis++;
 	}
-
+//	DPRINT("Allocating results memory on host...");
 	res = (int**)malloc(sizeof(int*)*vcnt);
 	for (int i = 0; i < vcnt; i++) {
 		res[i] = (int*)malloc(sizeof(int)*lcnt);
@@ -50,58 +55,69 @@ int main(int argc, char ** argv) {
 		}
 	}
 
+//	DPRINT("complete.\n");
 //	PrintCircuit(graph,ncnt);
 #ifndef CPUCOMPILE
 // GPU implementation
-	float alltime, pass1, pass2, mark, merge,cover;
-	int* dvec = gpuLoad1DVector(vec, pis, vcnt / pis);
+	float alltime, pass1=0.0, pass2=0.0, mark = 0.0, merge =0.0,cover=0.0;
+	int* dvec;
 	int *mergeresult;
 
 
-	DPRINT("Begin GPU Calculations\n");
-	DPRINT("Load data into GPU Memory....");
+//	DPRINT("Begin GPU Calculations\n");
+//	DPRINT("Load data into GPU Memory....");
 	float elapsed = 0.0;
 	timespec start, stop;
+//	DPRINT("Getting time.");
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 
+//	DPRINT("Loading circuit...");
 	dgraph = gpuLoadCircuit(test.graph,ncnt);
+//	DPRINT("complete.\n");
 	fans = gpuLoadFans(test.offsets,test.max_offset);
+//	DPRINT("Allocating GPU results memory....");
 	dres = gpuLoadVectors(res, lcnt, vcnt);
+//	DPRINT("...complete.\n");
+//	DPRINT("W: %d H: %d\n", pis, (vcnt/pis));
+//	DPRINT("Loading test vectors into GPU Memory...");
+	dvec = gpuLoad1DVector(vec, pis, vcnt / pis);
+	freeMemory(vec);
+//	DPRINT("...complete.\n");
 
 	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, vcnt/pis, pis);
 	ARRAY2D<int> resArray = ARRAY2D<int>(dres,vcnt/pis,lcnt);
 	ARRAY2D<GPUNODE> graphArray = ARRAY2D<GPUNODE>(dgraph,1,ncnt);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
-	DPRINT("...complete. Took %f ms\n", elapsed);
+//	DPRINT("GPU Memory Time: %f ms\n", elapsed);
 
 	pass1 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 1);
 	
-	TPRINT("Simulation Pass 1 time (GPU) %fms\n", pass1);
+//	TPRINT("Simulation Pass 1 time (GPU): %f ms\n", pass1);
 //	debugSimulationOutput(resArray,1);
 	gpuShiftVectors(dvec, pis, vcnt/pis);
 	pass2 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 2);
-	TPRINT("Simulation Pass 2 time (GPU): %fms\n", pass2);
-//	debugSimulationOutput(resArray,2);
+//	TPRINT("Simulation Pass 2 time (GPU): %f ms\n", pass2);
+	debugSimulationOutput(resArray,2);
 	mark = gpuMarkPaths(resArray, test.graph, graphArray, fans);
-	TPRINT("Path Mark time (GPU): %fms\n",mark);
+//	TPRINT("Path Mark time (GPU): %fms\n",mark);
 	debugMarkOutput(resArray);
 	merge = gpuMergeHistory(resArray, &mergeresult, test.graph, graphArray, fans);
 	debugMarkOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
-	TPRINT("Path Merge time (GPU): %fms\n",merge);
+//	TPRINT("Path Merge time (GPU): %fms\n",merge);
 	cover = gpuCountPaths(resArray,ARRAY2D<int>(mergeresult,resArray.height, resArray.width),test.graph,graphArray,fans);
+	debugCoverOutput(resArray);
 	TPRINT("Path Coverage time (GPU): %fms\n",cover);
 	alltime = pass1 + pass2 + mark + merge + cover;
 
 	TPRINT("Total Path Count for vectors (GPU): %d\n", returnPathCount(resArray));
-	TPRINT("Total time (GPU) : %fms\n", alltime);
+	TPRINT("%d, %f,%f,", vcnt/pis,elapsed, alltime);
 #endif
 // Serial implementation
-	float alltime_S, pass1_s, pass2_s, mark_s, merge_s, cover_s;
+	float alltime_s=0.0, pass1_s=0.0, pass2_s=0.0, mark_s=0.0, merge_s=0.0, cover_s=0.0;
 	int *cres, *cfans, *cvec; // serial implementation
 	GPUNODE *cgraph;
 	int *mergeserial;
-	
 	cres = cpuLoadVectors(res, lcnt, vcnt);
 	cvec = cpuLoad1DVector(vec, pis, vcnt / pis);
 	cfans = cpuLoadFans(test.offsets,test.max_offset);
@@ -112,25 +128,24 @@ int main(int argc, char ** argv) {
 	ARRAY2D<int> sInputArray = ARRAY2D<int>(cvec, 4, 5);
 
 	pass1_s = cpuRunSimulation(sResArray, sInputArray, test.graph,sGraphArray,cfans, 1);
-	TPRINT("Simulation Pass 1 time (serial) %fms\n", pass1_s);
-	debugCpuSimulationOutput(sResArray,1);
+//	TPRINT("Simulation Pass 1 time (serial): %f ms\n", pass1_s);
+//	debugCpuSimulationOutput(sResArray,1);
 	cpuShiftVectors(cvec, pis, vcnt/pis);
 	pass2_s = cpuRunSimulation(sResArray, sInputArray, test.graph,sGraphArray,cfans, 2);
-	debugCpuSimulationOutput(sResArray,2);
-	TPRINT("Simulation Pass 2 time (serial) %fms\n", pass2_s);
-	mark_s = cpuMarkPaths(sResArray, test.graph, sGraphArray, cfans);
-	TPRINT("Path Mark time (serial) %fms\n",mark_s);
-	debugCpuMark(sResArray);
-	merge_s = cpuMergeHistory(sResArray, &mergeserial, test.graph, sGraphArray, cfans);
-	TPRINT("Path Merge time %fms\n",merge);
-	debugCpuMark(sResArray);
+//	debugCpuSimulationOutput(sResArray,2);
+//	TPRINT("Simulation Pass 2 time (serial): %f ms\n", pass2_s);
+//	mark_s = cpuMarkPaths(sResArray, test.graph, sGraphArray, cfans);
+//	TPRINT("Path Mark time (serial) %fms\n",mark_s);
+//	debugCpuMark(sResArray);
+//	merge_s = cpuMergeHistory(sResArray, &mergeserial, test.graph, sGraphArray, cfans);
+//	TPRINT("Path Merge time %fms\n",merge);
+//	debugCpuMark(sResArray);
 
-	cover = cpuCountPaths(sResArray,ARRAY2D<int>(mergeserial,sResArray.height, sResArray.width),test.graph,sGraphArray,fans);
-	TPRINT("Path Coverage time (serial) %fms\n",cover_s);
-	alltime = pass1_s + pass2_s + mark_s + merge_s + cover_s;
+//	cover_s = cpuCountPaths(sResArray,ARRAY2D<int>(mergeserial,sResArray.height, sResArray.width),test.graph,sGraphArray,fans);
+//	TPRINT("Path Coverage time (serial) %fms\n",cover_s);
+	alltime_s = pass1_s + pass2_s + mark_s + merge_s + cover_s;
 
-	TPRINT("Total Path Count for vectors (serial): %d\n", sReturnPathCount(sResArray));
-	TPRINT("Total time (serial) : %fms\n", alltime);
-
+//	TPRINT("Total Path Count for vectors (serial): %d\n", sReturnPathCount(sResArray));
+	TPRINT("%f\n", alltime_s);
 	return 0;
 }

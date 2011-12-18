@@ -24,98 +24,60 @@ __global__ void kernSumAll(int toffset, int *results, int *history, GPUNODE* nod
 	}
 }
 __global__ void kernCountCoverage(int toffset, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
-	int tid = blockIdx.x * gridDim.x + threadIdx.x, nfi, goffset, vecnum = toffset + tid, val, tempr, temph;
-	int *row, *rowHistory;
-	int *rowResults,*historyResults;
-	__shared__ int h_cache[2048];
-	__shared__ int r_cache[2048];
-	// For every node, count paths through this node
+	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset;
+	int *row, *historyRow;
+	int *current;
+	__shared__ char rowids[1000]; // handle up to fanins of 1000 /
 	if (tid < height) {
-		rowResults = (int*)malloc(sizeof(int)*width);
-		historyResults = (int*)malloc(sizeof(int)*width);
-		row = (int*)((char*)results + vecnum*(width)*sizeof(int));
-		rowHistory = (int*)((char*)history + (vecnum-1)*(width)*sizeof(int));
-		for (int i = 0; i < width; i++) {
-			rowResults[i] = 0; 
-			historyResults[i] = 0;
-		}
-		if (vecnum == 0) {
-			// handle the initial vector separately, just count paths.
-			for (int c = ncount; c >= 0; c--) {
-				nfi = node[c].nfi;
-				goffset = node[c].offset;
-				if (node[c].po) {
-					rowResults[fans[goffset+nfi]] = row[fans[goffset+nfi]]*1;
-				}
-				switch (node[c].type) {
-					case 0: break;
-					case INPT: break;
-					case FROM:
-						rowResults[fans[goffset]] += row[fans[goffset+nfi]]*(rowResults[fans[goffset]]);
-					break;
-					default:
-						for (int i = 0; i < nfi;i++)
-							rowResults[fans[goffset+i]] = rowResults[fans[goffset+nfi]];
-
-				}
-			}
-			for (int i = 0; i < width; i++) {
-				row[i] = rowResults[i];
-			}
-
+		row = (int*)((char*)results + tid*(width)*sizeof(int));
+		if (tid == 0) {
+			historyRow = (int*)malloc(sizeof(int)*width);
+			memset(historyRow, 0, sizeof(int)*width);
 		} else {
-			for (int c = ncount; c >= 0; c--) {
-				nfi = node[c].nfi;
-				goffset = node[c].offset;
-				if (node[c].po) {
-					tempr = 0;
-					temph = rowHistory[fans[goffset+nfi]]*1;
-					val = row[fans[goffset+nfi]] > rowHistory[fans[goffset+nfi]];
-					r_cache[threadIdx.x*2] = tempr;
-					r_cache[(threadIdx.x*2)+1] = tempr + temph;
-					h_cache[threadIdx.x*2] = temph;
-					h_cache[(threadIdx.x*2)+1] = 0;
-					rowResults[fans[goffset+nfi]] = r_cache[(threadIdx.x*2)+val];
-					historyResults[fans[goffset+nfi]] = h_cache[(threadIdx.x*2)+val];
+			historyRow = (int*)((char*)history + (tid-1)*(width)*sizeof(int));
+		}
+		current = (int*)malloc(sizeof(int)*width);
+		for (int i = 0; i < ncount; i++) {
+			current[i] = 0;
+		}
+		for (int i = ncount; i >= 0; i--) {
+			nfi = node[i].nfi;
+			if (tid == 0) {
+				goffset = node[i].offset;
+				// preload all of the fanin line #s for this gate to shared memory.
+				for (int j = 0; j < nfi;j++) {
+					rowids[j] = (char)fans[goffset+j];
 				}
-				switch (node[c].type) {
-					case 0: continue;
-					case INPT: break;
-					case FROM:
-							   tempr = rowResults[fans[goffset]];
-							   tempr += row[fans[goffset+nfi]]*(rowResults[fans[goffset+nfi]]);
-							   temph = historyResults[fans[goffset]];
-							   temph += rowHistory[fans[goffset+nfi]]*(historyResults[fans[goffset+nfi]]);
-							   val = row[fans[goffset]] > rowHistory[fans[goffset]];
-							   r_cache[threadIdx.x*2] = tempr;
-							   r_cache[threadIdx.x*2+1] = tempr + temph;
-							   h_cache[threadIdx.x*2] = temph;
-							   h_cache[threadIdx.x*2+1] = 0;
-							   rowResults[fans[goffset]] = r_cache[(threadIdx.x*2)+val];
-							   historyResults[fans[goffset]] = h_cache[(threadIdx.x*2)+val];
-							   break;
-					default:
-							   for (int i = 0; i < nfi;i++) {
-								   rowResults[fans[goffset+i]] = rowResults[fans[goffset+nfi]];
-								   historyResults[fans[goffset+i]] = historyResults[fans[goffset+nfi]];
-								   val = row[fans[goffset+i]] > rowHistory[fans[goffset+i]];
-								   r_cache[threadIdx.x*2]     = rowResults[fans[goffset+i]];
-								   r_cache[(threadIdx.x*2)+1] = rowResults[fans[goffset+i]] + historyResults[fans[goffset+i]];
-								   h_cache[threadIdx.x*2]     = historyResults[fans[goffset+i]];
-								   h_cache[(threadIdx.x*2)+1] = 0;
-								   rowResults[fans[goffset+i]] = r_cache[(threadIdx.x*2)+val];
-								   historyResults[fans[goffset+i]] = h_cache[(threadIdx.x*2)+val];
-							   }
-				} 
 			}
-			for (int i = 0; i < width; i++) {
-				row[i] = rowResults[i];
+			__syncthreads();
+			if (node[i].po) {
+				current[i] = (row[i] > historyRow[i]); // only set = 1 if there's a new line here
+			}
+			switch(node[i].type) {
+				case 0: continue;
+				case FROM:
+//						printf("T: %d G %d Fanout: %d, fanin: %d/%d\n",tid, i, current[i], row[rowids[0]],historyRow[rowids[0]]);
+						current[rowids[0]] += current[i]*(row[rowids[0]] > historyRow[rowids[0]]);
+						break;
+				case INPT:
+						continue;
+				default: 
+						for (int fin = 0; fin < node[i].nfi; fin++) {
+//							printf("T: %d G %d Fanout: %d, fanin %d: %d/%d\n",tid, i, current[i], rowids[fin], row[rowids[fin]],historyRow[rowids[fin]]);
+							current[rowids[fin]] += ((row[rowids[fin]] > historyRow[rowids[fin]]) || current[i] > 1) * current[i] + (current[i] == 0 && row[rowids[fin]] > historyRow[rowids[fin]]);
+						}
+
 			}
 		}
-
-		free(rowResults);
-		free(historyResults);
+		for (int i = 0; i < ncount; i++) {
+			row[i] = current[i];
+		}
+		free(current);
+		if (tid == 0) {
+			free(historyRow);
+		}
 	}
+
 }
 void debugCoverOutput(ARRAY2D<int> results) {
 #ifndef NDEBUG
@@ -150,7 +112,6 @@ float gpuCountPaths(ARRAY2D<int> results, ARRAY2D<int> history, GPUNODE* graph, 
 	cudaEventCreate(&stop);
 	cudaEventRecord(start,0);
 #endif
-	DPRINT("rw %d, rh %d, gw %d, gh %d\n", results.width, results.height, dgraph.width, dgraph.height);
 	kernCountCoverage<<<1,results.height>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
 	cudaDeviceSynchronize();
 	kernSumAll<<<1,1>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);

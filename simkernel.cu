@@ -137,7 +137,7 @@ float gpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 	cudaEventRecord(start,0);
 #endif // NTIMING
 	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
-	DPRINT("Block count: %d, threads: %d\n", blockcount, THREAD_PER_BLOCK);
+//	DPRINT("Block count: %d, threads: %d\n", blockcount, THREAD_PER_BLOCK);
 	kernSimulate<<<blockcount,THREAD_PER_BLOCK>>>(dgraph.data,results.data, inputs.data,fan,inputs.width, results.width, results.height, pass);
 	cudaDeviceSynchronize();
 

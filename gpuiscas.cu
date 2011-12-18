@@ -1,7 +1,6 @@
 #include <cuda.h>
 #include "iscas.h"
 #include "gpuiscas.h"
-#define NDEBUG
 #include "defines.h"
 #include <cassert>
 
@@ -59,27 +58,47 @@ void gpuShiftVectors(int* input, size_t width, size_t height) {
 }
 int* gpuLoadVectors(int** input, size_t width, size_t height) {
 	int *tgt;
-	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width+1)*(height+1)));
+	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width)*(height)));
+	cudaMemset(tgt, 0, sizeof(int)*width*height);
+	/*
 	int *row;
 	for (int i = 0; i < height; i++) {
 		row = (int*)((char*)tgt + i*(width)*sizeof(int));
 		cudaMemcpy(row, input[i],sizeof(int)*(width+1),cudaMemcpyHostToDevice);
 #ifndef NDEBUG
 		int *tmp = (int*)malloc(sizeof(int)*width);
-		for (int i =0; i <= width; i++)
-			tmp[i] = -1;
+		for (int r =0; r <= width;r++)
+			tmp[r] = -1;
 		cudaMemcpy(tmp, row, sizeof(int)*(width+1),cudaMemcpyDeviceToHost);
 		for (int j = 0; j <= width; j++) {
 			assert(input[i][j]==tmp[j]);
 		}
 		free(tmp);
 #endif // debugging memory check and assertion
-	}
+	}*/
 	return tgt;
 }
 int* gpuLoad1DVector(int* input, size_t width, size_t height) {
 	int *tgt;
-	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width+1)*(height+1)));
-	cudaMemcpy(tgt, input,sizeof(int)*(width+1)*(height+1),cudaMemcpyHostToDevice);
+	cudaError_t returncode; 
+	returncode = cudaMalloc(&tgt, sizeof(int)*(width)*(height));
+	assert(returncode == cudaSuccess);
+//	DPRINT("Malloc is fine...");
+	returncode = cudaMemcpy(tgt, input,sizeof(int)*(width)*(height),cudaMemcpyHostToDevice);
+//	DPRINT("Memcpy is fine...");
+	assert(returncode == cudaSuccess);
 	return tgt;
 }
+int* loadPinned(int* input, size_t vcnt) {
+	int* tgt;
+	cudaMallocHost(&tgt, vcnt*sizeof(int));
+	cudaMemcpy(tgt, input, sizeof(int)*vcnt, cudaMemcpyHostToHost);
+	return tgt;
+}
+void freeMemory(int* data) {
+	cudaFree(data);
+}
+void freeMemory(GPUNODE* data) {
+	cudaFree(data);
+}
+

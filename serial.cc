@@ -285,6 +285,7 @@ float cpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	for (int j = 0; j < results.height; j++) {
 		cpuSimulate(dgraph.data, results.data, inputs.data, fan, inputs.width, results.width,results.height,pass,j);
+
 	}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
@@ -293,29 +294,15 @@ float cpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 
 int* cpuLoad1DVector(int* input, size_t width, size_t height) {
 	int *tgt;
-	tgt = (int*)malloc(sizeof(int)*(width+1)*(height+1));
-	memcpy(tgt, input,sizeof(int)*(width+1)*(height+1));
+	tgt = (int*)malloc(sizeof(int)*(width)*(height));
+	memcpy(tgt, input,sizeof(int)*(width)*(height));
 	return tgt;
 }
 
 int* cpuLoadVectors(int** input, size_t width, size_t height) {
 	int *tgt;
-	tgt = (int*)malloc(sizeof(int)*(width+1)*(height+1));
-	int *row;
-	for (int i = 0; i < height; i++) {
-		row = (int*)((char*)tgt + i*(width)*sizeof(int));
-		memcpy(row, input[i],sizeof(int)*(width+1));
-#ifndef NDEBUG
-		int *tmp = (int*)malloc(sizeof(int)*width);
-		for (int r =0; r <= width; r++)
-			tmp[r] = -1;
-		memcpy(tmp, row, sizeof(int)*(width+1));
-		for (int j = 0; j <= width; j++) {
-			assert(input[i][j]==tmp[j]);
-		}
-		free(tmp);
-#endif // debugging memory check and assertion
-	}
+	tgt = (int*)malloc(sizeof(int)*(width)*(height));
+	memset(tgt, 0, sizeof(int)*width*height);
 	return tgt;
 }
 

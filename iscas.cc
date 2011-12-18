@@ -232,11 +232,14 @@ void PrintCircuit(NODE *graph,int Max)
  * It returns the count of input patterns. All don'tcares 
  * are set to '0'.
  */
-int readVectors(int** vecs, FILE* fvec) {
+int readVectors(int** vec, FILE* fvec) {
     char str1[Mlin];
+	int* vecs = *vec;
 	int* currentRow;
-	int width = 0, count = 0, posCount = 1, vecLength=Mlin, curCount=0;
-	*vecs = (int*)calloc(sizeof(int),Mlin);
+	int width = 0, count = 0, posCount = 1,curCount=0;
+	long vecLength=Mlin;
+	vecs = (int*)calloc(sizeof(int),Mlin);
+	assert(vecs != NULL);
 	while (!feof(fvec)) {
 		// read the next Mlin bytes from the file.
 		curCount = fread(str1, posCount, Mlin, fvec);
@@ -249,12 +252,13 @@ int readVectors(int** vecs, FILE* fvec) {
 					if (count >= vecLength) {
 						vecLength += Mlin;
 //						DPRINT("Allocating more memory.\n");
-						(*vecs)=(int*)realloc(*vecs, sizeof(int)*vecLength);
+						(vecs)=(int*)realloc(vecs, sizeof(int)*vecLength);
+						assert(vecs != NULL);
 					}
 					if (str1[i] == '1') {
-						(*vecs)[count] = 1;
+						vecs[count] = 1;
 					} else {
-						(*vecs)[count] = 0;
+						vecs[count] = 0;
 					}
 					count++;
 					width++;
@@ -264,7 +268,7 @@ int readVectors(int** vecs, FILE* fvec) {
 			}
 		}
 	}
-	for (int i = 0; i < count; i++)
+	*vec = vecs;
 	return count;
 }
 /******************************************************
