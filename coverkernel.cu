@@ -23,11 +23,13 @@ __global__ void kernSumAll(int toffset, int *results, int *history, GPUNODE* nod
 		row[0] = sum;
 	}
 }
+
+// reference: design book 1, page 38.
 __global__ void kernCountCoverage(int toffset, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset;
 	int *row, *historyRow;
-	int *current;
-	__shared__ char rowids[1000]; // handle up to fanins of 1000 /
+	int *current, *historyCount;
+	__shared__ char rowids[50]; // handle up to fanins of 1000 /
 	if (tid < height) {
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		if (tid == 0) {
@@ -37,14 +39,17 @@ __global__ void kernCountCoverage(int toffset, int *results, int *history, GPUNO
 			historyRow = (int*)((char*)history + (tid-1)*(width)*sizeof(int));
 		}
 		current = (int*)malloc(sizeof(int)*width);
+		historyCount = (int*)malloc(sizeof(int)*width);
 		for (int i = 0; i < ncount; i++) {
 			current[i] = 0;
+			historyCount[i] = 0;
 		}
 		for (int i = ncount; i >= 0; i--) {
 			nfi = node[i].nfi;
 			if (tid == 0) {
 				goffset = node[i].offset;
 				// preload all of the fanin line #s for this gate to shared memory.
+				// Guaranteed 1 cycle access time.
 				for (int j = 0; j < nfi;j++) {
 					rowids[j] = (char)fans[goffset+j];
 				}
@@ -52,19 +57,23 @@ __global__ void kernCountCoverage(int toffset, int *results, int *history, GPUNO
 			__syncthreads();
 			if (node[i].po) {
 				current[i] = (row[i] > historyRow[i]); // only set = 1 if there's a new line here
+				historyCount[i] = historyRow[i];
 			}
 			switch(node[i].type) {
 				case 0: continue;
 				case FROM:
-//						printf("T: %d G %d Fanout: %d, fanin: %d/%d\n",tid, i, current[i], row[rowids[0]],historyRow[rowids[0]]);
+						// Add the current fanout count to the fanin if this line is marked (and the history isn't).
 						current[rowids[0]] += current[i]*(row[rowids[0]] > historyRow[rowids[0]]);
+						historyCount[rowids[0]] += historyCount[i]*(historyRow[rowids[0]]);
 						break;
 				case INPT:
 						continue;
 				default: 
 						for (int fin = 0; fin < node[i].nfi; fin++) {
-//							printf("T: %d G %d Fanout: %d, fanin %d: %d/%d\n",tid, i, current[i], rowids[fin], row[rowids[fin]],historyRow[rowids[fin]]);
-							current[rowids[fin]] += ((row[rowids[fin]] > historyRow[rowids[fin]]) || current[i] > 1) * current[i] + (current[i] == 0 && row[rowids[fin]] > historyRow[rowids[fin]]);
+							// if the fanout total is 0 but this line is marked (and the history isn't), add a path to the count.
+							// If the fanout total is > 1 and this line is marked (and the history isn't), assign the fanout total to the fanins.
+							historyCount[rowids[fin]] += (historyRow[rowids[fin]] || historyCount[i] > 1) * historyCount[i];
+							current[rowids[fin]] += ((row[rowids[fin]] > historyRow[rowids[fin]]) || current[i] > 1) * current[i] + historyCount[i]*(current[i] == 0 && row[rowids[fin]] > historyRow[rowids[fin]]);
 						}
 
 			}
@@ -73,6 +82,7 @@ __global__ void kernCountCoverage(int toffset, int *results, int *history, GPUNO
 			row[i] = current[i];
 		}
 		free(current);
+		free(historyCount);
 		if (tid == 0) {
 			free(historyRow);
 		}
@@ -84,7 +94,7 @@ void debugCoverOutput(ARRAY2D<int> results) {
 	// Routine to copy contents of our results array into host memory and print
 	// it row-by-row.
 	int *lvalues, *row;
-	DPRINT("Post-union results\n");
+	DPRINT("Path Count results\n");
 	DPRINT("Line:   \t");
 	for (int i = 0; i < results.width; i++) {
 		DPRINT("%2d ", i);
@@ -95,9 +105,9 @@ void debugCoverOutput(ARRAY2D<int> results) {
 		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
 		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
 		
-		DPRINT("%s %d:\t", "Vector",r);
+		DPRINT("%s %3d:\t", "Vector",r);
 		for (int i = 0; i < results.width; i++) {
-			DPRINT("%2d ", lvalues[i]);
+			DPRINT("%3d ", lvalues[i] == 0 ? -1:lvalues[i]);
 		}
 		DPRINT("\n");
 		free(lvalues);

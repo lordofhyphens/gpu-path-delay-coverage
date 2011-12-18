@@ -153,7 +153,7 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 					// another system somewhere else.
 
 					val = (rowResults[i] > 0 && row[rowids[0]] > 1);
-					printf("T: %d G %d rowResults[i]: %d row[rowids[0]]: %d val: %d\n",tid,i, rowResults[i], row[rowids[0]],val);
+//					printf("T: %d G %d rowResults[i]: %d row[rowids[0]]: %d val: %d\n",tid,i, rowResults[i], row[rowids[0]],val);
 					rowResults[rowids[0]] |= val;
 					rowResults[i] &= val;
 //					printf("T: %d (FROM), %d val=%d %d=%d, %d=%d\n", tid, i, val, rowids[0],rowResults[rowids[0]],i,rowResults[i]);
@@ -177,25 +177,25 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 
 				case NAND:
 				case AND:
-					rowResults[i] &= val && tex2D(and2OutputPropLUT, row[rowids[0]],row[rowids[1]]);
-					rowResults[rowids[0]] = val && tex2D(and2InputPropLUT, row[rowids[0]],row[rowids[1]]);
-					rowResults[rowids[1]] = val && tex2D(and2InputPropLUT, row[rowids[1]],row[rowids[0]]);
+					rowResults[i] &= val && tex2D(and2OutputPropLUT, row[rowids[0]],row[rowids[1]]) || rowResults[i];
+					rowResults[rowids[0]] = val && tex2D(and2InputPropLUT, row[rowids[0]],row[rowids[1]]) && rowResults[i];
+					rowResults[rowids[1]] = val && tex2D(and2InputPropLUT, row[rowids[1]],row[rowids[0]]) && rowResults[i];
 					break;
 				case OR:
 				case NOR:
-					rowResults[rowids[0]] = val && tex2D(or2InputPropLUT, row[rowids[0]],row[rowids[1]]);
-					rowResults[rowids[1]] = val && tex2D(or2InputPropLUT, row[rowids[1]],row[rowids[0]]);
-					rowResults[i] = val && tex2D(or2OutputPropLUT, row[rowids[0]],row[rowids[1]]);
+					rowResults[i] &= val && tex2D(or2OutputPropLUT, row[rowids[0]],row[rowids[1]]) || rowResults[i];
+					rowResults[rowids[0]] = val && tex2D(or2InputPropLUT, row[rowids[0]],row[rowids[1]]) && rowResults[i];
+					rowResults[rowids[1]] = val && tex2D(or2InputPropLUT, row[rowids[1]],row[rowids[0]]) && rowResults[i];
 					break;
 				case XOR:
 				case XNOR:
-					rowResults[rowids[0]] = val && tex2D(xor2InputPropLUT, row[rowids[0]],row[rowids[1]]);
-					rowResults[rowids[1]] = val && tex2D(xor2InputPropLUT, row[rowids[1]],row[rowids[0]]);
-					rowResults[i] = val && tex2D(xor2OutputPropLUT, row[rowids[0]],row[rowids[1]]);
+					rowResults[i] &= val && tex2D(xor2OutputPropLUT, row[rowids[0]],row[rowids[1]]) || rowResults[i];
+					rowResults[rowids[0]] = val && tex2D(xor2InputPropLUT, row[rowids[0]],row[rowids[1]]) && rowResults[i];
+					rowResults[rowids[1]] = val && tex2D(xor2InputPropLUT, row[rowids[1]],row[rowids[0]]) && rowResults[i];
 					break;
 				case BUFF:
 				case NOT:
-					val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]);
+					val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]) && rowResults[i];
 					rowResults[rowids[0]] = val;
 					rowResults[i] = val;
 					break;
@@ -204,35 +204,7 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 					break;
 			}
 		}
-		// routine to clear false paths
-		// work back from POs again. If this path is not marked AND any fanins are marked, clear
-		// that mark. 
-		// if this segment is marked AND NONE of its fanins are marked, clear this mark.
-		for (int i = ncount; i >= 0; i--) {
-			nfi = node[i].nfi;
-			if (tid == 0) {
-				goffset = node[i].offset;
-				// preload all of the fanin line #s for this gate to shared memory.
-				for (int j = 0; j < nfi;j++) 
-					rowids[j] = (char)fans[goffset+j];
-			}
-			__syncthreads();
-			int bin = rowResults[i];
-			if (node[i].type == INPT) {
-				continue;
-			}
-			for (int j = 0; j < node[i].nfi; j++) {
-				rowResults[rowids[j]] &= bin;
-			}
-			if (node[i].type != INPT) {
-				bin = rowResults[rowids[0]];
-				for (int j = 1; j < node[i].nfi; j++) {
-					bin |= rowResults[rowids[j]];
-				}
-				rowResults[i] &= bin;
-			}
-		}
-		// replace our working set.
+		// replace our working set to save memory.
 		for (int i = 0; i < width; i++) {
 			row[i] = rowResults[i];
 		}
