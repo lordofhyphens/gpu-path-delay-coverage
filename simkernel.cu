@@ -16,7 +16,7 @@ texture<int, 1> notLUT;
 
 __global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, int pass) {
 	int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
-	__shared__ char rowids[1000]; // handle up to fanins of 1000 / 
+	__shared__ char rowids[100]; // handle up to fanins of 1000 / 
 	int piNumber = 0, pi = 0;
 	int *row;
 	int goffset, nfi, val, j,type, r;

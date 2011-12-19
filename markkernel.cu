@@ -4,7 +4,7 @@
 #include "defines.h"
 #include "markkernel.h"
 
-#define THREAD_PER_BLOCK 256
+#define THREAD_PER_BLOCK 1024
 texture<int, 2> and2OutputPropLUT;
 texture<int, 2> and2InputPropLUT;
 texture<int, 2> or2OutputPropLUT;
@@ -48,7 +48,7 @@ void loadPropLUTs() {
 	// Creating a set of static arrays that represent our LUTs
 		// Addressing for the propagations:
 	// 2 4x4 groups such that 
-	int and2_output_prop[16]= {0,0,1,0,0,0,1,1,1,1,1,1,0,1,1,1};
+	int and2_output_prop[16]= {0,0,0,0,0,0,1,1,0,1,1,0,0,1,1,1};
 	int and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,1,1};
 	int or2_output_prop[16] = {0,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
 	int or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
@@ -131,6 +131,9 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 	if (tid < height) {
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		rowResults = (int*)malloc(sizeof(int)*width);
+		for (int i = 0; i < ncount; i++) {
+			rowResults[i] = 0;
+		}
 		for (int i = ncount; i >= 0; i--) {
 			nfi = node[i].nfi;
 			if (tid == 0) {
@@ -153,12 +156,15 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 					// another system somewhere else.
 
 					val = (rowResults[i] > 0 && row[rowids[0]] > 1);
-//					printf("T: %d G %d rowResults[i]: %d row[rowids[0]]: %d val: %d\n",tid,i, rowResults[i], row[rowids[0]],val);
-					rowResults[rowids[0]] |= val;
-					rowResults[i] &= val;
-//					printf("T: %d (FROM), %d val=%d %d=%d, %d=%d\n", tid, i, val, rowids[0],rowResults[rowids[0]],i,rowResults[i]);
+					rowResults[rowids[0]] = val || rowResults[i];
+					rowResults[i] =  val;
 					break;
-
+				case BUFF:
+				case NOT:
+					val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]) && rowResults[i];
+					rowResults[rowids[0]] = val;
+					rowResults[i] = val;
+					break;
 					// For the standard gates, setting three values -- both the
 					// input lines and the output line.  row[i]-1 is the
 					// transition on the output, offset to make the texture
@@ -192,12 +198,6 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 					rowResults[i] &= val && tex2D(xor2OutputPropLUT, row[rowids[0]],row[rowids[1]]) || rowResults[i];
 					rowResults[rowids[0]] = val && tex2D(xor2InputPropLUT, row[rowids[0]],row[rowids[1]]) && rowResults[i];
 					rowResults[rowids[1]] = val && tex2D(xor2InputPropLUT, row[rowids[1]],row[rowids[0]]) && rowResults[i];
-					break;
-				case BUFF:
-				case NOT:
-					val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]) && rowResults[i];
-					rowResults[rowids[0]] = val;
-					rowResults[i] = val;
 					break;
 				default:
 					// if there is a transition that will propagate, set = to some positive #?
@@ -282,7 +282,7 @@ void debugMarkOutput(ARRAY2D<int> results) {
 		
 		DPRINT("%s %d:\t","Vector",r);
 		for (int i = 0; i < results.width; i++) {
-			DPRINT("%2c ", lvalues[i] == 0 ? 'N':'S'  );
+			DPRINT("%2d ", lvalues[i]);//== 0 ? 'N':'S'  );
 		}
 		DPRINT("\n");
 		free(lvalues);
