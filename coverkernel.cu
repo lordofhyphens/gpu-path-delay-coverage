@@ -116,7 +116,7 @@ void debugCoverOutput(ARRAY2D<int> results) {
 }
 float gpuCountPaths(ARRAY2D<int> results, ARRAY2D<int> history, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
 #ifndef NTIMING
-	float elapsed = 0.0;
+	float elapsed = 0.0, cover = 0.0;
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
@@ -124,6 +124,17 @@ float gpuCountPaths(ARRAY2D<int> results, ARRAY2D<int> history, GPUNODE* graph, 
 #endif
 	kernCountCoverage<<<1,results.height>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
 	cudaDeviceSynchronize();
+#ifndef NTIMING
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&elapsed,start,stop);
+	DPRINT("Cover time: %2f \n", elapsed);
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	cudaEventRecord(start,0);
+#endif
 	kernSumAll<<<1,1>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
 #ifndef NTIMING
 	cudaEventRecord(stop, 0);
@@ -131,7 +142,7 @@ float gpuCountPaths(ARRAY2D<int> results, ARRAY2D<int> history, GPUNODE* graph, 
 	cudaEventElapsedTime(&elapsed,start,stop);
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);
-	return elapsed;
+	return elapsed+cover;
 #else
 	return 0.0;
 #endif
