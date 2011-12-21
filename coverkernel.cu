@@ -128,7 +128,7 @@ float gpuCountPaths(ARRAY2D<int> results, ARRAY2D<int> history, GPUNODE* graph, 
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&elapsed,start,stop);
-	DPRINT("Cover time: %2f \n", elapsed);
+//	DPRINT("Cover time: %2f \n", elapsed);
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);
 	cudaEventCreate(&start);

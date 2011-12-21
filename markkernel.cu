@@ -4,7 +4,7 @@
 #include "defines.h"
 #include "markkernel.h"
 
-#define THREAD_PER_BLOCK 1024
+#define THREAD_PER_BLOCK 256
 texture<int, 2> and2OutputPropLUT;
 texture<int, 2> and2InputPropLUT;
 texture<int, 2> or2OutputPropLUT;
@@ -48,9 +48,9 @@ void loadPropLUTs() {
 	// Creating a set of static arrays that represent our LUTs
 		// Addressing for the propagations:
 	// 2 4x4 groups such that 
-	int and2_output_prop[16]= {0,0,0,0,0,0,1,1,0,1,1,0,0,1,1,1};
+	int and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,1,1};
 	int and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,1,1};
-	int or2_output_prop[16] = {0,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
+	int or2_output_prop[16] = {2,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
 	int or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
 	int xor2_input_prop[16] = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
 	int xor2_output_prop[16]= {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
@@ -126,9 +126,12 @@ void loadPropLUTs() {
 
 __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val;
-	__shared__ char rowids[1000]; // handle up to fanins of 1000 / 
+	__shared__ char rowids[500]; // handle up to fanins of 500 / 
+	__shared__ char cache[THREAD_PER_BLOCK]; // needs to be 2x # of threads being run
+	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,fin = 1, type;
 	int *rowResults, *row;
 	if (tid < height) {
+		cache[threadIdx.x] = 0;
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		rowResults = (int*)malloc(sizeof(int)*width);
 		for (int i = 0; i < ncount; i++) {
@@ -136,7 +139,8 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 		}
 		for (int i = ncount; i >= 0; i--) {
 			nfi = node[i].nfi;
-			if (tid == 0) {
+			type = node[i].type;
+			if (threadIdx.x == 0) {
 				goffset = node[i].offset;
 				// preload all of the fanin line #s for this gate to shared memory.
 				for (int j = 0; j < nfi;j++) {
@@ -149,7 +153,7 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 			if (node[i].po) {
 				rowResults[i] = val;
 			}
-			switch(node[i].type) {
+			switch(type) {
 				case FROM:
 					// For FROM, only set the "input" line if it hasn't already
 					// been set (otherwise it'll overwrite the decision of
@@ -183,25 +187,86 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 
 				case NAND:
 				case AND:
-					rowResults[i] &= val && tex2D(and2OutputPropLUT, row[rowids[0]],row[rowids[1]]) || rowResults[i];
-					rowResults[rowids[0]] = val && tex2D(and2InputPropLUT, row[rowids[0]],row[rowids[1]]) && rowResults[i];
-					rowResults[rowids[1]] = val && tex2D(and2InputPropLUT, row[rowids[1]],row[rowids[0]]) && rowResults[i];
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[threadIdx.x] = tex2D(and2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							pass += (cache[threadIdx.x] > 1);
+							tmp = tmp && ((int)cache[threadIdx.x] > 0);
+						}
+					}
+					rowResults[i] = val && tmp && (pass <= nfi);
 					break;
 				case OR:
 				case NOR:
-					rowResults[i] &= val && tex2D(or2OutputPropLUT, row[rowids[0]],row[rowids[1]]) || rowResults[i];
-					rowResults[rowids[0]] = val && tex2D(or2InputPropLUT, row[rowids[0]],row[rowids[1]]) && rowResults[i];
-					rowResults[rowids[1]] = val && tex2D(or2InputPropLUT, row[rowids[1]],row[rowids[0]]) && rowResults[i];
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						fin = 1;
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[threadIdx.x] = tex2D(or2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							pass += (cache[threadIdx.x] > 1);
+							tmp = tmp && ((int)cache[threadIdx.x] > 0);
+						}
+					}
+					rowResults[i] = val && tmp && (pass <= nfi);
 					break;
 				case XOR:
 				case XNOR:
-					rowResults[i] &= val && tex2D(xor2OutputPropLUT, row[rowids[0]],row[rowids[1]]) || rowResults[i];
-					rowResults[rowids[0]] = val && tex2D(xor2InputPropLUT, row[rowids[0]],row[rowids[1]]) && rowResults[i];
-					rowResults[rowids[1]] = val && tex2D(xor2InputPropLUT, row[rowids[1]],row[rowids[0]]) && rowResults[i];
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						fin = 1;
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[threadIdx.x] = tex2D(xor2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							pass += (cache[threadIdx.x] > 1);
+							tmp = tmp && ((int)cache[threadIdx.x] > 0);
+							fin = fin && tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+						}
+					}
+					rowResults[i] = val && tmp && (pass <= nfi);
 					break;
 				default:
 					// if there is a transition that will propagate, set = to some positive #?
 					break;
+			}
+			switch(type) {
+				case AND:
+				case NAND:
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						fin = 1;
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[threadIdx.x] = tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							fin = cache[threadIdx.x] && fin;
+						}
+						rowResults[rowids[fin1]] = fin && rowResults[i];
+					}
+					break;
+				case OR:
+				case NOR:
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						fin = 1;
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[threadIdx.x] = tex2D(or2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							fin = cache[threadIdx.x] && fin;
+						}
+						rowResults[rowids[fin1]] = fin && rowResults[i];
+					}
+				case XOR:
+				case XNOR:
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						fin = 1;
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[threadIdx.x] = tex2D(xor2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							fin = cache[threadIdx.x] && fin;
+						}
+						rowResults[rowids[fin1]] = fin && rowResults[i];
+					}
+					break;
+				default:
+					;;
+
 			}
 		}
 		// replace our working set to save memory.

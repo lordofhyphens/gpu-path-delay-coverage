@@ -17,15 +17,14 @@ texture<int, 1> notLUT;
 __global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, int pass) {
 	int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	__shared__ char rowids[100]; // handle up to fanins of 1000 / 
-	int piNumber = 0, pi = 0;
+	int pi = 0;
 	int *row;
 	int goffset, nfi, val, j,type, r;
 	if (tid < height) {
 		row = (int*)((char*)res + tid*width*sizeof(int)); // get the current row?
-		for (int i = 0; i <= width; i++) {
+		for (int i = 0; i < width; i++) {
 			nfi = graph[i].nfi;
-
-			if (tid == 0) {
+			if (threadIdx.x == 0) { // first thread in every block does the preload.
 				goffset = graph[i].offset;
 				// preload all of the fanin line #s for this gate to shared memory.
 				for (int j = 0; j < nfi;j++) 
@@ -36,40 +35,43 @@ __global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, si
 			switch (type) {
 				case 0: break;
 				case INPT:
-						pi = piNumber;
-						val = *(input+(pi+iwidth*tid));
+						val = input[(pi+iwidth*tid)];
 						if (pass > 1) {
 							row[i] = tex2D(stableLUT, row[i], val);  
 						} else {
 							row[i] = val;
 						}
-						piNumber++;
-						__syncthreads();
+						pi++;
 						break;
 				default: 
 						// we're guaranteed at least one fanin per 
 						// gate if not on an input.
+						__syncthreads();
 						if (graph[i].type != NOT) {
-							val =  row[rowids[0]];
+							val = row[rowids[0]];
 						} else {
 							val = tex1D(notLUT, row[rowids[0]]);
 						}
+						
 						j = 1;
 						while (j < nfi) {
 							r = row[rowids[j]]; 
 							switch(type) {
 								case XOR:
-									val = tex2D(xor2LUT, val, r );
+									val = tex2D(xor2LUT, val, r );break;
 								case XNOR:
-									val = tex2D(xnor2LUT, val, r);
+									val = tex2D(xnor2LUT, val, r);break;
 								case OR:
-									val = tex2D(or2LUT, val, r);
+									val = tex2D(or2LUT, val, r);break;
 								case NOR:
-									val = tex2D(nor2LUT, val, r);
+									val = tex2D(nor2LUT, val, r);break;
 								case AND:
-									val = tex2D(and2LUT, val, r);
+									val = tex2D(and2LUT, val, r);break;
 								case NAND:
-									val = tex2D(nand2LUT, val, r);
+									if (tid == 664) { 
+//										printf("\n");
+									}
+									val = tex2D(nand2LUT, val, r);break;
 							}
 							j++;
 						}
@@ -79,6 +81,7 @@ __global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, si
 							row[i] = val;
 						}
 			}
+
 		}
 	}
 }

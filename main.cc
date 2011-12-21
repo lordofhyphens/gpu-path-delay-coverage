@@ -9,6 +9,7 @@
 #include "coverkernel.h"
 #include "serial.h"
 #include "sort.h"
+#include "siuTgen/src/BlifParse.h"
 
 int main(int argc, char ** argv) {
 	FILE *fisc, *fvec;
@@ -93,18 +94,18 @@ int main(int argc, char ** argv) {
 
 	pass1 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 1);
 	
-//	TPRINT("Simulation Pass 1 time (GPU): %f ms\n", pass1);
+	TPRINT("Simulation Pass 1 time (GPU): %f ms\n", pass1);
 //	debugSimulationOutput(resArray,1);
 	gpuShiftVectors(dvec, pis, vcnt/pis);
 	pass2 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 2);
-//	TPRINT("Simulation Pass 2 time (GPU): %f ms\n", pass2);
-	debugSimulationOutput(resArray,2);
+	TPRINT("Simulation Pass 2 time (GPU): %f ms\n", pass2);
+//	debugSimulationOutput(resArray,2);
 	mark = gpuMarkPaths(resArray, test.graph, graphArray, fans);
-//	TPRINT("Path Mark time (GPU): %fms\n",mark);
+	TPRINT("Path Mark time (GPU): %fms\n",mark);
 	debugMarkOutput(resArray);
 	merge = gpuMergeHistory(resArray, &mergeresult, test.graph, graphArray, fans);
 	debugMarkOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
-//	TPRINT("Path Merge time (GPU): %fms\n",merge);
+	TPRINT("Path Merge time (GPU): %fms\n",merge);
 	cover = gpuCountPaths(resArray,ARRAY2D<int>(mergeresult,resArray.height, resArray.width),test.graph,graphArray,fans);
 	debugCoverOutput(resArray);
 	TPRINT("Path Coverage time (GPU): %fms\n",cover);
@@ -144,8 +145,9 @@ int main(int argc, char ** argv) {
 //	cover_s = cpuCountPaths(sResArray,ARRAY2D<int>(mergeserial,sResArray.height, sResArray.width),test.graph,sGraphArray,fans);
 //	TPRINT("Path Coverage time (serial) %fms\n",cover_s);
 	alltime_s = pass1_s + pass2_s + mark_s + merge_s + cover_s;
-
+	freeMemory(mergeresult);
+	freeMemory(resArray.data);
+	freeMemory(inputArray.data);
 //	TPRINT("Total Path Count for vectors (serial): %d\n", sReturnPathCount(sResArray));
-	TPRINT("%f\n", alltime_s);
 	return 0;
 }

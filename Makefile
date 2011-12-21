@@ -4,13 +4,14 @@ GPUCC=/opt/net/apps/cuda/bin/nvcc
 header=iscas.h gpuiscas.h simkernel.h markkernel.h coverkernel.h sort.h serial.h defines.h
 logfile=log.txt
 main=main.cc
+tgenobj=Utility.o BlifParse.o Graph.o
 src=iscas.cc sort.cc serial.cc
 gsrc=gpuiscas.cu simkernel.cu markkernel.cu coverkernel.cu
 obj=$(src:.cc=.o) $(main:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)
 out=fcount
-CFLAGS=-I/opt/net/apps/cuda/include -g
+CFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -g
 NVCFLAGS=-arch=sm_20 -g --compiler-options -I/opt/net/apps/cuda/include -ccbin ${CC}
 PYLIB=_fsim.so
 SWIGTEMPLATE=iscas.i sort.i gpuiscas.i simkernel.i
@@ -28,6 +29,9 @@ test: tags $(out)
 cpu: CFLAGS = -DCPUCOMPILE -g
 cpu: tags $(out)-cpu
 
+%.o:
+	@${CC} -c ${CFLAGS} $< -o $(@)
+	
 ${out}: $(obj) ${gobj} 
 	@${GPUCC} ${NVCFLAGS} -o ${out} ${obj} ${gobj}
 ${out}-cpu: $(obj) 
