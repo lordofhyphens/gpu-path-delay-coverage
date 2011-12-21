@@ -23,13 +23,15 @@ static void HandleError( cudaError_t err,
 
 GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid) {
 	GPUNODE *devAr, *testAr;
-	HANDLE_ERROR(cudaMalloc(&devAr, sizeof(GPUNODE)*(1+maxid)));
-	HANDLE_ERROR(cudaMemcpy(devAr, graph, (maxid+1) * sizeof(GPUNODE),cudaMemcpyHostToDevice));
+	cudaError_t returncode;
+	returncode = cudaMalloc(&devAr, sizeof(GPUNODE)*(maxid));
+	assert(returncode == cudaSuccess);
+	HANDLE_ERROR(cudaMemcpy(devAr, graph, (maxid) * sizeof(GPUNODE),cudaMemcpyHostToDevice));
 //	DPRINT("Verifying GPUNODE graph copy\n");
-	testAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(maxid+1));	
-	HANDLE_ERROR(cudaMemcpy(testAr, devAr, (1+maxid) * sizeof(GPUNODE),cudaMemcpyDeviceToHost));
+	testAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(maxid));	
+	HANDLE_ERROR(cudaMemcpy(testAr, devAr, (maxid) * sizeof(GPUNODE),cudaMemcpyDeviceToHost));
 
-	for (int i = 0; i <= maxid; i++) {
+	for (int i = 0; i < maxid; i++) {
 		assert(testAr[i].type == graph[i].type && testAr[i].nfi == graph[i].nfi &&testAr[i].nfo == graph[i].nfo && testAr[i].po == graph[i].po && testAr[i].offset == graph[i].offset);
 	}
 	free(testAr);
@@ -42,24 +44,45 @@ LINE* gpuLoadLines(LINE* graph, int maxid) {
 	return devAr;
 }
 int* gpuLoadFans(int* offset, int maxid) {
-	int* devAr;
-	HANDLE_ERROR(cudaMalloc(&devAr, sizeof(int)*maxid));
-	HANDLE_ERROR(cudaMemcpy(devAr, offset, sizeof(int)*maxid,cudaMemcpyHostToDevice));
+	int* devAr = NULL;
+	cudaError_t returncode;
+	returncode = cudaMalloc(&devAr, sizeof(int)*maxid);
+	assert(returncode == cudaSuccess);
+	assert(devAr != NULL);
+	returncode = cudaMemcpy(devAr, offset, sizeof(int)*maxid,cudaMemcpyHostToDevice);
+	assert(returncode == cudaSuccess);
+#ifndef NDEBUG
+		int *tmp = (int*)malloc(sizeof(int)*maxid);
+		assert(tmp != NULL);
+		for (int r =0; r < maxid;r++)
+			tmp[r] = -1;
+		cudaMemcpy(tmp, devAr, sizeof(int)*(maxid),cudaMemcpyDeviceToHost);
+		for (int i = 0; i < maxid; i++) {
+			assert(offset[i]==tmp[i]);
+		}
+		free(tmp);
+#endif // debugging memory check and assertion
 	return devAr;
 }
 void gpuShiftVectors(int* input, size_t width, size_t height) {
-	int* tgt;
+	int* tgt = NULL;
 	// create a temporary buffer area on the device
-	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width)));
+	cudaError_t returncode;
+	returncode = cudaMalloc(&tgt, sizeof(int)*(width));
+	assert(returncode == cudaSuccess);
+	assert(tgt != NULL);
 	HANDLE_ERROR(cudaMemcpy(tgt, input,sizeof(int)*(width),cudaMemcpyDeviceToDevice));
 	HANDLE_ERROR(cudaMemcpy(input, input+width,sizeof(int)*(width)*(height-1),cudaMemcpyDeviceToDevice));
 	HANDLE_ERROR(cudaMemcpy(input+(height-1)*(width),tgt, sizeof(int)*(width), cudaMemcpyDeviceToDevice));
 	cudaFree(tgt);
 }
 int* gpuLoadVectors(int** input, size_t width, size_t height) {
-	int *tgt;
-	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width)*(height)));
-	cudaMemset(tgt, 0, sizeof(int)*width*height);
+	int *tgt = NULL;
+	cudaError_t returncode;
+	returncode = cudaMalloc(&tgt, sizeof(int)*(width)*(height));
+	assert(returncode == cudaSuccess);
+	returncode = cudaMemset(tgt, 0, sizeof(int)*width*height);
+	assert(returncode == cudaSuccess);
 	/*
 	int *row;
 	for (int i = 0; i < height; i++) {
@@ -83,9 +106,7 @@ int* gpuLoad1DVector(int* input, size_t width, size_t height) {
 	cudaError_t returncode; 
 	returncode = cudaMalloc(&tgt, sizeof(int)*(width)*(height));
 	assert(returncode == cudaSuccess);
-//	DPRINT("Malloc is fine...");
 	returncode = cudaMemcpy(tgt, input,sizeof(int)*(width)*(height),cudaMemcpyHostToDevice);
-//	DPRINT("Memcpy is fine...");
 	assert(returncode == cudaSuccess);
 	return tgt;
 }

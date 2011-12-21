@@ -11,7 +11,7 @@ __global__ void kernSumAll(int toffset, int *results, int *history, GPUNODE* nod
 		sum = 0;
 		for (int j = 0; j < height; j++) {
 			row = (int*)((char*)results + j*(width)*sizeof(int));
-			for (int c = ncount; c >= 0; c--) {
+			for (int c = ncount-1; c >= 0; c--) {
 				goffset = node[c].offset;
 				nfi = node[c].nfi;
 				if (node[c].type == INPT)
@@ -29,7 +29,7 @@ __global__ void kernCountCoverage(int toffset, int *results, int *history, GPUNO
 	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset;
 	int *row, *historyRow;
 	int *current, *historyCount;
-	__shared__ char rowids[50]; // handle up to fanins of 1000 /
+	__shared__ int rowids[50]; // handle up to fanins of 1000 /
 	if (tid < height) {
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		if (tid == 0) {
@@ -44,14 +44,14 @@ __global__ void kernCountCoverage(int toffset, int *results, int *history, GPUNO
 			current[i] = 0;
 			historyCount[i] = 0;
 		}
-		for (int i = ncount; i >= 0; i--) {
+		for (int i = ncount-1; i >= 0; i--) {
 			nfi = node[i].nfi;
 			if (tid == 0) {
 				goffset = node[i].offset;
 				// preload all of the fanin line #s for this gate to shared memory.
 				// Guaranteed 1 cycle access time.
 				for (int j = 0; j < nfi;j++) {
-					rowids[j] = (char)fans[goffset+j];
+					rowids[j] = fans[goffset+j];
 				}
 			}
 			__syncthreads();

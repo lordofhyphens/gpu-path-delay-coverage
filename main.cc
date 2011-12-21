@@ -39,7 +39,6 @@ int main(int argc, char ** argv) {
 	lcnt = EnumerateLines(graph,lgraph,ncnt);
 //	DPRINT("complete.\n");
 //	DPRINT("Copying to flat arrays...");
-//	PrintCircuit(graph, ncnt);
 	test = GraphsetToArrays(graph, lgraph, ncnt);
 //	DPRINT("complete.\n");
 
@@ -58,6 +57,10 @@ int main(int argc, char ** argv) {
 
 //	DPRINT("complete.\n");
 //	PrintCircuit(graph,ncnt);
+for (int i = 0; i < test.max_offset; i++) {
+	if (test.offsets[i] < 0)
+		printf("%d ", test.offsets[i]);
+}
 #ifndef CPUCOMPILE
 // GPU implementation
 	float alltime, pass1=0.0, pass2=0.0, mark = 0.0, merge =0.0,cover=0.0;
@@ -102,12 +105,12 @@ int main(int argc, char ** argv) {
 //	debugSimulationOutput(resArray,2);
 	mark = gpuMarkPaths(resArray, test.graph, graphArray, fans);
 	TPRINT("Path Mark time (GPU): %fms\n",mark);
-	debugMarkOutput(resArray);
+//	debugMarkOutput(resArray);
 	merge = gpuMergeHistory(resArray, &mergeresult, test.graph, graphArray, fans);
-	debugMarkOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
+//	debugMarkOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
 	TPRINT("Path Merge time (GPU): %fms\n",merge);
 	cover = gpuCountPaths(resArray,ARRAY2D<int>(mergeresult,resArray.height, resArray.width),test.graph,graphArray,fans);
-	debugCoverOutput(resArray);
+//	debugCoverOutput(resArray);
 	TPRINT("Path Coverage time (GPU): %fms\n",cover);
 	alltime = pass1 + pass2 + mark + merge + cover;
 
@@ -149,5 +152,6 @@ int main(int argc, char ** argv) {
 	freeMemory(resArray.data);
 	freeMemory(inputArray.data);
 //	TPRINT("Total Path Count for vectors (serial): %d\n", sReturnPathCount(sResArray));
+//	TPRINT("%f\n", alltime_s);
 	return 0;
 }

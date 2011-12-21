@@ -12,7 +12,7 @@ gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)
 out=fcount
 CFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -g
-NVCFLAGS=-arch=sm_20 -g --compiler-options -I/opt/net/apps/cuda/include -ccbin ${CC}
+NVCFLAGS=-arch=sm_20 -g -G --compiler-options -I/opt/net/apps/cuda/include -ccbin ${CC}
 PYLIB=_fsim.so
 SWIGTEMPLATE=iscas.i sort.i gpuiscas.i simkernel.i
 

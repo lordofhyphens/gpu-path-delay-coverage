@@ -16,7 +16,7 @@ texture<int, 1> notLUT;
 
 __global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, int pass) {
 	int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
-	__shared__ char rowids[100]; // handle up to fanins of 1000 / 
+	__shared__ int rowids[100]; // handle up to fanins of 1000 / 
 	int pi = 0;
 	int *row;
 	int goffset, nfi, val, j,type, r;
@@ -26,9 +26,13 @@ __global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, si
 			nfi = graph[i].nfi;
 			if (threadIdx.x == 0) { // first thread in every block does the preload.
 				goffset = graph[i].offset;
+//				printf("Offset (gate %d): %d\n", i, goffset);
 				// preload all of the fanin line #s for this gate to shared memory.
-				for (int j = 0; j < nfi;j++) 
-					rowids[j] = (char)fans[goffset+j];
+				for (int j = 0; j < nfi;j++) {
+					rowids[j] = fans[goffset+j];
+//					printf("Gate %d, fanin %d = %d (wrote %d)\n",i, j, fans[goffset+j],rowids[j]);
+				}
+					
 			}
 			__syncthreads();
 			type = graph[i].type;
@@ -47,6 +51,9 @@ __global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, si
 						// we're guaranteed at least one fanin per 
 						// gate if not on an input.
 						__syncthreads();
+						if (rowids[0] < 0) {
+							printf("T: %d Node %d, Type %d, Rowid0 %d\n", tid, i, graph[i].type, rowids[0]);
+						}
 						if (graph[i].type != NOT) {
 							val = row[rowids[0]];
 						} else {

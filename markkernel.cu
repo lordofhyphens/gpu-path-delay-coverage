@@ -126,7 +126,7 @@ void loadPropLUTs() {
 
 __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val;
-	__shared__ char rowids[500]; // handle up to fanins of 500 / 
+	__shared__ int rowids[500]; // handle up to fanins of 500 / 
 	__shared__ char cache[THREAD_PER_BLOCK]; // needs to be 2x # of threads being run
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,fin = 1, type;
 	int *rowResults, *row;
@@ -137,14 +137,14 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 		for (int i = 0; i < ncount; i++) {
 			rowResults[i] = 0;
 		}
-		for (int i = ncount; i >= 0; i--) {
+		for (int i = ncount-1; i >= 0; i--) {
 			nfi = node[i].nfi;
 			type = node[i].type;
 			if (threadIdx.x == 0) {
 				goffset = node[i].offset;
 				// preload all of the fanin line #s for this gate to shared memory.
 				for (int j = 0; j < nfi;j++) {
-					rowids[j] = (char)fans[goffset+j];
+					rowids[j] = fans[goffset+j];
 				}
 			}
 			__syncthreads();
