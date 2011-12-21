@@ -1,6 +1,5 @@
 #include "serial.h"
 #include "iscas.h"
-#include "gpuiscas.h"
 #include <ctime>
 #include <time.h>
 #include <unistd.h>
@@ -21,76 +20,156 @@ void cpuMerge(int h, int w, int* input, int* results, int width) {
 	}
 }
 void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
-	int and2_output_prop[2][4][4]= {{{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0}} ,{{0,0,1,0},{0,0,1,1},{1,1,1,1},{0,1,1,1}}};
-	int and2_input_prop[2][4][4] = {{{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0}} ,{{0,0,0,0},{0,0,1,1},{0,0,1,0},{0,0,1,1}}};
-	int or2_output_prop[2][4][4] = {{{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0}} ,{{0,0,1,1},{0,0,0,0},{1,0,1,1},{1,0,1,1}}};
-	int or2_input_prop[2][4][4]  = {{{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0}} ,{{0,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}}};
+	int and2_output_prop[4][4]= {{0,0,0,0},{0,0,1,1},{1,1,1,1},{0,1,1,1}};
+	int and2_input_prop[4][4] = {{0,0,0,0},{0,0,1,1},{0,0,1,0},{0,0,1,1}};
+	int or2_output_prop[4][4] = {{2,0,1,1},{0,0,0,0},{1,0,1,1},{1,0,1,1}};
+	int or2_input_prop[4][4]  = {{0,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}};
+	int xor2_output_prop[4][4] = {{2,0,1,1},{0,0,0,0},{1,0,1,1},{1,0,1,1}};
+	int xor2_input_prop[4][4]  = {{0,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}};
 	int from_prop[16]      =  {0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1};
 	int inpt_prop[2][4] = {{0,0,0,0},{0,0,1,1}};
 	int nfi, goffset,val;
-	int rowids[1000];
+	int rowids[50];
+	char cache[1]; // needs to be 2x # of threads being run
+	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,fin = 1, type;
 	int *rowResults, *row;
 	if (tid < height) {
+		cache[0] = 0;
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		rowResults = (int*)malloc(sizeof(int)*width);
-		for (int i = ncount; i >= 0; i--) {
-			val = UNINITIALIZED;
-			goffset = node[i].offset;
+		for (int i = 0; i < ncount; i++) {
+			rowResults[i] = 0;
+		}
+		for (int i = ncount-1; i >= 0; i--) {
 			nfi = node[i].nfi;
-			for (int j =0; j < nfi; j++) {
-				rowids[j] = fans[goffset+j];
+			type = node[i].type;
+			if (0 == 0) {
+				goffset = node[i].offset;
+				// preload all of the fanin line #s for this gate to shared memory.
+				for (int j = 0; j < nfi;j++) {
+					rowids[j] = fans[goffset+j];
+				}
 			}
 			// switching based on value causes divergence, switch based on node type.
-			val = (row[i] >1);
+			val = (row[i] > 1);
 			if (node[i].po) {
 				rowResults[i] = val;
 			}
-			switch(node[i].type) {
+			switch(type) {
 				case FROM:
 					// For FROM, only set the "input" line if it hasn't already
 					// been set (otherwise it'll overwrite the decision of
 					// another system somewhere else.
-					val = inpt_prop[row[rowids[0]]][row[i]];
-					rowResults[rowids[0]] |= val;
-					rowResults[i] &= val;
+
+					val = (rowResults[i] > 0 && row[rowids[0]] > 1);
+					rowResults[rowids[0]] = val || rowResults[i];
+					rowResults[i] =  val;
 					break;
-					// For the standard gates, setting three values -- both the input lines and the output line.
+				case BUFF:
+				case NOT:
+					val = inpt_prop[row[rowids[0]]][rowResults[i]] && rowResults[i];
+					rowResults[rowids[0]] = val;
+					rowResults[i] = val;
+					break;
+					// For the standard gates, setting three values -- both the
+					// input lines and the output line.  row[i]-1 is the
+					// transition on the output, offset to make the texture
+					// calculations correct because there are 4 possible values
+					// row[i] can take: 0, 1, 2, 3.  0, 1 are the same, as are
+					// 2,3, so we subtract 1 and clamp to an edge if we
+					// overflow.
+					// 0 becomes -1 (which clamps to 0)
+					// 1 becomes 0
+					// 2 becomes 1
+					// 3 becomes 2 (which clamps to 1)
+					// There's only 2 LUTs for each gate type. The input LUT
+					// checks for path existance through the first input, so we
+					// call it twice with the inputs reversed to check both
+					// paths.
+
 				case NAND:
 				case AND:
-					rowResults[i] &= val && and2_output_prop[row[i]-1][row[rowids[0]]][row[rowids[1]]];
-					rowResults[rowids[0]] = val&& and2_input_prop[row[i]-1][row[rowids[0]]][row[rowids[1]]];
-					rowResults[rowids[1]] = val&& and2_input_prop[row[i]-1][row[rowids[1]]][row[rowids[0]]];
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[0] = and2_output_prop[row[rowids[fin1]]][row[rowids[fin2]]];
+							pass += (cache[0] > 1);
+							tmp = tmp && ((int)cache[0] > 0);
+						}
+					}
+					rowResults[i] = val && tmp && (pass <= nfi);
 					break;
 				case OR:
 				case NOR:
-					rowResults[rowids[0]] = val&&or2_input_prop[row[i]-1][row[rowids[0]]][row[rowids[1]]];
-					rowResults[rowids[1]] = val&&or2_input_prop [row[i]-1][row[rowids[1]]][row[rowids[0]]];
-					rowResults[i] &= val&&or2_output_prop[row[i]-1][row[rowids[0]]][row[rowids[1]]];
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						fin = 1;
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[0] = or2_output_prop[row[rowids[fin1]]][row[rowids[fin2]]];
+							pass += (cache[0] > 1);
+							tmp = tmp && ((int)cache[0] > 0);
+						}
+					}
+					rowResults[i] = val && tmp && (pass <= nfi);
 					break;
 				case XOR:
 				case XNOR:
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[0] = xor2_output_prop[row[rowids[fin1]]][row[rowids[fin2]]];
+							pass += (cache[0] > 1);
+							tmp = tmp && ((int)cache[0] > 0);
+						}
+					}
+					rowResults[i] = val && tmp && (pass <= nfi);
+					break;
 				default:
 					// if there is a transition that will propagate, set = to some positive #?
 					break;
 			}
-		}
-		for (int i = ncount; i >= 0; i--) {
-			nfi = node[i].nfi;
-			if (tid == 0) {
-				goffset = node[i].offset;
-				// preload all of the fanin line #s for this gate to shared memory.
-				for (int j = 0; j < nfi;j++) 
-					rowids[j] = fans[goffset+j];
-			}
-			int bin = rowResults[i];
-			if (node[i].type == INPT) {
-				continue;
-			}
-			for (int j = 0; j < node[i].nfi; j++) {
-				rowResults[rowids[j]] &= bin;
-			}
+			switch(type) {
+				case AND:
+				case NAND:
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						fin = 1;
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[0] = and2_input_prop[row[rowids[fin1]]][row[rowids[fin2]]];
+							fin = cache[0] && fin;
+						}
+						rowResults[rowids[fin1]] = fin && rowResults[i];
+					}
+					break;
+				case OR:
+				case NOR:
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						fin = 1;
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[0] = or2_input_prop[row[rowids[fin1]]][row[rowids[fin2]]];
+							fin = cache[0] && fin;
+						}
+						rowResults[rowids[fin1]] = fin && rowResults[i];
+					}
+				case XOR:
+				case XNOR:
+					for (fin1 = 0; fin1 < nfi; fin1++) {
+						fin = 1;
+						for (fin2 = 0; fin2 < nfi; fin2++) {
+							if (fin1 == fin2) continue;
+							cache[0] = xor2_input_prop[row[rowids[fin1]]][row[rowids[fin2]]];
+							fin = cache[0] && fin;
+						}
+						rowResults[rowids[fin1]] = fin && rowResults[i];
+					}
+					break;
+				default:
+					;;
 
+			}
 		}
+		// replace our working set to save memory.
 		for (int i = 0; i < width; i++) {
 			row[i] = rowResults[i];
 		}
@@ -98,102 +177,73 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 	}
 }
 
-void cpuCountCoverage(int toffset, int tid, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
-	int nfi, goffset, vecnum = toffset + tid, val, tempr, temph;
-	int *row, *rowHistory;
-	int *rowResults,*historyResults;
-	int h_cache[2048];
-	int r_cache[2048];
-
-	// For every node, count paths through this node
+int cpuCountCoverage(int toffset, int tid, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
+	int nfi, goffset, count = 0;
+	int *row, *historyRow;
+	int *current, *historyCount;
+	int rowids[50]; // handle up to fanins of 50 /
 	if (tid < height) {
-		rowResults = (int*)malloc(sizeof(int)*width);
-		historyResults = (int*)malloc(sizeof(int)*width);
-		row = (int*)((char*)results + vecnum*(width)*sizeof(int));
-		rowHistory = (int*)((char*)history + (vecnum-1)*(width)*sizeof(int));
-		for (int i = 0; i < width; i++) {
-			rowResults[i] = 0; 
-			historyResults[i] = 0;
-		}
-		if (vecnum == 0) {
-			// handle the initial vector separately, just count paths.
-			for (int c = ncount; c >= 0; c--) {
-				nfi = node[c].nfi;
-				goffset = node[c].offset;
-				if (node[c].po) {
-					rowResults[c] = row[c]*1;
-				}
-				switch (node[c].type) {
-					case 0: break;
-					case INPT: break;
-					case FROM:
-						rowResults[fans[goffset]] += row[c]*(rowResults[fans[goffset]]);
-					break;
-					default:
-						for (int i = 0; i < nfi;i++)
-							rowResults[fans[goffset+i]] = rowResults[c];
-
-				}
-			}
-			for (int i = 0; i < width; i++) {
-				row[i] = rowResults[i];
-			}
-
+		row = (int*)((char*)results + tid*(width)*sizeof(int));
+		if (tid == 0) {
+			historyRow = (int*)malloc(sizeof(int)*width);
+			memset(historyRow, 0, sizeof(int)*width);
 		} else {
-			for (int c = ncount; c >= 0; c--) {
-				nfi = node[c].nfi;
-				goffset = node[c].offset;
-				if (node[c].po) {
-					tempr = 0;
-					temph = rowHistory[fans[goffset+nfi]]*1;
-					val = row[fans[goffset+nfi]] > rowHistory[fans[goffset+nfi]];
-					r_cache[0] = tempr;
-					r_cache[1] = tempr + temph;
-					h_cache[0] = temph;
-					h_cache[1] = 0;
-					rowResults[fans[goffset+nfi]] = r_cache[val];
-					historyResults[fans[goffset+nfi]] = h_cache[val];
+			historyRow = history;
+		}
+		current = (int*)malloc(sizeof(int)*width);
+		historyCount = (int*)malloc(sizeof(int)*width);
+		for (int i = 0; i < ncount; i++) {
+			current[i] = 0;
+			historyCount[i] = 0;
+		}
+		for (int i = ncount-1; i >= 0; i--) {
+			nfi = node[i].nfi;
+			if (tid == 0) {
+				goffset = node[i].offset;
+				// preload all of the fanin line #s for this gate for less faffing about.
+				for (int j = 0; j < nfi;j++) {
+					rowids[j] = fans[goffset+j];
 				}
-				switch (node[c].type) {
-					case 0: continue;
-					case INPT: break;
-					case FROM:
-							   tempr = rowResults[fans[goffset]];
-							   tempr += row[fans[goffset+nfi]]*(rowResults[fans[goffset+nfi]]);
-							   temph = historyResults[fans[goffset]];
-							   temph += rowHistory[fans[goffset+nfi]]*(historyResults[fans[goffset+nfi]]);
-							   val = row[fans[goffset]] > rowHistory[fans[goffset]];
-							   r_cache[0] = tempr;
-							   r_cache[1] = tempr + temph;
-							   h_cache[0] = temph;
-							   h_cache[1] = 0;
-							   rowResults[fans[goffset]] = r_cache[val];
-							   historyResults[fans[goffset]] = h_cache[val];
-							   break;
-					default:
-							   for (int i = 0; i < nfi;i++) {
-								   rowResults[fans[goffset+i]] = rowResults[fans[goffset+nfi]];
-								   historyResults[fans[goffset+i]] = historyResults[fans[goffset+nfi]];
-								   val = row[fans[goffset+i]] > rowHistory[fans[goffset+i]];
-								   r_cache[0]     = rowResults[fans[goffset+i]];
-								   r_cache[1] = rowResults[fans[goffset+i]] + historyResults[fans[goffset+i]];
-								   h_cache[0]     = historyResults[fans[goffset+i]];
-								   h_cache[1] = 0;
-								   rowResults[fans[goffset+i]] = r_cache[val];
-								   historyResults[fans[goffset+i]] = h_cache[val];
-							   }
-				} 
 			}
-			for (int i = 0; i < width; i++) {
-				row[i] = rowResults[i];
+			if (node[i].po) {
+				current[i] = (row[i] > historyRow[i]); // only set = 1 if there's a new line here
+				historyCount[i] = historyRow[i];
+			}
+			switch(node[i].type) {
+				case 0: continue;
+				case FROM:
+						// Add the current fanout count to the fanin if this line is marked (and the history isn't).
+						current[rowids[0]] += current[i]*(row[rowids[0]] > historyRow[rowids[0]]);
+						historyCount[rowids[0]] += historyCount[i]*(historyRow[rowids[0]]);
+						break;
+				case INPT:
+						continue;
+				default: 
+						for (int fin = 0; fin < node[i].nfi; fin++) {
+							// if the fanout total is 0 but this line is marked (and the history isn't), add a path to the count.
+							// If the fanout total is > 1 and this line is marked (and the history isn't), assign the fanout total to the fanins.
+							historyCount[rowids[fin]] += (historyRow[rowids[fin]] || historyCount[i] > 1) * historyCount[i];
+							current[rowids[fin]] += ((row[rowids[fin]] > historyRow[rowids[fin]]) || current[i] > 1) * current[i] + historyCount[i]*(current[i] == 0 && row[rowids[fin]] > historyRow[rowids[fin]]);
+						}
+
 			}
 		}
-
-		free(rowResults);
-		free(historyResults);
+		for (int i = 0; i < ncount; i++) {
+			row[i] = current[i];
+		}
+		for (int i = 0; i < width; i++)
+			if (node[i].type == INPT)
+				count += row[i];
+		
+		free(current);
+		free(historyCount);
+		if (tid == 0) {
+			free(historyRow);
+		}
+		return count;
 	}
+	return 0;
 }
-
 void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, int pass, int tid) {
 	int nand2[4][4] = {{1, 1, 1, 1}, {1, 0, 1, 0}, {1, 1, 1, 1}, {1, 0, 1, 0}};
 	int and2[4][4]  = {{0, 0, 0, 0}, {0, 1, 0, 1}, {0, 0, 0, 0}, {0, 1, 0, 1}};
@@ -204,7 +254,7 @@ void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth,
 	int stable[2][2] = {{S0, T1}, {T0, S1}};
 	int from[4] = {0, 0, 1, 1};
 	int notl[4] = {1, 0, 1, 0};
-	char rowids[1000]; // handle up to fanins of 1000 / 
+	int rowids[1000]; // handle up to fanins of 1000 / 
 	int piNumber = 0, pi = 0;
 	int *row;
 	int goffset, nfi, val, j,type, r;
@@ -392,16 +442,22 @@ void cpuSumAll(int toffset, int tid, int *results, int *history, GPUNODE* node, 
 	}
 }
 
-float cpuCountPaths(ARRAY2D<int> results, ARRAY2D<int> history, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
+float cpuCountPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int* coverage) {
 	float elapsed = 0.0;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-//	DPRINT("rw %d, rh %d, gw %d, gh %d\n", results.width, results.height, dgraph.width, dgraph.height);
+	int *history = (int*)malloc(sizeof(int)*results.width);
+	int *current;
+	int cover = 0;
+	for (int i = 0; i < results.width; i++) 
+		history[i] = 0;
 	for (int j = 0; j < results.height; j++) {
-		cpuCountCoverage(0, j,results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
+		current = (int*)((char*)results.data + j*(results.width)*sizeof(int));
+		cover += cpuCountCoverage(0, j,results.data, history,dgraph.data, fan, results.width, results.height, dgraph.width);
+		for (int i = 0; i < results.width; i++) 
+			history[i] = history[i] | current[i];
 	}
-	cpuSumAll(0, 0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
-
+	*coverage = cover;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = (stop.tv_nsec - start.tv_nsec) / 1000000.0;
 	return elapsed;

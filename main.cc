@@ -9,7 +9,6 @@
 #include "coverkernel.h"
 #include "serial.h"
 #include "sort.h"
-#include "siuTgen/src/BlifParse.h"
 
 int main(int argc, char ** argv) {
 	FILE *fisc, *fvec;
@@ -132,26 +131,25 @@ for (int i = 0; i < test.max_offset; i++) {
 	ARRAY2D<int> sInputArray = ARRAY2D<int>(cvec, 4, 5);
 
 	pass1_s = cpuRunSimulation(sResArray, sInputArray, test.graph,sGraphArray,cfans, 1);
-//	TPRINT("Simulation Pass 1 time (serial): %f ms\n", pass1_s);
-//	debugCpuSimulationOutput(sResArray,1);
+	TPRINT("Simulation Pass 1 time (serial): %f ms\n", pass1_s);
+	debugCpuSimulationOutput(sResArray,1);
 	cpuShiftVectors(cvec, pis, vcnt/pis);
 	pass2_s = cpuRunSimulation(sResArray, sInputArray, test.graph,sGraphArray,cfans, 2);
-//	debugCpuSimulationOutput(sResArray,2);
-//	TPRINT("Simulation Pass 2 time (serial): %f ms\n", pass2_s);
-//	mark_s = cpuMarkPaths(sResArray, test.graph, sGraphArray, cfans);
-//	TPRINT("Path Mark time (serial) %fms\n",mark_s);
-//	debugCpuMark(sResArray);
-//	merge_s = cpuMergeHistory(sResArray, &mergeserial, test.graph, sGraphArray, cfans);
-//	TPRINT("Path Merge time %fms\n",merge);
-//	debugCpuMark(sResArray);
-
-//	cover_s = cpuCountPaths(sResArray,ARRAY2D<int>(mergeserial,sResArray.height, sResArray.width),test.graph,sGraphArray,fans);
-//	TPRINT("Path Coverage time (serial) %fms\n",cover_s);
+	debugCpuSimulationOutput(sResArray,2);
+	TPRINT("Simulation Pass 2 time (serial): %f ms\n", pass2_s);
+	mark_s = cpuMarkPaths(sResArray, test.graph, sGraphArray, cfans);
+	TPRINT("Path Mark time (serial) %fms\n",mark_s);
+	debugCpuMark(sResArray);
+	int* pathcount_s = (int*)malloc(sizeof(int));
+	cover_s = cpuCountPaths(sResArray,test.graph,sGraphArray,cfans, pathcount_s);
+	TPRINT("Path Coverage time (serial) %fms\n",cover_s);
 	alltime_s = pass1_s + pass2_s + mark_s + merge_s + cover_s;
+#ifndef CPUCOMPILE
 	freeMemory(mergeresult);
 	freeMemory(resArray.data);
 	freeMemory(inputArray.data);
-//	TPRINT("Total Path Count for vectors (serial): %d\n", sReturnPathCount(sResArray));
-//	TPRINT("%f\n", alltime_s);
+#endif
+	TPRINT("Total Path Count for vectors (serial): %d\n", *pathcount_s);
+	TPRINT("%f\n", alltime_s);
 	return 0;
 }

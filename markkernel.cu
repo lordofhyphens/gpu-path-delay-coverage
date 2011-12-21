@@ -126,7 +126,7 @@ void loadPropLUTs() {
 
 __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val;
-	__shared__ int rowids[500]; // handle up to fanins of 500 / 
+	__shared__ int rowids[50]; // handle up to fanins of 50 
 	__shared__ char cache[THREAD_PER_BLOCK]; // needs to be 2x # of threads being run
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,fin = 1, type;
 	int *rowResults, *row;

@@ -1,7 +1,6 @@
 #ifndef GPUISCAS_H
 #define GPUISCAS_H
 #include "iscas.h"
-#include <cuda.h>
 int* gpuLoadVectors(int** input, size_t width, size_t height);
 int* gpuLoad1DVector(int* input, size_t width, size_t height);
 int* loadPinned(int*, size_t);
