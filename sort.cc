@@ -19,7 +19,7 @@ int topologicalSort(NODE *graph, int ncount) {
 		if (graph[i].typ != 0)
 			ncnt++;
 	}
-	while (nodes.size() < ncnt) {
+	while (nodes.size() < (unsigned int)ncnt) {
 		for (int c = 0; c <= ncount; c++) {
 			if (graph[c].typ == 0) {
 				continue; // ignore blanks

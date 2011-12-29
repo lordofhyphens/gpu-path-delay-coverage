@@ -24,16 +24,16 @@ texture<int, 2> XorOutChainLUT;
 
 // group all results together, this implementation will fail if # of lines > 1024
 // will need to group lines into groups of 1024 or less
-__global__ void kernMerge(int* input, int* results, int width, int height) {
-	int *r,result, i;
+__global__ void kernMerge(int* input, int* results, int offset, int width, int height) {
+	int *r,result, i, dst = threadIdx.x + offset;
 	if (threadIdx.x < width) {
 		result = 0;
 		for (i = 0; i <= blockIdx.x; i++) {
 			r = (int*)((char*)input + sizeof(int)*i*width);
-			result = (result || r[threadIdx.x]);
+			result = (result || r[dst]);
 		}
 		r = (int*)((char*)results + sizeof(int)*width*blockIdx.x);
-		r[threadIdx.x] = result;
+		r[dst] = result;
 	}
 }
 void loadMergeLUTs() {
@@ -301,7 +301,7 @@ float gpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph
 #endif // NTIMING
 }
 float gpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
-	loadMergeLUTs();
+//	loadMergeLUTs();
 	cudaMalloc(mergeresult, sizeof(int)*input.height*input.width);
 	// for bigger circuits or more patterns, need some logic here to divide work according to what will fit. 
 #ifndef NTIMING
@@ -311,12 +311,15 @@ float gpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 	cudaEventCreate(&stop);
 	cudaEventRecord(start,0);
 #endif // NTIMING
-	DPRINT("height: %d width: %d\n", input.height, input.width);
-	kernMerge<<<input.height,input.width>>>(input.data, *mergeresult, input.width, input.height);
+	int groups = (input.width / 1024) + 1; 
+	DPRINT("height: %d width: %d groups: %d \n", input.height, input.width, groups);
+	for (int i = 0; i < groups; i++) {
+		kernMerge<<<input.height,1024>>>(input.data, *mergeresult, i*1024, input.width, input.height);
+	}
 	cudaDeviceSynchronize();
 #ifndef NTIMING
 	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
+//	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&elapsed,start,stop);
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);

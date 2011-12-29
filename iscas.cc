@@ -74,7 +74,7 @@ void FreeList(LIST **l)
  ******************************************************/
 int ReadIsc(FILE *fisc,NODE *graph)
 {
-    char c,noty[Mlin],from[Mlin],str1[Mlin],str2[Mlin],name[Mlin],line[Mlin];
+    char noty[Mlin],from[Mlin],str1[Mlin],str2[Mlin],name[Mlin],line[Mlin];
     int  i,id,fid,fin,fout,mid=0;
 
     // intialize all nodes in graph structure
@@ -235,7 +235,6 @@ void PrintCircuit(NODE *graph,int Max)
 int readVectors(int** vec, FILE* fvec) {
     char str1[Mlin];
 	int* vecs = *vec;
-	int* currentRow;
 	int width = 0, count = 0, posCount = 1,curCount=0;
 	long vecLength=Mlin;
 	vecs = (int*)calloc(sizeof(int),Mlin);

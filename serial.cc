@@ -5,7 +5,7 @@
 #include <unistd.h>
 
 void cpuMerge(int h, int w, int* input, int* results, int width) {
-	int merge[2][2] = {{0,1},{1,1}};
+//	int merge[2][2] = {{0,1},{1,1}};
 	int *r,result, i;
 	if (w < width) {
 		result = 0;
@@ -26,14 +26,14 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 	int or2_input_prop[4][4]  = {{0,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}};
 	int xor2_output_prop[4][4] = {{2,0,1,1},{0,0,0,0},{1,0,1,1},{1,0,1,1}};
 	int xor2_input_prop[4][4]  = {{0,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}};
-	int from_prop[16]      =  {0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1};
+//	int from_prop[16]      =  {0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1};
 	int inpt_prop[2][4] = {{0,0,0,0},{0,0,1,1}};
 	int nfi, goffset,val;
 	int rowids[50];
 	char cache[1]; // needs to be 2x # of threads being run
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,fin = 1, type;
 	int *rowResults, *row;
-	if (tid < height) {
+	if ((unsigned int)tid < height) {
 		cache[0] = 0;
 		row = (int*)((char*)results + tid*(width)*sizeof(int));
 		rowResults = (int*)malloc(sizeof(int)*width);
@@ -170,14 +170,14 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 			}
 		}
 		// replace our working set to save memory.
-		for (int i = 0; i < width; i++) {
+		for (unsigned int i = 0; i < width; i++) {
 			row[i] = rowResults[i];
 		}
 		free(rowResults);
 	}
 }
 
-int cpuCountCoverage(int toffset, int tid, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
+int cpuCountCoverage(const int toffset, const unsigned int tid, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
 	int nfi, goffset, count = 0;
 	int *row, *historyRow;
 	int *current, *historyCount;
@@ -231,7 +231,7 @@ int cpuCountCoverage(int toffset, int tid, int *results, int *history, GPUNODE* 
 		for (int i = 0; i < ncount; i++) {
 			row[i] = current[i];
 		}
-		for (int i = 0; i < width; i++)
+		for (unsigned int i = 0; i < width; i++)
 			if (node[i].type == INPT)
 				count += row[i];
 		
@@ -244,7 +244,7 @@ int cpuCountCoverage(int toffset, int tid, int *results, int *history, GPUNODE* 
 	}
 	return 0;
 }
-void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, int pass, int tid) {
+void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, int pass, unsigned int tid) {
 	int nand2[4][4] = {{1, 1, 1, 1}, {1, 0, 1, 0}, {1, 1, 1, 1}, {1, 0, 1, 0}};
 	int and2[4][4]  = {{0, 0, 0, 0}, {0, 1, 0, 1}, {0, 0, 0, 0}, {0, 1, 0, 1}};
 	int nor2[4][4]  = {{1, 0, 1, 0}, {0, 0, 0, 0}, {1, 0, 1, 0}, {0, 0, 0, 0}};
@@ -252,7 +252,7 @@ void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth,
 	int xnor2[4][4] = {{1, 0, 1, 0}, {0, 1, 0, 1}, {1, 0, 1, 0}, {0, 1, 0, 1}};
 	int xor2[4][4]  = {{0, 1, 0, 1}, {1, 0, 1, 0}, {0, 1, 0, 1}, {1, 0, 1, 0}};
 	int stable[2][2] = {{S0, T1}, {T0, S1}};
-	int from[4] = {0, 0, 1, 1};
+	//int from[4] = {0, 0, 1, 1};
 	int notl[4] = {1, 0, 1, 0};
 	int rowids[1000]; // handle up to fanins of 1000 / 
 	int piNumber = 0, pi = 0;
@@ -260,7 +260,7 @@ void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth,
 	int goffset, nfi, val, j,type, r;
 	if (tid < height) {
 		row = res + tid*width; // get the current row?
-		for (int i = 0; i < width; i++) {
+		for (unsigned int i = 0; i < width; i++) {
 			nfi = graph[i].nfi;
 			goffset = graph[i].offset;
 			// preload all of the fanin line #s for this gate to shared memory.
@@ -328,14 +328,11 @@ void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth,
 
 
 float cpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int pass) {
-	int piNumber = 0, curPI = 0;
-	int *row;
 	float elapsed = 0.0;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	for (int j = 0; j < results.height; j++) {
 		cpuSimulate(dgraph.data, results.data, inputs.data, fan, inputs.width, results.width,results.height,pass,j);
-
 	}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
@@ -349,7 +346,7 @@ int* cpuLoad1DVector(int* input, size_t width, size_t height) {
 	return tgt;
 }
 
-int* cpuLoadVectors(int** input, size_t width, size_t height) {
+int* cpuAllocateResults(size_t width, size_t height) {
 	int *tgt;
 	tgt = (int*)malloc(sizeof(int)*(width)*(height));
 	memset(tgt, 0, sizeof(int)*width*height);
@@ -357,10 +354,9 @@ int* cpuLoadVectors(int** input, size_t width, size_t height) {
 }
 
 GPUNODE* cpuLoadCircuit(const GPUNODE* graph, int maxid) {
-	GPUNODE *devAr, *testAr;
-	devAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(1+maxid));
-	memcpy(devAr, graph, (maxid+1) * sizeof(GPUNODE));
-	
+	GPUNODE *devAr;
+	devAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(maxid));
+	memcpy(devAr, graph, (maxid) * sizeof(GPUNODE));
 	return devAr;
 }
 LINE* cpuLoadLines(LINE* graph, int maxid) {
@@ -376,10 +372,10 @@ int* cpuLoadFans(int* offset, int maxid) {
 	return devAr;
 }
 void cpuShiftVectors(int* input, size_t width, size_t height) {
-	int* tgt, *z;
+	int* tgt;
 	// create a temporary buffer area on the device
 	tgt = (int*)malloc(sizeof(int)*(width));
-	for (int i = 0; i < height*width; i++) {
+	for (unsigned int i = 0; i < height*width; i++) {
 		assert(input[i] < 2);
 //		DPRINT("%d ",input[i]);
 	}
@@ -387,7 +383,7 @@ void cpuShiftVectors(int* input, size_t width, size_t height) {
 	memcpy(tgt, input,sizeof(int)*(width));
 	memcpy(input, input+width,sizeof(int)*(width)*(height-1));
 	memcpy(input+(height-1)*(width),tgt, sizeof(int)*(width));
-	for (int i = 0; i < height*width; i++) {
+	for (unsigned int i = 0; i < height*width; i++) {
 		assert(input[i] < 2);
 //		DPRINT("%d ",input[i]);
 	}
@@ -428,7 +424,7 @@ void cpuSumAll(int toffset, int tid, int *results, int *history, GPUNODE* node, 
 	int sum;
 	if (tid < 1) {
 		sum = 0;
-		for (int j = 0; j < height; j++) {
+		for (unsigned int j = 0; j < height; j++) {
 			row = (int*)((char*)results + j*(width)*sizeof(int));
 			for (int c = ncount; c >= 0; c--) {
 				goffset = node[c].offset;

@@ -3,6 +3,7 @@
 #include "gpuiscas.h"
 #include "defines.h"
 #include <cassert>
+#include <math.h>
 
 static void HandleError( cudaError_t err,
                          const char *file,
@@ -17,7 +18,7 @@ static void HandleError( cudaError_t err,
 
 
 #define HANDLE_NULL( a ) {if (a == NULL) { \
-                            printf("Host memory failed in %s at line %d\n", \
+                            DPRINT("Host memory failed in %s at line %d\n", \
                                     __FILE__, __LINE__ ); \
                             exit( EXIT_FAILURE );}}
 
@@ -76,36 +77,22 @@ void gpuShiftVectors(int* input, size_t width, size_t height) {
 	HANDLE_ERROR(cudaMemcpy(input+(height-1)*(width),tgt, sizeof(int)*(width), cudaMemcpyDeviceToDevice));
 	cudaFree(tgt);
 }
-int* gpuLoadVectors(int** input, size_t width, size_t height) {
+int* gpuAllocateResults(size_t width, size_t height) {
 	int *tgt = NULL;
 	cudaError_t returncode;
-	returncode = cudaMalloc(&tgt, sizeof(int)*(width)*(height));
-	assert(returncode == cudaSuccess);
+	DPRINT("Allocating %u * %u * %u = %lu bytes... %e megabytes ",(int)sizeof(unsigned),(unsigned)width,(unsigned)height, sizeof(int)*width*height, sizeof(int)*width*height / pow(2,20));
+	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width)*(height)));
+	DPRINT("...complete.\n");
+//	assert(returncode == cudaSuccess);
 	returncode = cudaMemset(tgt, 0, sizeof(int)*width*height);
 	assert(returncode == cudaSuccess);
-	/*
-	int *row;
-	for (int i = 0; i < height; i++) {
-		row = (int*)((char*)tgt + i*(width)*sizeof(int));
-		cudaMemcpy(row, input[i],sizeof(int)*(width+1),cudaMemcpyHostToDevice);
-#ifndef NDEBUG
-		int *tmp = (int*)malloc(sizeof(int)*width);
-		for (int r =0; r <= width;r++)
-			tmp[r] = -1;
-		cudaMemcpy(tmp, row, sizeof(int)*(width+1),cudaMemcpyDeviceToHost);
-		for (int j = 0; j <= width; j++) {
-			assert(input[i][j]==tmp[j]);
-		}
-		free(tmp);
-#endif // debugging memory check and assertion
-	}*/
 	return tgt;
 }
 int* gpuLoad1DVector(int* input, size_t width, size_t height) {
 	int *tgt;
 	cudaError_t returncode; 
-	returncode = cudaMalloc(&tgt, sizeof(int)*(width)*(height));
-	assert(returncode == cudaSuccess);
+	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width)*(height)));
+//	assert(returncode == cudaSuccess);
 	returncode = cudaMemcpy(tgt, input,sizeof(int)*(width)*(height),cudaMemcpyHostToDevice);
 	assert(returncode == cudaSuccess);
 	return tgt;

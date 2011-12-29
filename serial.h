@@ -11,7 +11,7 @@ void cpuShiftVectors(int* input, size_t width, size_t height);
 int* cpuLoadFans(int* offset, int maxid);
 LINE* cpuLoadLines(LINE* graph, int maxid);
 GPUNODE* cpuLoadCircuit(const GPUNODE* graph, int maxid);
-int* cpuLoadVectors(int** input, size_t width, size_t height);
+int* cpuAllocateResults(size_t width, size_t height);
 int* cpuLoad1DVector(int* input, size_t width, size_t height);
 float cpuCountPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int*);
 
