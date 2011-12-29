@@ -257,7 +257,7 @@ void cpuSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth,
 	int rowids[1000]; // handle up to fanins of 1000 / 
 	int piNumber = 0, pi = 0;
 	int *row;
-	int goffset, nfi, val, j,type, r;
+	int goffset, nfi, val = 0, j,type, r;
 	if (tid < height) {
 		row = res + tid*width; // get the current row?
 		for (unsigned int i = 0; i < width; i++) {

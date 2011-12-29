@@ -399,7 +399,7 @@ GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid) {
 }
 
 int verifyArrays(GPUNODE_INFO info, LINE* lgraph, int maxid) {
-	int good;
+	int good = 0;
 	for (int i = 0; i <= maxid-2; i++) {
 		if (info.graph[i].type != 0)
 			good = (lgraph[info.graph[i].offset+info.graph[i].nfo].prev == i);

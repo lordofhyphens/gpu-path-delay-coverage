@@ -314,15 +314,10 @@ float gpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 //	cudaEventRecord(start,0);
 #endif // NTIMING
 	int groups = (input.width / 1024) + 1; 
-	cudaStream_t *streams;
-	streams = new cudaStream_t[groups];
 	DPRINT("height: %d width: %d groups: %d \n", input.height, input.width, groups);
 	for (int i = 0; i < groups; i++) {
-		cudaStreamCreate(streams+i);
-		kernMerge<<<input.height,1024,0,streams[i]>>>(input.data, *mergeresult, i*1024, input.width, input.height);
+		kernMerge<<<input.height,1024,0>>>(input.data, *mergeresult, i*1024, input.width, input.height);
 	}
-	for (int i =0; i < groups; i++)
-		cudaStreamSynchronize(streams[i]);
 	cudaDeviceSynchronize();
 #ifndef NTIMING
 //	cudaEventRecord(stop, 0);
@@ -333,9 +328,6 @@ float gpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
 #endif
-	for (int i = 0; i < groups;i++) {
-		cudaStreamDestroy(streams[i]);
-	}
 	cudaMemcpy(*mergeresult, input.data, input.bwidth(), cudaMemcpyDeviceToDevice);
 #ifndef NTIMING
 	return elapsed;

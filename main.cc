@@ -90,7 +90,7 @@ for (int i = 0; i < test.max_offset; i++) {
 	ARRAY2D<int> resArray = ARRAY2D<int>(dres,vcnt,lcnt);
 	ARRAY2D<GPUNODE> graphArray = ARRAY2D<GPUNODE>(dgraph,1,ncnt);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
+	elapsed = floattime(diff(start, stop));
 //	DPRINT("GPU Memory Time: %f ms\n", elapsed);
 
 	pass1 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 1);
