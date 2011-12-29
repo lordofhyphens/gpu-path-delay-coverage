@@ -236,6 +236,7 @@ int readVectors(int** vec, FILE* fvec) {
     char str1[Mlin];
 	int* vecs = *vec;
 	int width = 0, count = 0, posCount = 1,curCount=0;
+	int lcount = 0;
 	long vecLength=Mlin;
 	vecs = (int*)calloc(sizeof(int),Mlin);
 	assert(vecs != NULL);
@@ -259,16 +260,17 @@ int readVectors(int** vec, FILE* fvec) {
 					} else {
 						vecs[count] = 0;
 					}
-					count++;
 					width++;
+					count++;
 					break;
 				default:
+					lcount++;
 					width = 0;
 			}
 		}
 	}
 	*vec = vecs;
-	return count;
+	return lcount;
 }
 /******************************************************
  * Free the memory of all member of graph structure
@@ -417,4 +419,21 @@ NODE_type::NODE_type(const NODE_type& n) {
 	mar = 0;
 	val = 0;
 	fval = 0;
+}
+timespec diff(timespec start, timespec end) {
+	timespec temp;
+	if ((end.tv_nsec-start.tv_nsec) < 0) {
+		temp.tv_sec = end.tv_sec-start.tv_sec-1;
+		temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+	} else {
+		temp.tv_sec = end.tv_sec-start.tv_sec;
+		temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+	}
+	return temp;
+}
+
+float floattime(timespec time) {
+	float temp =0.0; 
+	temp = (time.tv_sec * pow(10,3)) + (time.tv_nsec / pow(10,6));
+	return temp;
 }

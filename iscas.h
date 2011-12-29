@@ -19,7 +19,7 @@ Constant Declarations
 // VARIOUS CONSTANTS
 #define Mfnam      20			// max size for a file name
 #define Mnod    15000 		        // max number of nodes in a graph/node
-#define Mlin      200			// max size of characters in a line
+#define Mlin      512			// max size of characters in a line
 #define Mnam       25			// max size of a node name
 #define Mtyp       10			// max type of nodes/gates
 #define Mout       16		        // max node out degree (nfo)
@@ -111,4 +111,6 @@ GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid);
 void PrintLines(LINE* lgraph, int lcnt); 
 int verifyArrays(GPUNODE_INFO info, LINE* lgraph, int maxid);
 int readVectors(int** vecs, FILE* fvec);
+timespec diff(timespec start, timespec end);
+float floattime(timespec time);
 #endif

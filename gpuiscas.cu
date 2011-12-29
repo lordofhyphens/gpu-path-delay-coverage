@@ -24,9 +24,7 @@ static void HandleError( cudaError_t err,
 
 GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid) {
 	GPUNODE *devAr, *testAr;
-	cudaError_t returncode;
-	returncode = cudaMalloc(&devAr, sizeof(GPUNODE)*(maxid));
-	assert(returncode == cudaSuccess);
+	HANDLE_ERROR(cudaMalloc(&devAr, sizeof(GPUNODE)*(maxid)));
 	HANDLE_ERROR(cudaMemcpy(devAr, graph, (maxid) * sizeof(GPUNODE),cudaMemcpyHostToDevice));
 //	DPRINT("Verifying GPUNODE graph copy\n");
 	testAr = (GPUNODE*)malloc(sizeof(GPUNODE)*(maxid));	

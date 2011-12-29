@@ -24,6 +24,7 @@ int main(int argc, char ** argv) {
 	fisc=fopen(argv[1],"r");
 	fvec=fopen(argv[2],"r");
 	vcnt = readVectors(&vec, fvec);
+	DPRINT("%d characters read.\n",vcnt);
 //	vec = loadPinned(vec, vcnt);
 	
 
@@ -34,7 +35,7 @@ int main(int argc, char ** argv) {
 		InitializeLines(lgraph, i);
 	DPRINT("Enumerating lines....");
 	lcnt = EnumerateLines(graph,lgraph,ncnt);
-	DPRINT("complete.\n");
+	DPRINT(" %d lines complete.\n", lcnt);
 	DPRINT("Copying to flat arrays...");
 	test = GraphsetToArrays(graph, lgraph, ncnt);
 	DPRINT("complete.\n");
@@ -43,6 +44,7 @@ int main(int argc, char ** argv) {
 		if (graph[i].typ == INPT)
 			pis++;
 	}
+	DPRINT("%d primary inputs, %d input vectors.\n", pis, vcnt);
 	DPRINT("Allocating results memory on host...");
 //	for (int i = 0; i < vcnt; i++) {
 //		res[i] = (int*)malloc(sizeof(int)*lcnt);
@@ -76,16 +78,16 @@ for (int i = 0; i < test.max_offset; i++) {
 //	DPRINT("complete.\n");
 	fans = gpuLoadFans(test.offsets,test.max_offset);
 //	DPRINT("Allocating GPU results memory....");
-	dres = gpuAllocateResults(lcnt, vcnt / pis);
+	dres = gpuAllocateResults(lcnt, vcnt);
 //	DPRINT("...complete.\n");
 //	DPRINT("W: %d H: %d\n", pis, (vcnt/pis));
 //	DPRINT("Loading test vectors into GPU Memory...");
-	dvec = gpuLoad1DVector(vec, pis, vcnt / pis);
+	dvec = gpuLoad1DVector(vec, pis, vcnt);
 	freeMemory(vec);
 //	DPRINT("...complete.\n");
 
-	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, vcnt/pis, pis);
-	ARRAY2D<int> resArray = ARRAY2D<int>(dres,vcnt/pis,lcnt);
+	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, vcnt, pis);
+	ARRAY2D<int> resArray = ARRAY2D<int>(dres,vcnt,lcnt);
 	ARRAY2D<GPUNODE> graphArray = ARRAY2D<GPUNODE>(dgraph,1,ncnt);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
@@ -116,12 +118,12 @@ for (int i = 0; i < test.max_offset; i++) {
 	float alltime_s=0.0, pass1_s=0.0, pass2_s=0.0, mark_s=0.0, merge_s=0.0, cover_s=0.0;
 	int *cres, *cfans, *cvec; // serial implementation
 	GPUNODE *cgraph;
-	cres = cpuAllocateResults(lcnt, vcnt / pis);
-	cvec = cpuLoad1DVector(vec, pis, vcnt / pis);
+	cres = cpuAllocateResults(lcnt, vcnt);
+	cvec = cpuLoad1DVector(vec, pis, vcnt);
 	cfans = cpuLoadFans(test.offsets,test.max_offset);
 	cgraph = cpuLoadCircuit(test.graph,ncnt);
 
-	ARRAY2D<int> sResArray = ARRAY2D<int>(cres,vcnt/pis,lcnt);
+	ARRAY2D<int> sResArray = ARRAY2D<int>(cres,vcnt,lcnt);
 	ARRAY2D<GPUNODE> sGraphArray = ARRAY2D<GPUNODE>(cgraph,1,ncnt);
 	ARRAY2D<int> sInputArray = ARRAY2D<int>(cvec, 4, 5);
 
@@ -146,7 +148,7 @@ for (int i = 0; i < test.max_offset; i++) {
 #endif
 	TPRINT("Total Path Count for vectors (serial): %d\n", *pathcount_s);
 #ifndef CPUCOMPILE	
-	TPRINT("%d, %f,%f,", vcnt/pis,elapsed, alltime);
+	TPRINT("%d, %f,%f,", vcnt,elapsed, alltime);
 	TPRINT("%f\n", alltime_s);
 #else
 	TPRINT("Total CPU Time: %f\n", alltime_s);

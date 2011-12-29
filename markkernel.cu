@@ -306,24 +306,36 @@ float gpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 	// for bigger circuits or more patterns, need some logic here to divide work according to what will fit. 
 #ifndef NTIMING
 	float elapsed;
-	cudaEvent_t start, stop;
-	cudaEventCreate(&start);
-	cudaEventCreate(&stop);
-	cudaEventRecord(start,0);
+	timespec start, stop;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+//	cudaEvent_t start, stop;
+//	cudaEventCreate(&start);
+//	cudaEventCreate(&stop);
+//	cudaEventRecord(start,0);
 #endif // NTIMING
 	int groups = (input.width / 1024) + 1; 
+	cudaStream_t *streams;
+	streams = new cudaStream_t[groups];
 	DPRINT("height: %d width: %d groups: %d \n", input.height, input.width, groups);
 	for (int i = 0; i < groups; i++) {
-		kernMerge<<<input.height,1024>>>(input.data, *mergeresult, i*1024, input.width, input.height);
+		cudaStreamCreate(streams+i);
+		kernMerge<<<input.height,1024,0,streams[i]>>>(input.data, *mergeresult, i*1024, input.width, input.height);
 	}
+	for (int i =0; i < groups; i++)
+		cudaStreamSynchronize(streams[i]);
 	cudaDeviceSynchronize();
 #ifndef NTIMING
-	cudaEventRecord(stop, 0);
+//	cudaEventRecord(stop, 0);
 //	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&elapsed,start,stop);
-	cudaEventDestroy(start);
-	cudaEventDestroy(stop);
+//	cudaEventElapsedTime(&elapsed,start,stop);
+//	cudaEventDestroy(start);
+//	cudaEventDestroy(stop);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+	elapsed = floattime(diff(start, stop));
 #endif
+	for (int i = 0; i < groups;i++) {
+		cudaStreamDestroy(streams[i]);
+	}
 	cudaMemcpy(*mergeresult, input.data, input.bwidth(), cudaMemcpyDeviceToDevice);
 #ifndef NTIMING
 	return elapsed;

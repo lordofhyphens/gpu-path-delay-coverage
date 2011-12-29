@@ -335,7 +335,7 @@ float cpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 		cpuSimulate(dgraph.data, results.data, inputs.data, fan, inputs.width, results.width,results.height,pass,j);
 	}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
+	elapsed = floattime(diff(start, stop));
 	return elapsed;
 }
 
@@ -399,7 +399,7 @@ float cpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph
 		cpuMarkPathSegments(results.data, i, dgraph.data, fan, results.width, results.height, dgraph.width);
 	}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
+	elapsed = floattime(diff(start, stop));
 	return elapsed;
 }
 float cpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
@@ -413,7 +413,7 @@ float cpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 		}
 	memcpy(*mergeresult, input.data, input.bwidth());
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-	elapsed = (((stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)/1000000.0) +0.5);
+	elapsed = floattime(diff(start, stop));
 	return elapsed;
 }
 
@@ -455,7 +455,7 @@ float cpuCountPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgrap
 	}
 	*coverage = cover;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-	elapsed = (stop.tv_nsec - start.tv_nsec) / 1000000.0;
+	elapsed = floattime(diff(start, stop));
 	return elapsed;
 }
 

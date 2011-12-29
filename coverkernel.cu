@@ -2,6 +2,7 @@
 #include "defines.h"
 #include "coverkernel.h"
 
+#define THREAD_PER_BLOCK 256
 // badly sums everything and places it into row[0][0]
 __global__ void kernSumAll(int toffset, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x, nfi, goffset;
@@ -116,33 +117,20 @@ void debugCoverOutput(ARRAY2D<int> results) {
 }
 float gpuCountPaths(ARRAY2D<int> results, ARRAY2D<int> history, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
 #ifndef NTIMING
-	float elapsed = 0.0, cover = 0.0;
-	cudaEvent_t start, stop;
-	cudaEventCreate(&start);
-	cudaEventCreate(&stop);
-	cudaEventRecord(start,0);
+	float elapsed = 0.0;
+	timespec start, stop;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif
-	kernCountCoverage<<<1,results.height>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
+	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
+	kernCountCoverage<<<blockcount,THREAD_PER_BLOCK>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
 	cudaDeviceSynchronize();
 #ifndef NTIMING
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&elapsed,start,stop);
-//	DPRINT("Cover time: %2f \n", elapsed);
-	cudaEventDestroy(start);
-	cudaEventDestroy(stop);
-	cudaEventCreate(&start);
-	cudaEventCreate(&stop);
-	cudaEventRecord(start,0);
 #endif
 	kernSumAll<<<1,1>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
 #ifndef NTIMING
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&elapsed,start,stop);
-	cudaEventDestroy(start);
-	cudaEventDestroy(stop);
-	return elapsed+cover;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+	elapsed = floattime(diff(start,stop));
+	return elapsed;
 #else
 	return 0.0;
 #endif
