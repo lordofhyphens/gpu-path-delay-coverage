@@ -75,3 +75,30 @@ int topologicalSort(NODE *graph, int ncount) {
  	}
 	return nodes.size();
 }
+// 2-pass algorithm to place nodes in levels for later parallel processing.
+int levelize(NODE* graph, int ncount) {
+	int maxlevel = 0;
+	int max = 0;
+	for (int i = 0; i < ncount; i++) {
+		// if this circuit does not have, as a fanin, any previous node, then assign it to the current level.
+		// Otherwise, increment the level count by 1.
+		LIST* tmp = graph[i].fin;
+		graph[i].level = maxlevel;
+		max = 0;
+		while (tmp !=NULL) {
+			if (tmp->id < i) {
+				if (max < graph[tmp->id].level)
+					max = graph[tmp->id].level;
+			}
+			tmp = tmp->nxt;
+		}
+		graph[i].level = max+1;
+		if (maxlevel < max+1){
+			maxlevel = max+1;
+		}
+	}
+	for (int i =0; i < ncount; i++) {
+		graph[i].level--;
+	}
+	return maxlevel;
+}

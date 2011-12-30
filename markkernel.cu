@@ -37,13 +37,12 @@ __global__ void kernMerge(char* input, char* results, int offset, int width, int
 	if (threadIdx.x < width) {
 		result = 0;
 		for (i = 0; i <= blockIdx.x; i++) {
-			r = ((char*)input + (boffset+i)*pitch);
+			r = ((char*)input + i*pitch);
 			result = (result || r[dst]);
 		}
 		r = ((char*)results + pitch*blockIdx.x);
 		r[dst] = result;
 	}
-}
 }
 void loadPropLUTs() {
 	// Creating a set of static arrays that represent our LUTs

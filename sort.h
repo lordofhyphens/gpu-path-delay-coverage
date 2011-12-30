@@ -3,4 +3,5 @@
 #include <deque>
 #include "iscas.h"
 int topologicalSort(NODE *graph, int ncount);
+int levelize(NODE* graph, int ncount);
 #endif

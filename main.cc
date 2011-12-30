@@ -12,7 +12,7 @@
 
 int main(int argc, char ** argv) {
 	FILE *fisc, *fvec;
-	int *fans, *vec,*dvec;
+	int *fans, *vec,*dvec, levels;
 	GPUNODE *dgraph;
 	NODE* graph;
 	graph = (NODE*)malloc(sizeof(NODE)*Mnod);
@@ -29,7 +29,11 @@ int main(int argc, char ** argv) {
 	
 
 	ncnt = ReadIsc(fisc,graph);
+	DPRINT("Sorting Circuit\n");
 	ncnt = topologicalSort(graph, ncnt);
+	DPRINT("Levelizing circuit...");
+	levels = levelize(graph,ncnt);
+	DPRINT("...complete. Maximum level = %d\n", levels);
 //	DPRINT("Initializing line structure.\n");	
 	for (int i = 0; i < ncnt; i++)
 		InitializeLines(lgraph, i);
@@ -45,7 +49,7 @@ int main(int argc, char ** argv) {
 			pis++;
 	}
 	DPRINT("%d primary inputs, %d input vectors.\n", pis, vcnt);
-//	PrintCircuit(graph,ncnt);
+	PrintCircuit(graph,ncnt);
 for (int i = 0; i < test.max_offset; i++) {
 	if (test.offsets[i] < 0)
 		printf("%d ", test.offsets[i]);

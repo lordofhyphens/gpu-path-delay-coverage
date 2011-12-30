@@ -164,6 +164,7 @@ void InitializeCircuit(NODE *graph,int num)
     graph[num].typ=graph[num].nfi=graph[num].nfo=graph[num].po=graph[num].mar=0;
     graph[num].val=graph[num].fval=2;
     graph[num].fin=graph[num].fot=NULL;
+	graph[num].level = 0;
     return;
 }
 void InitializeLines(LINE *graph,int num)
@@ -206,10 +207,10 @@ void PrintCircuit(NODE *graph,int Max)
 {
     LIST *temp;
     int  i;
-    DPRINT("\nID\tNAME\tTYPE\tPO\tIN#\tOUT#\tVAL\tFVAL\tMARK\tFANIN\tFANOUT\n");
+    DPRINT("\nID\tNAME\tTYPE\tLVL\tPO\tIN#\tOUT#\tVAL\tFVAL\tMARK\tFANIN\tFANOUT\n");
     for(i=0; i<=Max; i++) {
         if(graph[i].typ!=0) {
-            DPRINT("%d\t%s\t%d\t%d\t%d\t%d\t",i,graph[i].nam,graph[i].typ,graph[i].po,graph[i].nfi,graph[i].nfo);
+            DPRINT("%d\t%s\t%d\t%d\t%d\t%d\t%d\t",i,graph[i].nam,graph[i].typ,graph[i].level,graph[i].po,graph[i].nfi,graph[i].nfo);
             DPRINT("%d\t%d\t%d\t",graph[i].val,graph[i].fval,graph[i].mar);
             temp=NULL;
             temp=graph[i].fin;
@@ -416,6 +417,7 @@ NODE_type::NODE_type(const NODE_type& n) {
 	po = n.po;
 	fin = n.fin;
 	fot = n.fot;
+	level = n.level;
 	mar = 0;
 	val = 0;
 	fval = 0;

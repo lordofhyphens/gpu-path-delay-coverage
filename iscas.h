@@ -61,6 +61,7 @@ typedef struct NODE_type
 {
 	char nam[Mnam];         //name of the node
 	int typ,nfi,nfo,po;     //type, nooffanins, nooffanouts,primaryo/p
+	int level;
 	int mar,val,fval;       //marker,correctvalue,faultvalue
 	LIST *fin,*fot;         //fanin members, fanout members 
 	NODE_type(const NODE_type& n);
