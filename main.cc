@@ -26,7 +26,6 @@ int main(int argc, char ** argv) {
 	vcnt = readVectors(&vec, fvec);
 	DPRINT("%d characters read.\n",vcnt);
 //	vec = loadPinned(vec, vcnt);
-	
 
 	ncnt = ReadIsc(fisc,graph);
 	DPRINT("Sorting Circuit\n");
@@ -50,7 +49,7 @@ int main(int argc, char ** argv) {
 			pis++;
 	}
 	DPRINT("%d primary inputs, %d input vectors.\n", pis, vcnt);
-	PrintCircuit(graph,ncnt);
+//	PrintCircuit(graph,ncnt);
 for (int i = 0; i < test.max_offset; i++) {
 	if (test.offsets[i] < 0)
 		printf("%d ", test.offsets[i]);
@@ -99,7 +98,6 @@ for (int i = 0; i < test.max_offset; i++) {
 	mergeresult = gpuAllocateResults(lcnt, vcnt);
 	mark = gpuMarkPaths(resArray, mergeresult, test.graph, graphArray, fans);
 	TPRINT("Path Mark time (GPU): %fms\n",mark);
-//	debugMarkOutput(resArray);
 	DPRINT("Fiddling with memory...");
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	gpuArrayCopy(resArray, mergeresult);
@@ -107,6 +105,7 @@ for (int i = 0; i < test.max_offset; i++) {
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed += floattime(diff(start, stop));
 	DPRINT("...complete.\n");
+//	debugMarkOutput(resArray);
 	merge = gpuMergeHistory(resArray, &(mergeresult), test.graph, graphArray, fans);
 //	debugMarkOutput(mergeresult);
 	TPRINT("Path Merge time (GPU): %fms\n",merge);

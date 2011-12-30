@@ -125,7 +125,7 @@ void loadPropLUTs() {
 }
 
 __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount, int pitch) {
-	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val;
+	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val,prev;
 	__shared__ int rowids[50]; // handle up to fanins of 50 
 	char cache;
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,fin = 1, type;
@@ -135,10 +135,11 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 		cache = 0;
 		row = (char*)((char*)input + tid*pitch);
 		rowResults = (char*)((char*)results + tid*pitch);
-		for (int i = 0; i < ncount; i++) {
+		for (int i = 0; i < width; i++) {
 			rowResults[i] = 0;
 		}
 		for (int i = ncount-1; i >= 0; i--) {
+			tmp = 1;
 			nfi = node[i].nfi;
 			type = node[i].type;
 			if (threadIdx.x == 0) {
@@ -153,6 +154,9 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 			val = (row[i] > 1);
 			if (node[i].po) {
 				rowResults[i] = val;
+				prev = val;
+			} else {
+				prev = rowResults[i];
 			}
 			switch(type) {
 				case FROM:
@@ -161,12 +165,12 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 					// another system somewhere else.
 
 					val = (rowResults[i] > 0 && row[rowids[0]] > 1);
-					rowResults[rowids[0]] = val || rowResults[i];
+					rowResults[rowids[0]] = val || (rowResults[rowids[0]] > 0);
 					rowResults[i] =  val;
 					break;
 				case BUFF:
 				case NOT:
-					val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]) && rowResults[i];
+					val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]) && prev;
 					rowResults[rowids[0]] = val;
 					rowResults[i] = val;
 					break;
@@ -191,12 +195,12 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 					for (fin1 = 0; fin1 < nfi; fin1++) {
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache = tex2D(and2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							cache = tex2D(and2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
 							pass += (cache > 1);
 							tmp = tmp && (cache > 0);
 						}
 					}
-					rowResults[i] = val && tmp && (pass <= nfi);
+					rowResults[i] = val && tmp;
 					break;
 				case OR:
 				case NOR:
@@ -204,7 +208,7 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache = tex2D(or2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							cache = tex2D(or2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
 							pass += (cache > 1);
 							tmp = tmp && (cache > 0);
 						}
@@ -217,10 +221,10 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache = tex2D(xor2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							cache = tex2D(xor2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
 							pass += (cache > 1);
 							tmp = tmp && (cache > 0);
-							fin = fin && tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							fin = fin && tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
 						}
 					}
 					rowResults[i] = val && tmp && (pass <= nfi);
@@ -236,10 +240,10 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache = tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							cache = tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
 							fin = cache && fin;
 						}
-						rowResults[rowids[fin1]] = fin && rowResults[i];
+						rowResults[rowids[fin1]] = fin;
 					}
 					break;
 				case OR:
@@ -248,10 +252,10 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache = tex2D(or2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							cache = tex2D(or2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
 							fin = cache && fin;
 						}
-						rowResults[rowids[fin1]] = fin && rowResults[i];
+						rowResults[rowids[fin1]] = fin;
 					}
 				case XOR:
 				case XNOR:
@@ -259,10 +263,10 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache = tex2D(xor2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							cache = tex2D(xor2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
 							fin = cache && fin;
 						}
-						rowResults[rowids[fin1]] = fin && rowResults[i];
+						rowResults[rowids[fin1]] = fin;
 					}
 					break;
 				default:

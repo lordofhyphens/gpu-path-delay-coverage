@@ -10,9 +10,9 @@ void HandleSimError( cudaError_t err, const char *file, int line ) {
         exit( EXIT_FAILURE );
     }
 }
-
+#define STABLE(P, N) (3*(!P & N) + 2*(P & !N) + (P & N))
 #define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
-#define THREAD_PER_BLOCK 512
+#define THREAD_PER_BLOCK 128
 texture<int, 2> and2LUT;
 texture<int, 2> nand2LUT;
 texture<int, 2> or2LUT;
@@ -23,7 +23,7 @@ texture<int, 2> stableLUT;
 texture<int, 1> notLUT;
 
 __global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, size_t pitch, int start, int level, int pass) {
-	int tid = (blockIdx.y * blockDim.y) + threadIdx.x;
+	int tid = (blockIdx.y * blockDim.y) + threadIdx.x, prev=0;
 	int gid = blockIdx.x;
 	__shared__ int rowids[100]; // handle up to fanins of 1000 / 
 	char *row;
@@ -32,6 +32,9 @@ __global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, s
 		row = ((char*)res + tid*pitch); // get the current row?
 		int i = gid + start;
 		nfi = graph[i].nfi;
+		if (pass > 1) {
+			prev = row[i];
+		}
 		if (threadIdx.x == 0) { // first thread in every block does the preload.
 			goffset = graph[i].offset;
 			// preload all of the fanin line #s for this gate to shared memory.
@@ -42,12 +45,13 @@ __global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, s
 		}
 		__syncthreads();
 		type = graph[i].type;
+		
 		switch (type) {
 			case 0: break;
 			case INPT:
 					val = input[(gid+iwidth*tid)];
 					if (pass > 1) {
-						row[i] = tex2D(stableLUT, row[i], val);  
+						row[i] = STABLE(prev,val);
 					} else {
 						row[i] = val;
 					}
@@ -85,7 +89,7 @@ __global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, s
 						j++;
 					}
 					if (pass > 1 && type != FROM && type != BUFF) {
-						row[i] = tex2D(stableLUT, row[i], val);  
+						row[i] = STABLE(prev,val);
 					} else {
 						row[i] = val;
 					}
@@ -162,8 +166,9 @@ float gpuRunSimulation(ARRAY2D<char> results, ARRAY2D<int> inputs, GPUNODE* grap
 //		DPRINT("Level %d: Simulating %d gates in parallel.\n",i,gatesinLevel[i]);
 		kernSimulate<<<numBlocks,THREAD_PER_BLOCK>>>(dgraph.data,results.data, inputs.data,fan,inputs.pitch, results.width, results.height, results.pitch, startGate, i, pass);
 		startGate += gatesinLevel[i];
+		cudaDeviceSynchronize();
 	}
-	cudaDeviceSynchronize();
+	free(gatesinLevel);
 	// We're done simulating at this point.
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
