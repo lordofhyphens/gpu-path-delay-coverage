@@ -1,16 +1,10 @@
-#include <cuda.h>
-#include "iscas.h"
 #include "gpuiscas.h"
-#include "defines.h"
-#include <cassert>
-#include <math.h>
 
-static void HandleError( cudaError_t err,
-                         const char *file,
-                         int line ) {
+void HandleError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
-        DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ),
-                file, line );
+		if (err == cudaErrorInvalidValue)
+			DPRINT("cudaErrorInvalidValue: ");
+        DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
         exit( EXIT_FAILURE );
     }
 }
@@ -66,33 +60,26 @@ int* gpuLoadFans(int* offset, int maxid) {
 void gpuShiftVectors(int* input, size_t width, size_t height) {
 	int* tgt = NULL;
 	// create a temporary buffer area on the device
-	cudaError_t returncode;
-	returncode = cudaMalloc(&tgt, sizeof(int)*(width));
-	assert(returncode == cudaSuccess);
-	assert(tgt != NULL);
+	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width)));
 	HANDLE_ERROR(cudaMemcpy(tgt, input,sizeof(int)*(width),cudaMemcpyDeviceToDevice));
 	HANDLE_ERROR(cudaMemcpy(input, input+width,sizeof(int)*(width)*(height-1),cudaMemcpyDeviceToDevice));
 	HANDLE_ERROR(cudaMemcpy(input+(height-1)*(width),tgt, sizeof(int)*(width), cudaMemcpyDeviceToDevice));
-	cudaFree(tgt);
+	HANDLE_ERROR(cudaFree(tgt));
 }
-int* gpuAllocateResults(size_t width, size_t height) {
+ARRAY2D<int> gpuAllocateResults(size_t width, size_t height) {
 	int *tgt = NULL;
-	cudaError_t returncode;
-	DPRINT("Allocating %u * %u * %u = %lu bytes... %e megabytes ",(int)sizeof(unsigned),(unsigned)width,(unsigned)height, sizeof(int)*width*height, sizeof(int)*width*height / pow(2,20));
-	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width)*(height)));
+	size_t pitch = 0;
+	DPRINT("Attempting to allocate %u * %u = %lu bytes... %G megabytes ",(int)sizeof(unsigned)*(unsigned)width,(unsigned)height, sizeof(int)*width*height, sizeof(int)*width*height / pow(2,20));
+	HANDLE_ERROR(cudaMallocPitch(&tgt, &pitch, sizeof(int)*(width),height));
 	DPRINT("...complete.\n");
-//	assert(returncode == cudaSuccess);
-	returncode = cudaMemset(tgt, 0, sizeof(int)*width*height);
-	assert(returncode == cudaSuccess);
-	return tgt;
+	DPRINT("Allocated %u*%u = %lu bytes, %G megabytes\n", (unsigned)pitch,(unsigned)height, pitch*height, (pitch*width)/pow(2,20));
+	HANDLE_ERROR(cudaMemset2D(tgt, pitch,0, sizeof(int)*width,height));
+	return ARRAY2D<int>(tgt, height, width, pitch);
 }
 int* gpuLoad1DVector(int* input, size_t width, size_t height) {
 	int *tgt;
-	cudaError_t returncode; 
 	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width)*(height)));
-//	assert(returncode == cudaSuccess);
-	returncode = cudaMemcpy(tgt, input,sizeof(int)*(width)*(height),cudaMemcpyHostToDevice);
-	assert(returncode == cudaSuccess);
+	HANDLE_ERROR(cudaMemcpy(tgt, input,sizeof(int)*(width)*(height),cudaMemcpyHostToDevice));
 	return tgt;
 }
 int* loadPinned(int* input, size_t vcnt) {

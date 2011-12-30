@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdbool.h>
 #include "defines.h"
@@ -9,10 +8,11 @@
 #include "coverkernel.h"
 #include "serial.h"
 #include "sort.h"
+#include "array2d.h"
 
 int main(int argc, char ** argv) {
 	FILE *fisc, *fvec;
-	int *dres, *fans, *vec;
+	int *fans, *vec, *dvec;
 	GPUNODE *dgraph;
 	NODE* graph;
 	graph = (NODE*)malloc(sizeof(NODE)*Mnod);
@@ -45,15 +45,6 @@ int main(int argc, char ** argv) {
 			pis++;
 	}
 	DPRINT("%d primary inputs, %d input vectors.\n", pis, vcnt);
-	DPRINT("Allocating results memory on host...");
-//	for (int i = 0; i < vcnt; i++) {
-//		res[i] = (int*)malloc(sizeof(int)*lcnt);
-//		for (int j = 0; j < lcnt; j++) {
-//			res[i][j] = 0;
-//		}
-//	}
-
-	DPRINT("complete.\n");
 //	PrintCircuit(graph,ncnt);
 for (int i = 0; i < test.max_offset; i++) {
 	if (test.offsets[i] < 0)
@@ -62,8 +53,7 @@ for (int i = 0; i < test.max_offset; i++) {
 #ifndef CPUCOMPILE
 // GPU implementation
 	float alltime, pass1=0.0, pass2=0.0, mark = 0.0, merge =0.0,cover=0.0;
-	int* dvec;
-	int *mergeresult;
+	ARRAY2D<int> mergeresult;
 
 
 //	DPRINT("Begin GPU Calculations\n");
@@ -78,7 +68,6 @@ for (int i = 0; i < test.max_offset; i++) {
 //	DPRINT("complete.\n");
 	fans = gpuLoadFans(test.offsets,test.max_offset);
 //	DPRINT("Allocating GPU results memory....");
-	dres = gpuAllocateResults(lcnt, vcnt);
 //	DPRINT("...complete.\n");
 //	DPRINT("W: %d H: %d\n", pis, (vcnt/pis));
 //	DPRINT("Loading test vectors into GPU Memory...");
@@ -87,7 +76,7 @@ for (int i = 0; i < test.max_offset; i++) {
 //	DPRINT("...complete.\n");
 
 	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, vcnt, pis);
-	ARRAY2D<int> resArray = ARRAY2D<int>(dres,vcnt,lcnt);
+	ARRAY2D<int> resArray = gpuAllocateResults(lcnt, vcnt);
 	ARRAY2D<GPUNODE> graphArray = ARRAY2D<GPUNODE>(dgraph,1,ncnt);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
@@ -97,17 +86,18 @@ for (int i = 0; i < test.max_offset; i++) {
 	
 	TPRINT("Simulation Pass 1 time (GPU): %f ms\n", pass1);
 //	debugSimulationOutput(resArray,1);
-	gpuShiftVectors(dvec, pis, vcnt/pis);
+	gpuShiftVectors(dvec, pis, vcnt);
 	pass2 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 2);
 	TPRINT("Simulation Pass 2 time (GPU): %f ms\n", pass2);
 //	debugSimulationOutput(resArray,2);
 	mark = gpuMarkPaths(resArray, test.graph, graphArray, fans);
 	TPRINT("Path Mark time (GPU): %fms\n",mark);
 //	debugMarkOutput(resArray);
-	merge = gpuMergeHistory(resArray, &mergeresult, test.graph, graphArray, fans);
+	mergeresult = ARRAY2D<int>(NULL, resArray.height, resArray.width, resArray.pitch);
+	merge = gpuMergeHistory(resArray, &(mergeresult), test.graph, graphArray, fans);
 //	debugMarkOutput(ARRAY2D<int>(mergeresult,resArray.height, resArray.width));
 	TPRINT("Path Merge time (GPU): %fms\n",merge);
-	cover = gpuCountPaths(resArray,ARRAY2D<int>(mergeresult,resArray.height, resArray.width),test.graph,graphArray,fans);
+	cover = gpuCountPaths(resArray,mergeresult,test.graph,graphArray,fans);
 //	debugCoverOutput(resArray);
 	TPRINT("Path Coverage time (GPU): %fms\n",cover);
 	alltime = pass1 + pass2 + mark + merge + cover;
@@ -142,7 +132,7 @@ for (int i = 0; i < test.max_offset; i++) {
 	TPRINT("Path Coverage time (serial) %fms\n",cover_s);
 	alltime_s = pass1_s + pass2_s + mark_s + merge_s + cover_s;
 #ifndef CPUCOMPILE
-	freeMemory(mergeresult);
+	freeMemory(mergeresult.data);
 	freeMemory(resArray.data);
 	freeMemory(inputArray.data);
 #endif

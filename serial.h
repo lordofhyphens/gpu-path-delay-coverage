@@ -2,7 +2,7 @@
 #define SERIAL_H
 #include "defines.h"
 #include "iscas.h"
-#include "gpuiscas.h"
+#include "array2d.h"
 void LOGIC_gate(int i, GPUNODE* node, int* fans, int* res, size_t height, size_t width , int pass);
 float cpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int pass);
 void INPT_gate(int i, int pi, ARRAY2D<int> results, ARRAY2D<int> input, GPUNODE* graph, int* fans,int pass);

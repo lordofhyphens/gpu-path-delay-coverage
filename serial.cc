@@ -331,7 +331,7 @@ float cpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 	float elapsed = 0.0;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-	for (int j = 0; j < results.height; j++) {
+	for (unsigned int j = 0; j < results.height; j++) {
 		cpuSimulate(dgraph.data, results.data, inputs.data, fan, inputs.width, results.width,results.height,pass,j);
 	}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
@@ -394,7 +394,7 @@ float cpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph
 	float elapsed = 0.0;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-	for (int i = 0; i < results.height; i++) {
+	for (unsigned int i = 0; i < results.height; i++) {
 //		DPRINT("Running TID: %d ", i);
 		cpuMarkPathSegments(results.data, i, dgraph.data, fan, results.width, results.height, dgraph.width);
 	}
@@ -407,8 +407,8 @@ float cpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	*(mergeresult) = (int*)malloc(sizeof(int)*input.height*input.width);
-	for (int i = 0; i < input.height; i++)
-		for (int j = 0; j< input.width; j++) {
+	for (unsigned int i = 0; i < input.height; i++)
+		for (unsigned int j = 0; j< input.width; j++) {
 			cpuMerge(i,j,input.data, *mergeresult, input.width);
 		}
 	memcpy(*mergeresult, input.data, input.bwidth());
@@ -445,12 +445,12 @@ float cpuCountPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgrap
 	int *history = (int*)malloc(sizeof(int)*results.width);
 	int *current;
 	int cover = 0;
-	for (int i = 0; i < results.width; i++) 
+	for (unsigned int i = 0; i < results.width; i++) 
 		history[i] = 0;
-	for (int j = 0; j < results.height; j++) {
+	for (unsigned int j = 0; j < results.height; j++) {
 		current = (int*)((char*)results.data + j*(results.width)*sizeof(int));
 		cover += cpuCountCoverage(0, j,results.data, history,dgraph.data, fan, results.width, results.height, dgraph.width);
-		for (int i = 0; i < results.width; i++) 
+		for (unsigned int i = 0; i < results.width; i++) 
 			history[i] = history[i] | current[i];
 	}
 	*coverage = cover;
@@ -470,14 +470,14 @@ void debugCpuMark(ARRAY2D<int> results) {
 	int *row;
 	DPRINT("Post-mark results\n");
 	DPRINT("Line:   \t");
-	for (int i = 0; i < results.width; i++) {
+	for (unsigned int i = 0; i < results.width; i++) {
 		DPRINT("%2d ", i);
 	}
 	DPRINT("\n");
-	for (int r = 0;r < results.height; r++) {
+	for (unsigned int r = 0;r < results.height; r++) {
 		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
 		DPRINT("%s %d:\t","Vector",r);
-		for (int i = 0; i < results.width; i++) {
+		for (unsigned int i = 0; i < results.width; i++) {
 			DPRINT("%2d ", row[i]);
 		}
 		DPRINT("\n");
@@ -489,16 +489,16 @@ void debugCpuSimulationOutput(ARRAY2D<int> results, int pass = 1) {
 	int *lvalues, *row;
 	DPRINT("Post-simulation device results, pass %d:\n\n", pass);
 	DPRINT("Line:   \t");
-	for (int i = 0; i < results.width; i++) {
+	for (unsigned int i = 0; i < results.width; i++) {
 		DPRINT("%2d ", i);
 	}
 	DPRINT("\n");
-	for (int r = 0;r < results.height; r++) {
+	for (unsigned int r = 0;r < results.height; r++) {
 		lvalues = (int*)malloc(results.bwidth());
 		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
 		memcpy(lvalues,row,results.bwidth());
 		DPRINT("%s %d:\t", pass > 1 ? "Vector" : "Pattern",r);
-		for (int i = 0; i < results.width; i++) {
+		for (unsigned int i = 0; i < results.width; i++) {
 			switch(lvalues[i]) {
 				case S0:
 					DPRINT("S0 "); break;

@@ -56,6 +56,6 @@ ${gsrc:.cu=_wrap.cu}: ${SWIGTEMPLATE}
 ${PYLIB}: ${SWIGPY} ${src} ${src:.cc=_wrap.cxx} ${gsrc:.cu=_wrap.cu} ${gsrc}
 	${GPUCC} ${NVCFLAGS} -Xcompiler -fPIC -I/usr/include/python2.6 -c ${gsrc}
 	${GPUCC} ${NVCFLAGS} -Xcompiler -fPIC -I/usr/include/python2.6 -c ${gsrc:.cu=_wrap.cu}
-	${CC} -c ${src} -fPIC -O2
-	${CC} -c ${src:.cc=_wrap.cxx} -I/usr/include/python2.6 -fPIC -O2
+	${CC} -c ${src} -fPIC -O
+	${CC} -c ${src:.cc=_wrap.cxx} -I/usr/include/python2.6 -fPIC -O
 	${GPUCC} ${NVCGLAGS} -shared -Xcompiler -fPIC ${src:.cc=.o} ${src:.cc=_wrap.o} ${gsrc:.cu=_wrap.o} ${gsrc:.cu=.o} -o ${PYLIB}

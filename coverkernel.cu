@@ -4,14 +4,14 @@
 
 #define THREAD_PER_BLOCK 256
 // badly sums everything and places it into row[0][0]
-__global__ void kernSumAll(int toffset, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
+__global__ void kernSumAll(int toffset, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, size_t pitch, int ncount) {
 	int tid = blockIdx.x * gridDim.x + threadIdx.x, nfi, goffset;
 	int *row;
 	__shared__ int sum;
 	if (tid < 1) {
 		sum = 0;
 		for (int j = 0; j < height; j++) {
-			row = (int*)((char*)results + j*(width)*sizeof(int));
+			row = (int*)((char*)results + j*(pitch));
 			for (int c = ncount-1; c >= 0; c--) {
 				goffset = node[c].offset;
 				nfi = node[c].nfi;
@@ -26,18 +26,18 @@ __global__ void kernSumAll(int toffset, int *results, int *history, GPUNODE* nod
 }
 
 // reference: design book 1, page 38.
-__global__ void kernCountCoverage(int toffset, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
+__global__ void kernCountCoverage(int toffset, int *results, int *history, GPUNODE* node, int* fans, size_t width, size_t height, size_t pitch, size_t hpitch, int ncount) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset;
 	int *row, *historyRow;
 	int *current, *historyCount;
-	__shared__ int rowids[50]; // handle up to fanins of 1000 /
+	__shared__ int rowids[50]; // handle up to fanins of 50 /
 	if (tid < height) {
-		row = (int*)((char*)results + tid*(width)*sizeof(int));
+		row = (int*)((char*)results + tid*pitch);
 		if (tid == 0) {
 			historyRow = (int*)malloc(sizeof(int)*width);
 			memset(historyRow, 0, sizeof(int)*width);
 		} else {
-			historyRow = (int*)((char*)history + (tid-1)*(width)*sizeof(int));
+			historyRow = (int*)((char*)history + (tid-1)*hpitch);
 		}
 		current = (int*)malloc(sizeof(int)*width);
 		historyCount = (int*)malloc(sizeof(int)*width);
@@ -97,17 +97,17 @@ void debugCoverOutput(ARRAY2D<int> results) {
 	int *lvalues, *row;
 	DPRINT("Path Count results\n");
 	DPRINT("Line:   \t");
-	for (int i = 0; i < results.width; i++) {
+	for (unsigned int i = 0; i < results.width; i++) {
 		DPRINT("%2d ", i);
 	}
 	DPRINT("\n");
-	for (int r = 0;r < results.height; r++) {
+	for (unsigned int r = 0;r < results.height; r++) {
 		lvalues = (int*)malloc(results.bwidth());
 		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
 		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
 		
 		DPRINT("%s %3d:\t", "Vector",r);
-		for (int i = 0; i < results.width; i++) {
+		for (unsigned int i = 0; i < results.width; i++) {
 			DPRINT("%3d ", lvalues[i] == 0 ? -1:lvalues[i]);
 		}
 		DPRINT("\n");
@@ -122,11 +122,11 @@ float gpuCountPaths(ARRAY2D<int> results, ARRAY2D<int> history, GPUNODE* graph, 
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif
 	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
-	kernCountCoverage<<<blockcount,THREAD_PER_BLOCK>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
+	kernCountCoverage<<<blockcount,THREAD_PER_BLOCK>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, results.pitch, history.pitch, dgraph.width);
 	cudaDeviceSynchronize();
 #ifndef NTIMING
 #endif
-	kernSumAll<<<1,1>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, dgraph.width);
+	kernSumAll<<<1,1>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, results.pitch,dgraph.width);
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start,stop));

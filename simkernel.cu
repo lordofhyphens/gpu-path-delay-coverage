@@ -4,7 +4,15 @@
 #include "iscas.h"
 #include "simkernel.h"
 
-#define THREAD_PER_BLOCK 256
+void HandleSimError( cudaError_t err, const char *file, int line ) {
+    if (err != cudaSuccess) {
+        DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
+        exit( EXIT_FAILURE );
+    }
+}
+
+#define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
+#define THREAD_PER_BLOCK 512
 texture<int, 2> and2LUT;
 texture<int, 2> nand2LUT;
 texture<int, 2> or2LUT;
@@ -14,23 +22,21 @@ texture<int, 2> xnor2LUT;
 texture<int, 2> stableLUT;
 texture<int, 1> notLUT;
 
-__global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, int pass) {
+__global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, size_t pitch, int pass) {
 	int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	__shared__ int rowids[100]; // handle up to fanins of 1000 / 
 	int pi = 0;
 	int *row;
 	int goffset, nfi, val, j,type, r;
 	if (tid < height) {
-		row = (int*)((char*)res + tid*width*sizeof(int)); // get the current row?
+		row = (int*)((char*)res + tid*pitch); // get the current row?
 		for (int i = 0; i < width; i++) {
 			nfi = graph[i].nfi;
 			if (threadIdx.x == 0) { // first thread in every block does the preload.
 				goffset = graph[i].offset;
-//				printf("Offset (gate %d): %d\n", i, goffset);
 				// preload all of the fanin line #s for this gate to shared memory.
 				for (int j = 0; j < nfi;j++) {
 					rowids[j] = fans[goffset+j];
-//					printf("Gate %d, fanin %d = %d (wrote %d)\n",i, j, fans[goffset+j],rowids[j]);
 				}
 					
 			}
@@ -75,9 +81,6 @@ __global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, si
 								case AND:
 									val = tex2D(and2LUT, val, r);break;
 								case NAND:
-									if (tid == 664) { 
-//										printf("\n");
-									}
 									val = tex2D(nand2LUT, val, r);break;
 							}
 							j++;
@@ -108,56 +111,58 @@ void loadSimLUTs() {
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
 
 	// Allocate space in device memory for the LUTs. 
-	cudaMallocArray(&cuNandArray, &channelDesc, 4,4);
-	cudaMallocArray(&cuAndArray, &channelDesc, 4,4);
-	cudaMallocArray(&cuNorArray, &channelDesc, 4,4);
-	cudaMallocArray(&cuOrArray, &channelDesc, 4,4);
-	cudaMallocArray(&cuXnorArray, &channelDesc, 4,4);
-	cudaMallocArray(&cuXorArray, &channelDesc, 4,4);
-	cudaMallocArray(&cuStableArray, &channelDesc, 2,2);
-	cudaMallocArray(&cuNotArray, &channelDesc, 4,1);
+	HANDLE_ERROR(cudaMallocArray(&cuNandArray, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuAndArray, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuNorArray, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuOrArray, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuXnorArray, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuXorArray, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuStableArray, &channelDesc, 2,2));
+	HANDLE_ERROR(cudaMallocArray(&cuNotArray, &channelDesc, 4,1));
 
 	// Copying the static arrays given to device memory.
-	cudaMemcpyToArray(cuNandArray, 0,0, nand2, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuAndArray, 0,0, and2, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuNorArray, 0,0, nor2, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuOrArray, 0,0, or2, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuXnorArray, 0,0, xnor2, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuXorArray, 0,0, xor2, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuStableArray, 0,0, stable, sizeof(int)*4,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuNotArray, 0,0, not_gate, sizeof(int)*4,cudaMemcpyHostToDevice);
+	HANDLE_ERROR(cudaMemcpyToArray(cuNandArray, 0,0, nand2, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuAndArray, 0,0, and2, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuNorArray, 0,0, nor2, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuOrArray, 0,0, or2, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXnorArray, 0,0, xnor2, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXorArray, 0,0, xor2, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuStableArray, 0,0, stable, sizeof(int)*4,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuNotArray, 0,0, not_gate, sizeof(int)*4,cudaMemcpyHostToDevice));
 
-	cudaBindTextureToArray(and2LUT,cuAndArray,channelDesc);
-	cudaBindTextureToArray(nand2LUT,cuNandArray,channelDesc);
-	cudaBindTextureToArray(or2LUT,cuOrArray,channelDesc);
-	cudaBindTextureToArray(nor2LUT,cuNorArray,channelDesc);
-	cudaBindTextureToArray(xor2LUT,cuXorArray,channelDesc);
-	cudaBindTextureToArray(xnor2LUT,cuXnorArray,channelDesc);
-	cudaBindTextureToArray(stableLUT,cuStableArray,channelDesc);
-	cudaBindTextureToArray(notLUT,cuNotArray,channelDesc);
+	HANDLE_ERROR(cudaBindTextureToArray(and2LUT,cuAndArray,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(nand2LUT,cuNandArray,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(or2LUT,cuOrArray,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(nor2LUT,cuNorArray,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(xor2LUT,cuXorArray,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(xnor2LUT,cuXnorArray,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(stableLUT,cuStableArray,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(notLUT,cuNotArray,channelDesc));
 }
 
 float gpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int pass = 1) {
 	loadSimLUTs(); // set up our lookup tables for simulation.
 #ifndef NTIMING
 	float elapsed;
-	cudaEvent_t start, stop;
-	cudaEventCreate(&start);
-	cudaEventCreate(&stop);
-	cudaEventRecord(start,0);
-#endif // NTIMING
 	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
-//	DPRINT("Block count: %d, threads: %d\n", blockcount, THREAD_PER_BLOCK);
-	kernSimulate<<<blockcount,THREAD_PER_BLOCK>>>(dgraph.data,results.data, inputs.data,fan,inputs.width, results.width, results.height, pass);
+//	cudaEvent_t start, stop;
+//	cudaEventCreate(&start);
+//	cudaEventCreate(&stop);
+//	cudaEventRecord(start,0);
+	timespec start, stop;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+#endif // NTIMING
+	kernSimulate<<<blockcount,THREAD_PER_BLOCK>>>(dgraph.data,results.data, inputs.data,fan,inputs.pitch, results.width, results.height, results.pitch, pass);
 	cudaDeviceSynchronize();
-
 	// We're done simulating at this point.
 #ifndef NTIMING
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&elapsed,start,stop);
-	cudaEventDestroy(start);
-	cudaEventDestroy(stop);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+	elapsed = floattime(diff(start, stop));
+//	cudaEventRecord(stop, 0);
+//	cudaEventSynchronize(stop);
+//	cudaEventElapsedTime(&elapsed,start,stop);
+//	cudaEventDestroy(start);
+//	cudaEventDestroy(stop);
 	return elapsed;
 #else 
 	return 0.0;
@@ -169,16 +174,16 @@ void debugSimulationOutput(ARRAY2D<int> results, int pass = 1) {
 	int *lvalues, *row;
 	DPRINT("Post-simulation device results, pass %d:\n\n", pass);
 	DPRINT("Line:   \t");
-	for (int i = 0; i < results.width; i++) {
+	for (unsigned int i = 0; i < results.width; i++) {
 		DPRINT("%2d ", i);
 	}
 	DPRINT("\n");
-	for (int r = 0;r < results.height; r++) {
+	for (unsigned int r = 0;r < results.height; r++) {
 		lvalues = (int*)malloc(results.bwidth());
-		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
+		row = (int*)((char*)results.data + r*results.pitch); // get the current row?
 		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
 		DPRINT("%s %d:\t", pass > 1 ? "Vector" : "Pattern",r);
-		for (int i = 0; i < results.width; i++) {
+		for (unsigned int i = 0; i < results.width; i++) {
 			switch(lvalues[i]) {
 				case S0:
 					DPRINT("S0 "); break;

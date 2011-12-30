@@ -3,8 +3,15 @@
 #include "iscas.h"
 #include "defines.h"
 #include "markkernel.h"
+void HandleMarkError( cudaError_t err, const char *file, int line ) {
+    if (err != cudaSuccess) {
+        DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
+        exit( EXIT_FAILURE );
+    }
+}
 
-#define THREAD_PER_BLOCK 256
+#define HANDLE_ERROR( err ) (HandleMarkError( err, __FILE__, __LINE__ ))
+#define THREAD_PER_BLOCK 64
 texture<int, 2> and2OutputPropLUT;
 texture<int, 2> and2InputPropLUT;
 texture<int, 2> or2OutputPropLUT;
@@ -24,15 +31,15 @@ texture<int, 2> XorOutChainLUT;
 
 // group all results together, this implementation will fail if # of lines > 1024
 // will need to group lines into groups of 1024 or less
-__global__ void kernMerge(int* input, int* results, int offset, int width, int height) {
+__global__ void kernMerge(int* input, int* results, int offset, int width, int height, int pitch) {
 	int *r,result, i, dst = threadIdx.x + offset;
 	if (threadIdx.x < width) {
 		result = 0;
 		for (i = 0; i <= blockIdx.x; i++) {
-			r = (int*)((char*)input + sizeof(int)*i*width);
+			r = (int*)((char*)input + i*pitch);
 			result = (result || r[dst]);
 		}
-		r = (int*)((char*)results + sizeof(int)*width*blockIdx.x);
+		r = (int*)((char*)results + pitch*blockIdx.x);
 		r[dst] = result;
 	}
 }
@@ -72,59 +79,59 @@ void loadPropLUTs() {
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
 	// Allocating memory on the device.
 		
-	cudaMallocArray(&cuFromProp, &channelDesc, 4,4);
-	cudaMallocArray(&cuInptProp, &channelDesc, 4,2);
-	cudaMallocArray(&cuAndInptProp, &channelDesc, 4,4);
-	cudaMallocArray(&cuAndOutpProp, &channelDesc, 4,4);
-	cudaMallocArray(&cuOrInptProp, &channelDesc, 4,4);
-	cudaMallocArray(&cuOrOutpProp, &channelDesc, 4,4);
-	cudaMallocArray(&cuXorInptProp, &channelDesc, 4,4);
-	cudaMallocArray(&cuXorOutpProp, &channelDesc, 4,4);
+	HANDLE_ERROR(cudaMallocArray(&cuFromProp, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuInptProp, &channelDesc, 4,2));
+	HANDLE_ERROR(cudaMallocArray(&cuAndInptProp, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuAndOutpProp, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuOrInptProp, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuOrOutpProp, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuXorInptProp, &channelDesc, 4,4));
+	HANDLE_ERROR(cudaMallocArray(&cuXorOutpProp, &channelDesc, 4,4));
 
-	cudaMallocArray(&cuXorOutChain, &channelDesc, 4,2);
-	cudaMallocArray(&cuXorInChain, &channelDesc, 4,2);
-	cudaMallocArray(&cuOrInChain, &channelDesc, 4,2);
-	cudaMallocArray(&cuOrOutChain, &channelDesc, 4,2);
-	cudaMallocArray(&cuAndInChain, &channelDesc, 4,2);
-	cudaMallocArray(&cuAndOutChain, &channelDesc, 4,2);
+	HANDLE_ERROR(cudaMallocArray(&cuXorOutChain, &channelDesc, 4,2));
+	HANDLE_ERROR(cudaMallocArray(&cuXorInChain, &channelDesc, 4,2));
+	HANDLE_ERROR(cudaMallocArray(&cuOrInChain, &channelDesc, 4,2));
+	HANDLE_ERROR(cudaMallocArray(&cuOrOutChain, &channelDesc, 4,2));
+	HANDLE_ERROR(cudaMallocArray(&cuAndInChain, &channelDesc, 4,2));
+	HANDLE_ERROR(cudaMallocArray(&cuAndOutChain, &channelDesc, 4,2));
 
 	// Copying the LUTs Host->Device
-	cudaMemcpyToArray(cuFromProp, 0,0, from_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuAndInptProp, 0,0, and2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuAndOutpProp, 0,0, and2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuOrInptProp, 0,0, or2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuOrOutpProp, 0,0, or2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuXorInptProp, 0,0, xor2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuXorOutpProp, 0,0, xor2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuInptProp, 0,0, inpt_prop, sizeof(int)*8,cudaMemcpyHostToDevice);
+	HANDLE_ERROR(cudaMemcpyToArray(cuFromProp, 0,0, from_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuAndInptProp, 0,0, and2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuAndOutpProp, 0,0, and2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuOrInptProp, 0,0, or2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuOrOutpProp, 0,0, or2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXorInptProp, 0,0, xor2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXorOutpProp, 0,0, xor2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuInptProp, 0,0, inpt_prop, sizeof(int)*8,cudaMemcpyHostToDevice));
 	
-	cudaMemcpyToArray(cuXorInChain, 0,0, xor_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuXorOutChain, 0,0, xor_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuOrInChain, 0,0, or_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuOrOutChain, 0,0, or_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuAndInChain, 0,0, and_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
-	cudaMemcpyToArray(cuAndOutChain, 0,0, and_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice);
+	HANDLE_ERROR(cudaMemcpyToArray(cuXorInChain, 0,0, xor_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXorOutChain, 0,0, xor_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuOrInChain, 0,0, or_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuOrOutChain, 0,0, or_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuAndInChain, 0,0, and_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuAndOutChain, 0,0, and_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
 
 	// Marking them as textures. LUTs should be in texture memory and cached on
 	// access.
-	cudaBindTextureToArray(and2OutputPropLUT,cuAndOutpProp,channelDesc);
-	cudaBindTextureToArray(and2InputPropLUT,cuAndInptProp,channelDesc);
-	cudaBindTextureToArray(or2OutputPropLUT,cuOrOutpProp,channelDesc);
-	cudaBindTextureToArray(or2InputPropLUT,cuOrInptProp,channelDesc);
-	cudaBindTextureToArray(xor2InputPropLUT,cuXorInptProp,channelDesc);
-	cudaBindTextureToArray(xor2OutputPropLUT,cuXorOutpProp,channelDesc);
-	cudaBindTextureToArray(fromPropLUT,cuFromProp,channelDesc);
-	cudaBindTextureToArray(inptPropLUT,cuInptProp,channelDesc);
+	HANDLE_ERROR(cudaBindTextureToArray(and2OutputPropLUT,cuAndOutpProp,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(and2InputPropLUT,cuAndInptProp,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(or2OutputPropLUT,cuOrOutpProp,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(or2InputPropLUT,cuOrInptProp,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(xor2InputPropLUT,cuXorInptProp,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(xor2OutputPropLUT,cuXorOutpProp,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(fromPropLUT,cuFromProp,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(inptPropLUT,cuInptProp,channelDesc));
 	
-	cudaBindTextureToArray(XorOutChainLUT,cuXorOutChain,channelDesc);
-	cudaBindTextureToArray(XorInChainLUT,cuXorInChain,channelDesc);
-	cudaBindTextureToArray(OrOutChainLUT,cuOrOutChain,channelDesc);
-	cudaBindTextureToArray(OrInChainLUT,cuOrInChain,channelDesc);
-	cudaBindTextureToArray(AndOutChainLUT,cuAndOutChain,channelDesc);
-	cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc);
+	HANDLE_ERROR(cudaBindTextureToArray(XorOutChainLUT,cuXorOutChain,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(XorInChainLUT,cuXorInChain,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(OrOutChainLUT,cuOrOutChain,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(OrInChainLUT,cuOrInChain,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(AndOutChainLUT,cuAndOutChain,channelDesc));
+	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
 
-__global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
+__global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount, int pitch) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val;
 	__shared__ int rowids[50]; // handle up to fanins of 50 
 	__shared__ char cache[THREAD_PER_BLOCK]; // needs to be 2x # of threads being run
@@ -132,7 +139,7 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 	int *rowResults, *row;
 	if (tid < height) {
 		cache[threadIdx.x] = 0;
-		row = (int*)((char*)results + tid*(width)*sizeof(int));
+		row = (int*)((char*)results + tid*pitch);
 		rowResults = (int*)malloc(sizeof(int)*width);
 		for (int i = 0; i < ncount; i++) {
 			rowResults[i] = 0;
@@ -279,30 +286,33 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 
 float gpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan) {
 	loadPropLUTs();
+	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
 #ifndef NTIMING
 	float elapsed;
-	cudaEvent_t start, stop;
-	cudaEventCreate(&start);
-	cudaEventCreate(&stop);
-	cudaEventRecord(start,0);
+//	cudaEvent_t start, stop;
+//	cudaEventCreate(&start);
+//	cudaEventCreate(&stop);
+//	cudaEventRecord(start,0);
+	timespec start, stop;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
-	kernMarkPathSegments<<<blockcount,THREAD_PER_BLOCK>>>(results.data, dgraph.data, fan, results.width, results.height, dgraph.width);
+	kernMarkPathSegments<<<blockcount,THREAD_PER_BLOCK>>>(results.data, dgraph.data, fan, results.width, results.height, dgraph.width, results.pitch);
 	cudaDeviceSynchronize();
 #ifndef NTIMING
-	cudaEventRecord(stop, 0);
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&elapsed,start,stop);
-	cudaEventDestroy(start);
-	cudaEventDestroy(stop);
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+	elapsed = floattime(diff(start, stop));
+//	cudaEventRecord(stop, 0);
+//	cudaEventSynchronize(stop);
+//	cudaEventElapsedTime(&elapsed,start,stop);
+//	cudaEventDestroy(start);
+//	cudaEventDestroy(stop);
 	return elapsed;
 #else 
 	return 0.0;
 #endif // NTIMING
 }
-float gpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
-//	loadMergeLUTs();
-	cudaMalloc(mergeresult, sizeof(int)*input.height*input.width);
+float gpuMergeHistory(ARRAY2D<int> input, ARRAY2D<int> *mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
+	cudaMallocPitch(&(mergeresult->data), &(mergeresult->pitch), mergeresult->width,mergeresult->height);
 	// for bigger circuits or more patterns, need some logic here to divide work according to what will fit. 
 #ifndef NTIMING
 	float elapsed;
@@ -314,9 +324,9 @@ float gpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 //	cudaEventRecord(start,0);
 #endif // NTIMING
 	int groups = (input.width / 1024) + 1; 
-	DPRINT("height: %d width: %d groups: %d \n", input.height, input.width, groups);
+	DPRINT("height: %lu width: %lu groups: %u \n", input.height, input.width, groups);
 	for (int i = 0; i < groups; i++) {
-		kernMerge<<<input.height,1024,0>>>(input.data, *mergeresult, i*1024, input.width, input.height);
+		kernMerge<<<input.height,1024,0>>>(input.data, mergeresult->data, i*1024, input.width, input.height, input.pitch);
 	}
 	cudaDeviceSynchronize();
 #ifndef NTIMING
@@ -328,7 +338,7 @@ float gpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARR
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
 #endif
-	cudaMemcpy(*mergeresult, input.data, input.bwidth(), cudaMemcpyDeviceToDevice);
+	cudaMemcpy(mergeresult->data, input.data, input.bwidth(), cudaMemcpyDeviceToDevice);
 #ifndef NTIMING
 	return elapsed;
 #else 
@@ -343,17 +353,17 @@ void debugMarkOutput(ARRAY2D<int> results) {
 	int *lvalues, *row;
 	DPRINT("Post-mark results\n");
 	DPRINT("Line:   \t");
-	for (int i = 0; i < results.width; i++) {
+	for (unsigned int i = 0; i < results.width; i++) {
 		DPRINT("%2d ", i);
 	}
 	DPRINT("\n");
-	for (int r = 0;r < results.height; r++) {
+	for (unsigned int r = 0;r < results.height; r++) {
 		lvalues = (int*)malloc(results.bwidth());
-		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
+		row = (int*)((char*)results.data + r*results.pitch); // get the current row?
 		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
 		
 		DPRINT("%s %d:\t","Vector",r);
-		for (int i = 0; i < results.width; i++) {
+		for (unsigned int i = 0; i < results.width; i++) {
 			DPRINT("%2d ", lvalues[i]);//== 0 ? 'N':'S'  );
 		}
 		DPRINT("\n");
@@ -368,17 +378,17 @@ void debugUnionOutput(ARRAY2D<int> results) {
 	int *lvalues, *row;
 	DPRINT("Post-union results\n");
 	DPRINT("Line:   \t");
-	for (int i = 0; i < results.width; i++) {
+	for (unsigned int i = 0; i < results.width; i++) {
 		DPRINT("%2d ", i);
 	}
 	DPRINT("\n");
-	for (int r = 0;r < results.height; r++) {
+	for (unsigned int r = 0;r < results.height; r++) {
 		lvalues = (int*)malloc(results.bwidth());
-		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
+		row = (int*)((char*)results.data + r*results.pitch); // get the current row?
 		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
 		
 		DPRINT("%s %d:\t", "Vector",r);
-		for (int i = 0; i < results.width; i++) {
+		for (unsigned int i = 0; i < results.width; i++) {
 			DPRINT("%2c ", lvalues[i] == 0 ? 'N':'S'  );
 		}
 		DPRINT("\n");
