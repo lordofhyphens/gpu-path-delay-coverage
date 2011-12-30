@@ -16,7 +16,10 @@ GPUNODE* gpuLoadCircuit(const GPUNODE* graph, int maxid);
 LINE* gpuLoadLines(LINE* graph, int maxid);
 
 void freeMemory(int* data);
+void freeMemory(char* data);
 void freeMemory(GPUNODE* data);
+void clearMemory(ARRAY2D<char> ar);
 
-ARRAY2D<int> gpuAllocateResults(size_t width, size_t height);
+void gpuArrayCopy(ARRAY2D<char> dst, ARRAY2D<char> src);
+ARRAY2D<char> gpuAllocateResults(size_t width, size_t height);
 #endif

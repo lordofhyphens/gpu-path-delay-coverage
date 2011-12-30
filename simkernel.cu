@@ -12,7 +12,7 @@ void HandleSimError( cudaError_t err, const char *file, int line ) {
 }
 
 #define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
-#define THREAD_PER_BLOCK 512
+#define THREAD_PER_BLOCK 32
 texture<int, 2> and2LUT;
 texture<int, 2> nand2LUT;
 texture<int, 2> or2LUT;
@@ -22,14 +22,14 @@ texture<int, 2> xnor2LUT;
 texture<int, 2> stableLUT;
 texture<int, 1> notLUT;
 
-__global__ void kernSimulate(GPUNODE* graph, int* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, size_t pitch, int pass) {
+__global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, size_t pitch, int pass) {
 	int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	__shared__ int rowids[100]; // handle up to fanins of 1000 / 
 	int pi = 0;
-	int *row;
+	char *row;
 	int goffset, nfi, val, j,type, r;
 	if (tid < height) {
-		row = (int*)((char*)res + tid*pitch); // get the current row?
+		row = ((char*)res + tid*pitch); // get the current row?
 		for (int i = 0; i < width; i++) {
 			nfi = graph[i].nfi;
 			if (threadIdx.x == 0) { // first thread in every block does the preload.
@@ -140,7 +140,7 @@ void loadSimLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(notLUT,cuNotArray,channelDesc));
 }
 
-float gpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int pass = 1) {
+float gpuRunSimulation(ARRAY2D<char> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int pass = 1) {
 	loadSimLUTs(); // set up our lookup tables for simulation.
 #ifndef NTIMING
 	float elapsed;
@@ -169,9 +169,9 @@ float gpuRunSimulation(ARRAY2D<int> results, ARRAY2D<int> inputs, GPUNODE* graph
 #endif // NTIMING
 }
 
-void debugSimulationOutput(ARRAY2D<int> results, int pass = 1) {
+void debugSimulationOutput(ARRAY2D<char> results, int pass = 1) {
 #ifndef NDEBUG
-	int *lvalues, *row;
+	char *lvalues, *row;
 	DPRINT("Post-simulation device results, pass %d:\n\n", pass);
 	DPRINT("Line:   \t");
 	for (unsigned int i = 0; i < results.width; i++) {
@@ -179,8 +179,8 @@ void debugSimulationOutput(ARRAY2D<int> results, int pass = 1) {
 	}
 	DPRINT("\n");
 	for (unsigned int r = 0;r < results.height; r++) {
-		lvalues = (int*)malloc(results.bwidth());
-		row = (int*)((char*)results.data + r*results.pitch); // get the current row?
+		lvalues = (char*)malloc(results.bwidth());
+		row = ((char*)results.data + r*results.pitch); // get the current row?
 		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
 		DPRINT("%s %d:\t", pass > 1 ? "Vector" : "Pattern",r);
 		for (unsigned int i = 0; i < results.width; i++) {

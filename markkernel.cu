@@ -31,25 +31,19 @@ texture<int, 2> XorOutChainLUT;
 
 // group all results together, this implementation will fail if # of lines > 1024
 // will need to group lines into groups of 1024 or less
-__global__ void kernMerge(int* input, int* results, int offset, int width, int height, int pitch) {
-	int *r,result, i, dst = threadIdx.x + offset;
+__global__ void kernMerge(char* input, char* results, int offset, int width, int height, int pitch) {
+	char *r;
+	int result, i, dst = threadIdx.x + offset;
 	if (threadIdx.x < width) {
 		result = 0;
 		for (i = 0; i <= blockIdx.x; i++) {
-			r = (int*)((char*)input + i*pitch);
+			r = ((char*)input + (boffset+i)*pitch);
 			result = (result || r[dst]);
 		}
-		r = (int*)((char*)results + pitch*blockIdx.x);
+		r = ((char*)results + pitch*blockIdx.x);
 		r[dst] = result;
 	}
 }
-void loadMergeLUTs() {
-	int merge[4] = {0,1,1,1};
-	cudaArray *cuMerge;
-	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();	
-	cudaMallocArray(&cuMerge,&channelDesc, 2, 2);
-	cudaMemcpyToArray(cuMerge, 0,0, merge, sizeof(int)*4,cudaMemcpyHostToDevice);
-	cudaBindTextureToArray(mergeLUT,cuMerge,channelDesc);
 }
 void loadPropLUTs() {
 	// Creating a set of static arrays that represent our LUTs
@@ -131,16 +125,17 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
 
-__global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount, int pitch) {
+__global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount, int pitch) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val;
 	__shared__ int rowids[50]; // handle up to fanins of 50 
-	__shared__ char cache[THREAD_PER_BLOCK]; // needs to be 2x # of threads being run
+	char cache;
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,fin = 1, type;
-	int *rowResults, *row;
+	char *rowResults;
+	char *row;
 	if (tid < height) {
-		cache[threadIdx.x] = 0;
-		row = (int*)((char*)results + tid*pitch);
-		rowResults = (int*)malloc(sizeof(int)*width);
+		cache = 0;
+		row = (char*)((char*)input + tid*pitch);
+		rowResults = (char*)((char*)results + tid*pitch);
 		for (int i = 0; i < ncount; i++) {
 			rowResults[i] = 0;
 		}
@@ -197,9 +192,9 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 					for (fin1 = 0; fin1 < nfi; fin1++) {
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[threadIdx.x] = tex2D(and2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
-							pass += (cache[threadIdx.x] > 1);
-							tmp = tmp && ((int)cache[threadIdx.x] > 0);
+							cache = tex2D(and2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							pass += (cache > 1);
+							tmp = tmp && (cache > 0);
 						}
 					}
 					rowResults[i] = val && tmp && (pass <= nfi);
@@ -210,9 +205,9 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[threadIdx.x] = tex2D(or2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
-							pass += (cache[threadIdx.x] > 1);
-							tmp = tmp && ((int)cache[threadIdx.x] > 0);
+							cache = tex2D(or2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							pass += (cache > 1);
+							tmp = tmp && (cache > 0);
 						}
 					}
 					rowResults[i] = val && tmp && (pass <= nfi);
@@ -223,9 +218,9 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[threadIdx.x] = tex2D(xor2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
-							pass += (cache[threadIdx.x] > 1);
-							tmp = tmp && ((int)cache[threadIdx.x] > 0);
+							cache = tex2D(xor2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							pass += (cache > 1);
+							tmp = tmp && (cache > 0);
 							fin = fin && tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
 						}
 					}
@@ -242,8 +237,8 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[threadIdx.x] = tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
-							fin = cache[threadIdx.x] && fin;
+							cache = tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							fin = cache && fin;
 						}
 						rowResults[rowids[fin1]] = fin && rowResults[i];
 					}
@@ -254,8 +249,8 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[threadIdx.x] = tex2D(or2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
-							fin = cache[threadIdx.x] && fin;
+							cache = tex2D(or2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							fin = cache && fin;
 						}
 						rowResults[rowids[fin1]] = fin && rowResults[i];
 					}
@@ -265,8 +260,8 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[threadIdx.x] = tex2D(xor2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
-							fin = cache[threadIdx.x] && fin;
+							cache = tex2D(xor2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]);
+							fin = cache && fin;
 						}
 						rowResults[rowids[fin1]] = fin && rowResults[i];
 					}
@@ -276,15 +271,14 @@ __global__ void kernMarkPathSegments(int *results, GPUNODE* node, int* fans, siz
 
 			}
 		}
-		// replace our working set to save memory.
-		for (int i = 0; i < width; i++) {
-			row[i] = rowResults[i];
-		}
-		free(rowResults);
+//		// replace our working set to save memory.
+//		for (int i = 0; i < width; i++) {
+//			row[i] = rowResults[i];
+//		}
 	}
 }
 
-float gpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan) {
+float gpuMarkPaths(ARRAY2D<char> input, ARRAY2D<char> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan) {
 	loadPropLUTs();
 	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
 #ifndef NTIMING
@@ -296,7 +290,7 @@ float gpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-	kernMarkPathSegments<<<blockcount,THREAD_PER_BLOCK>>>(results.data, dgraph.data, fan, results.width, results.height, dgraph.width, results.pitch);
+	kernMarkPathSegments<<<blockcount,THREAD_PER_BLOCK>>>(input.data, results.data, dgraph.data, fan, results.width, results.height, dgraph.width, results.pitch);
 	cudaDeviceSynchronize();
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
@@ -311,9 +305,7 @@ float gpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph
 	return 0.0;
 #endif // NTIMING
 }
-float gpuMergeHistory(ARRAY2D<int> input, ARRAY2D<int> *mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
-	cudaMallocPitch(&(mergeresult->data), &(mergeresult->pitch), mergeresult->width,mergeresult->height);
-	// for bigger circuits or more patterns, need some logic here to divide work according to what will fit. 
+float gpuMergeHistory(ARRAY2D<char> input, ARRAY2D<char> *mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
@@ -346,11 +338,11 @@ float gpuMergeHistory(ARRAY2D<int> input, ARRAY2D<int> *mergeresult, GPUNODE* gr
 #endif // NTIMING
 }
 
-void debugMarkOutput(ARRAY2D<int> results) {
+void debugMarkOutput(ARRAY2D<char> results) {
 #ifndef NDEBUG
 	// Routine to copy contents of our results array into host memory and print
 	// it row-by-row.
-	int *lvalues, *row;
+	char *lvalues, *row;
 	DPRINT("Post-mark results\n");
 	DPRINT("Line:   \t");
 	for (unsigned int i = 0; i < results.width; i++) {
@@ -358,8 +350,8 @@ void debugMarkOutput(ARRAY2D<int> results) {
 	}
 	DPRINT("\n");
 	for (unsigned int r = 0;r < results.height; r++) {
-		lvalues = (int*)malloc(results.bwidth());
-		row = (int*)((char*)results.data + r*results.pitch); // get the current row?
+		lvalues = (char*)malloc(results.bwidth());
+		row = ((char*)results.data + r*results.pitch); // get the current row?
 		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
 		
 		DPRINT("%s %d:\t","Vector",r);

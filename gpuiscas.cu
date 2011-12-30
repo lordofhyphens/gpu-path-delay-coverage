@@ -66,15 +66,15 @@ void gpuShiftVectors(int* input, size_t width, size_t height) {
 	HANDLE_ERROR(cudaMemcpy(input+(height-1)*(width),tgt, sizeof(int)*(width), cudaMemcpyDeviceToDevice));
 	HANDLE_ERROR(cudaFree(tgt));
 }
-ARRAY2D<int> gpuAllocateResults(size_t width, size_t height) {
-	int *tgt = NULL;
+ARRAY2D<char> gpuAllocateResults(size_t width, size_t height) {
+	char *tgt = NULL;
 	size_t pitch = 0;
-	DPRINT("Attempting to allocate %u * %u = %lu bytes... %G megabytes ",(int)sizeof(unsigned)*(unsigned)width,(unsigned)height, sizeof(int)*width*height, sizeof(int)*width*height / pow(2,20));
-	HANDLE_ERROR(cudaMallocPitch(&tgt, &pitch, sizeof(int)*(width),height));
+	DPRINT("Attempting to allocate %u * %u = %lu bytes... %G megabytes ",(int)sizeof(char)*(unsigned)width,(unsigned)height, sizeof(char)*width*height, (sizeof(char)*width*height) / pow(2,20));
+	HANDLE_ERROR(cudaMallocPitch(&tgt, &pitch, sizeof(char)*(width),height));
 	DPRINT("...complete.\n");
-	DPRINT("Allocated %u*%u = %lu bytes, %G megabytes\n", (unsigned)pitch,(unsigned)height, pitch*height, (pitch*width)/pow(2,20));
-	HANDLE_ERROR(cudaMemset2D(tgt, pitch,0, sizeof(int)*width,height));
-	return ARRAY2D<int>(tgt, height, width, pitch);
+	DPRINT("Allocated %u*%u = %lu bytes, %G megabytes\n", (unsigned)pitch,(unsigned)height, pitch*height, ((pitch*height) / pow(2,20)));
+	HANDLE_ERROR(cudaMemset2D(tgt, pitch,0, sizeof(char)*width,height));
+	return ARRAY2D<char>(tgt, height, width, pitch);
 }
 int* gpuLoad1DVector(int* input, size_t width, size_t height) {
 	int *tgt;
@@ -91,7 +91,16 @@ int* loadPinned(int* input, size_t vcnt) {
 void freeMemory(int* data) {
 	cudaFree(data);
 }
+void freeMemory(char* data) {
+	cudaFree(data);
+}
 void freeMemory(GPUNODE* data) {
 	cudaFree(data);
 }
+void clearMemory(ARRAY2D<char> ar) {
+	HANDLE_ERROR(cudaMemset2D(ar.data, ar.pitch,0, sizeof(char)*ar.width,ar.height));
+}
 
+void gpuArrayCopy(ARRAY2D<char> dst, ARRAY2D<char> src) {
+	HANDLE_ERROR(cudaMemcpy2D(dst.data, dst.pitch, src.data, src.pitch, sizeof(char)*src.width, src.height, cudaMemcpyDeviceToDevice));
+}
