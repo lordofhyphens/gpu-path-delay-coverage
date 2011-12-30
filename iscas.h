@@ -72,7 +72,7 @@ typedef struct LINE_type {
 } LINE;
 
 typedef struct GPU_NODE_type {
-	int type, nfi, nfo, po, offset; // initial offset for fanin and fanout
+	int type, nfi, nfo, po, offset,level; // initial offset for fanin and fanout
 } GPUNODE;
 
 typedef struct GPUNODE_INFO_type {

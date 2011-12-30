@@ -33,6 +33,7 @@ int main(int argc, char ** argv) {
 	ncnt = topologicalSort(graph, ncnt);
 	DPRINT("Levelizing circuit...");
 	levels = levelize(graph,ncnt);
+	levelSort(graph,ncnt);
 	DPRINT("...complete. Maximum level = %d\n", levels);
 //	DPRINT("Initializing line structure.\n");	
 	for (int i = 0; i < ncnt; i++)
@@ -85,12 +86,12 @@ for (int i = 0; i < test.max_offset; i++) {
 	elapsed = floattime(diff(start, stop));
 //	DPRINT("GPU Memory Time: %f ms\n", elapsed);
 
-	pass1 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 1);
+	pass1 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, levels, 1);
 	
 	TPRINT("Simulation Pass 1 time (GPU): %f ms\n", pass1);
 //	debugSimulationOutput(resArray,1);
 	gpuShiftVectors(dvec, pis, vcnt);
-	pass2 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, 2);
+	pass2 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, levels, 2);
 //	debugSimulationOutput(resArray,2);
 	TPRINT("Simulation Pass 2 time (GPU): %f ms\n", pass2);
 	freeMemory(inputArray.data);

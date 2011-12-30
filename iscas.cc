@@ -378,6 +378,7 @@ GPUNODE_INFO GraphsetToArrays(NODE* graph, LINE* lgraph, int maxid) {
 		ggraph[i].nfi = graph[i].nfi;
 		ggraph[i].nfo = graph[i].nfo;
 		ggraph[i].po = graph[i].po;
+		ggraph[i].level = graph[i].level;
 		if (graph[i].typ == 0)
 			continue;
 		ggraph[i].offset = off;

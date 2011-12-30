@@ -12,7 +12,7 @@ void HandleSimError( cudaError_t err, const char *file, int line ) {
 }
 
 #define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
-#define THREAD_PER_BLOCK 32
+#define THREAD_PER_BLOCK 512
 texture<int, 2> and2LUT;
 texture<int, 2> nand2LUT;
 texture<int, 2> or2LUT;
@@ -22,77 +22,75 @@ texture<int, 2> xnor2LUT;
 texture<int, 2> stableLUT;
 texture<int, 1> notLUT;
 
-__global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, size_t pitch, int pass) {
-	int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
+__global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, size_t pitch, int start, int level, int pass) {
+	int tid = (blockIdx.y * blockDim.y) + threadIdx.x;
+	int gid = blockIdx.x;
 	__shared__ int rowids[100]; // handle up to fanins of 1000 / 
-	int pi = 0;
 	char *row;
 	int goffset, nfi, val, j,type, r;
 	if (tid < height) {
 		row = ((char*)res + tid*pitch); // get the current row?
-		for (int i = 0; i < width; i++) {
-			nfi = graph[i].nfi;
-			if (threadIdx.x == 0) { // first thread in every block does the preload.
-				goffset = graph[i].offset;
-				// preload all of the fanin line #s for this gate to shared memory.
-				for (int j = 0; j < nfi;j++) {
-					rowids[j] = fans[goffset+j];
-				}
-					
-			}
-			__syncthreads();
-			type = graph[i].type;
-			switch (type) {
-				case 0: break;
-				case INPT:
-						val = input[(pi+iwidth*tid)];
-						if (pass > 1) {
-							row[i] = tex2D(stableLUT, row[i], val);  
-						} else {
-							row[i] = val;
-						}
-						pi++;
-						break;
-				default: 
-						// we're guaranteed at least one fanin per 
-						// gate if not on an input.
-						__syncthreads();
-						if (rowids[0] < 0) {
-							printf("T: %d Node %d, Type %d, Rowid0 %d\n", tid, i, graph[i].type, rowids[0]);
-						}
-						if (graph[i].type != NOT) {
-							val = row[rowids[0]];
-						} else {
-							val = tex1D(notLUT, row[rowids[0]]);
-						}
-						
-						j = 1;
-						while (j < nfi) {
-							r = row[rowids[j]]; 
-							switch(type) {
-								case XOR:
-									val = tex2D(xor2LUT, val, r );break;
-								case XNOR:
-									val = tex2D(xnor2LUT, val, r);break;
-								case OR:
-									val = tex2D(or2LUT, val, r);break;
-								case NOR:
-									val = tex2D(nor2LUT, val, r);break;
-								case AND:
-									val = tex2D(and2LUT, val, r);break;
-								case NAND:
-									val = tex2D(nand2LUT, val, r);break;
-							}
-							j++;
-						}
-						if (pass > 1 && type != FROM && type != BUFF) {
-							row[i] = tex2D(stableLUT, row[i], val);  
-						} else {
-							row[i] = val;
-						}
+		int i = gid + start;
+		nfi = graph[i].nfi;
+		if (threadIdx.x == 0) { // first thread in every block does the preload.
+			goffset = graph[i].offset;
+			// preload all of the fanin line #s for this gate to shared memory.
+			for (int j = 0; j < nfi;j++) {
+				rowids[j] = fans[goffset+j];
 			}
 
 		}
+		__syncthreads();
+		type = graph[i].type;
+		switch (type) {
+			case 0: break;
+			case INPT:
+					val = input[(gid+iwidth*tid)];
+					if (pass > 1) {
+						row[i] = tex2D(stableLUT, row[i], val);  
+					} else {
+						row[i] = val;
+					}
+					break;
+			default: 
+					// we're guaranteed at least one fanin per 
+					// gate if not on an input.
+					__syncthreads();
+					if (rowids[0] < 0) {
+						printf("T: %d Node %d, Type %d, Rowid0 %d\n", tid, i, graph[i].type, rowids[0]);
+					}
+					if (graph[i].type != NOT) {
+						val = row[rowids[0]];
+					} else {
+						val = tex1D(notLUT, row[rowids[0]]);
+					}
+
+					j = 1;
+					while (j < nfi) {
+						r = row[rowids[j]]; 
+						switch(type) {
+							case XOR:
+								val = tex2D(xor2LUT, val, r );break;
+							case XNOR:
+								val = tex2D(xnor2LUT, val, r);break;
+							case OR:
+								val = tex2D(or2LUT, val, r);break;
+							case NOR:
+								val = tex2D(nor2LUT, val, r);break;
+							case AND:
+								val = tex2D(and2LUT, val, r);break;
+							case NAND:
+								val = tex2D(nand2LUT, val, r);break;
+						}
+						j++;
+					}
+					if (pass > 1 && type != FROM && type != BUFF) {
+						row[i] = tex2D(stableLUT, row[i], val);  
+					} else {
+						row[i] = val;
+					}
+		}
+
 	}
 }
 
@@ -140,29 +138,36 @@ void loadSimLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(notLUT,cuNotArray,channelDesc));
 }
 
-float gpuRunSimulation(ARRAY2D<char> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int pass = 1) {
+float gpuRunSimulation(ARRAY2D<char> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int maxlevels, int pass = 1) {
 	loadSimLUTs(); // set up our lookup tables for simulation.
+	int startGate = 0;
+	int *gatesinLevel;
+	gatesinLevel = new int[maxlevels];
+	for (int i = 0; i < maxlevels; i++) {
+		gatesinLevel[i] = 0;
+		for (unsigned int j = 0; j < results.width; j++) {
+			if (graph[j].level == i) {
+				gatesinLevel[i]++;
+			}
+		}
+	}
+	int blockcount_y = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
 #ifndef NTIMING
 	float elapsed;
-	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
-//	cudaEvent_t start, stop;
-//	cudaEventCreate(&start);
-//	cudaEventCreate(&stop);
-//	cudaEventRecord(start,0);
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-	kernSimulate<<<blockcount,THREAD_PER_BLOCK>>>(dgraph.data,results.data, inputs.data,fan,inputs.pitch, results.width, results.height, results.pitch, pass);
+	for (int i = 0; i < maxlevels; i++) {
+		dim3 numBlocks(gatesinLevel[i],blockcount_y);
+//		DPRINT("Level %d: Simulating %d gates in parallel.\n",i,gatesinLevel[i]);
+		kernSimulate<<<numBlocks,THREAD_PER_BLOCK>>>(dgraph.data,results.data, inputs.data,fan,inputs.pitch, results.width, results.height, results.pitch, startGate, i, pass);
+		startGate += gatesinLevel[i];
+	}
 	cudaDeviceSynchronize();
 	// We're done simulating at this point.
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
-//	cudaEventRecord(stop, 0);
-//	cudaEventSynchronize(stop);
-//	cudaEventElapsedTime(&elapsed,start,stop);
-//	cudaEventDestroy(start);
-//	cudaEventDestroy(stop);
 	return elapsed;
 #else 
 	return 0.0;

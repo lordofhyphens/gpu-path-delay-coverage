@@ -102,3 +102,57 @@ int levelize(NODE* graph, int ncount) {
 	}
 	return maxlevel;
 }
+
+// Memory-expensive level/bucket sort using a deques (used mostly as a list here
+// because of the [] deque has.)
+void levelSort(NODE* graph, int ncount){
+	deque<nodepair> nodes;
+	int mappings[ncount];
+	int maxLevel = 0;
+	while (nodes.size() < (unsigned int)ncount) {
+		for (int c = 0; c < ncount; c++) {
+			if (graph[c].level >= maxLevel) {
+				maxLevel = graph[c].level;
+				nodes.push_back(make_pair(c, graph[c]));
+				graph[c].typ = 0;
+				continue;
+			} else {
+				// find the last point with this same level
+				pairiter g = nodes.end();
+				for (pairiter i = nodes.begin(); i< nodes.end(); i++) {
+					if (graph[c].level == i->second.level) {
+						g = i;
+					}
+				}
+				nodes.insert(g, make_pair(c, graph[c]));
+			}
+		}
+	}
+	int j = 0;
+	for (pairiter i = nodes.begin(); i < nodes.end(); i++) {
+		mappings[i->first] = j;
+		j++; 
+	}
+	LIST* tmp = NULL;
+	for (pairiter i = nodes.begin(); i < nodes.end(); i++) {
+		tmp = i->second.fin;
+		while (tmp != NULL) {
+			tmp->id = mappings[tmp->id];
+			tmp = tmp->nxt;
+		}
+		tmp = i->second.fot;
+		while (tmp != NULL) {
+			tmp->id = mappings[tmp->id];
+			tmp = tmp->nxt;
+		}
+	}
+	j = 0;
+	for (pairiter i = nodes.begin(); i < nodes.end(); i++) {
+		graph[j] = i->second;
+		assert(graph[j].typ == i->second.typ);
+		assert(graph[j].typ != 0);
+		j++;
+
+ 	}
+}
+
