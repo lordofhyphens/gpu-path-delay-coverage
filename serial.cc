@@ -3,7 +3,6 @@
 #include <ctime>
 #include <time.h>
 #include <unistd.h>
-
 void cpuMerge(int h, int w, int* input, int* results, int width) {
 //	int merge[2][2] = {{0,1},{1,1}};
 	int *r,result, i;
@@ -19,55 +18,51 @@ void cpuMerge(int h, int w, int* input, int* results, int width) {
 		r[w] = result;
 	}
 }
-void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
-	int and2_output_prop[4][4]= {{0,0,0,0},{0,0,1,1},{1,1,1,1},{0,1,1,1}};
-	int and2_input_prop[4][4] = {{0,0,0,0},{0,0,1,1},{0,0,1,0},{0,0,1,1}};
-	int or2_output_prop[4][4] = {{2,0,1,1},{0,0,0,0},{1,0,1,1},{1,0,1,1}};
-	int or2_input_prop[4][4]  = {{0,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}};
-	int xor2_output_prop[4][4] = {{2,0,1,1},{0,0,0,0},{1,0,1,1},{1,0,1,1}};
-	int xor2_input_prop[4][4]  = {{0,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}};
-//	int from_prop[16]      =  {0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1};
-	int inpt_prop[2][4] = {{0,0,0,0},{0,0,1,1}};
+void cpuMarkPathSegments(int *input, int *results, int tid, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
+//	int and2_output_prop[4][4]= {{0,0,0,0},{0,0,2,1},{0,1,1,0},{0,1,1,1}};
+//	int and2_input_prop[4][4] = {{0,0,0,0},{0,0,1,1},{0,0,1,0},{0,0,1,1}};
+//	int or2_output_prop[4][4] = {{2,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}};
+//	int or2_input_prop[4][4]  = {{0,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}};
+//	int xor2_output_prop[4][4] = {{2,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}};
+//	int xor2_input_prop[4][4]  = {{0,0,1,1},{0,0,0,0},{0,0,1,1},{0,0,0,1}};
+//	int inpt_prop[2][4] = {{0,0,0,0},{0,0,1,1}};
 	int nfi, goffset,val;
 	int rowids[50];
-	char cache[1]; // needs to be 2x # of threads being run
-	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,fin = 1, type;
+	char cache;
+	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,fin = 1, type, prev;
 	int *rowResults, *row;
 	if ((unsigned int)tid < height) {
-		cache[0] = 0;
-		row = (int*)((char*)results + tid*(width)*sizeof(int));
-		rowResults = (int*)malloc(sizeof(int)*width);
-		for (int i = 0; i < ncount; i++) {
-			rowResults[i] = 0;
-		}
+		cache = 0;
+		row = (int*)((char*)input + tid*(width)*sizeof(int));
+		rowResults = (int*)((char*)results + tid*(width)*sizeof(int));
 		for (int i = ncount-1; i >= 0; i--) {
 			nfi = node[i].nfi;
 			type = node[i].type;
-			if (0 == 0) {
-				goffset = node[i].offset;
-				// preload all of the fanin line #s for this gate to shared memory.
-				for (int j = 0; j < nfi;j++) {
-					rowids[j] = fans[goffset+j];
-				}
+			goffset = node[i].offset;
+			// preload all of the fanin line #s for this gate to shared memory.
+			for (int j = 0; j < nfi;j++) {
+				rowids[j] = fans[goffset+j];
 			}
 			// switching based on value causes divergence, switch based on node type.
 			val = (row[i] > 1);
 			if (node[i].po) {
 				rowResults[i] = val;
+				prev = val;
+			} else {
+				prev = rowResults[i];
 			}
 			switch(type) {
 				case FROM:
 					// For FROM, only set the "input" line if it hasn't already
 					// been set (otherwise it'll overwrite the decision of
 					// another system somewhere else.
-
 					val = (rowResults[i] > 0 && row[rowids[0]] > 1);
-					rowResults[rowids[0]] = val || rowResults[i];
+					rowResults[rowids[0]] = val || (rowResults[rowids[0]] > 0);
 					rowResults[i] =  val;
 					break;
 				case BUFF:
 				case NOT:
-					val = inpt_prop[row[rowids[0]]][rowResults[i]] && rowResults[i];
+					val = NOT_IN(row[rowids[0]]) && prev;
 					rowResults[rowids[0]] = val;
 					rowResults[i] = val;
 					break;
@@ -92,12 +87,12 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 					for (fin1 = 0; fin1 < nfi; fin1++) {
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[0] = and2_output_prop[row[rowids[fin1]]][row[rowids[fin2]]];
-							pass += (cache[0] > 1);
-							tmp = tmp && ((int)cache[0] > 0);
+							cache = AND_OUT(row[rowids[fin1]],row[rowids[fin2]]);
+							pass += (cache > 1);
+							tmp = tmp && (cache > 0) && (pass <= nfi);
 						}
 					}
-					rowResults[i] = val && tmp && (pass <= nfi);
+					rowResults[i] = val && tmp && prev;
 					break;
 				case OR:
 				case NOR:
@@ -105,24 +100,24 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[0] = or2_output_prop[row[rowids[fin1]]][row[rowids[fin2]]];
-							pass += (cache[0] > 1);
-							tmp = tmp && ((int)cache[0] > 0);
+							cache = OR_OUT(row[rowids[fin1]],row[rowids[fin2]]);
+							pass += (cache > 1);
+							tmp = tmp && (cache > 0);
 						}
 					}
-					rowResults[i] = val && tmp && (pass <= nfi);
+					rowResults[i] = val && tmp && prev;
 					break;
 				case XOR:
 				case XNOR:
 					for (fin1 = 0; fin1 < nfi; fin1++) {
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[0] = xor2_output_prop[row[rowids[fin1]]][row[rowids[fin2]]];
-							pass += (cache[0] > 1);
-							tmp = tmp && ((int)cache[0] > 0);
+							cache = XOR_OUT(row[rowids[fin1]],row[rowids[fin2]]);
+							pass += (cache > 1);
+							tmp = tmp && ((int)cache > 0);
 						}
 					}
-					rowResults[i] = val && tmp && (pass <= nfi);
+					rowResults[i] = val && tmp && (pass <= nfi) && prev;
 					break;
 				default:
 					// if there is a transition that will propagate, set = to some positive #?
@@ -135,10 +130,10 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[0] = and2_input_prop[row[rowids[fin1]]][row[rowids[fin2]]];
-							fin = cache[0] && fin;
+							cache = AND_IN(row[rowids[fin1]],row[rowids[fin2]]);
+							fin = cache && fin;
 						}
-						rowResults[rowids[fin1]] = fin && rowResults[i];
+						rowResults[rowids[fin1]] = fin && prev;
 					}
 					break;
 				case OR:
@@ -147,10 +142,10 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[0] = or2_input_prop[row[rowids[fin1]]][row[rowids[fin2]]];
-							fin = cache[0] && fin;
+							cache = OR_IN(row[rowids[fin1]],row[rowids[fin2]]);
+							fin = cache && fin;
 						}
-						rowResults[rowids[fin1]] = fin && rowResults[i];
+						rowResults[rowids[fin1]] = fin && prev;
 					}
 				case XOR:
 				case XNOR:
@@ -158,10 +153,10 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 						fin = 1;
 						for (fin2 = 0; fin2 < nfi; fin2++) {
 							if (fin1 == fin2) continue;
-							cache[0] = xor2_input_prop[row[rowids[fin1]]][row[rowids[fin2]]];
-							fin = cache[0] && fin;
+							cache = XOR_IN(row[rowids[fin1]],row[rowids[fin2]]);
+							fin = cache && fin;
 						}
-						rowResults[rowids[fin1]] = fin && rowResults[i];
+						rowResults[rowids[fin1]] = fin && prev;
 					}
 					break;
 				default:
@@ -169,11 +164,6 @@ void cpuMarkPathSegments(int *results, int tid, GPUNODE* node, int* fans, size_t
 
 			}
 		}
-		// replace our working set to save memory.
-		for (unsigned int i = 0; i < width; i++) {
-			row[i] = rowResults[i];
-		}
-		free(rowResults);
 	}
 }
 
@@ -390,13 +380,12 @@ void cpuShiftVectors(int* input, size_t width, size_t height) {
 //	DPRINT("\n");
 	free(tgt);
 }
-float cpuMarkPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan) {
+float cpuMarkPaths(ARRAY2D<int> input, ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan) {
 	float elapsed = 0.0;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	for (unsigned int i = 0; i < results.height; i++) {
-//		DPRINT("Running TID: %d ", i);
-		cpuMarkPathSegments(results.data, i, dgraph.data, fan, results.width, results.height, dgraph.width);
+		cpuMarkPathSegments(input.data, results.data, i, dgraph.data, fan, results.width, results.height, dgraph.width);
 	}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));

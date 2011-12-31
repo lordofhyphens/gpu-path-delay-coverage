@@ -124,8 +124,8 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
 
-__global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, int* fans, size_t width, size_t height, int ncount, int pitch) {
-	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset,val,prev;
+__global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, int* fans, size_t width, size_t height, int start, int pitch) {
+	int tid = blockIdx.y * blockDim.y + threadIdx.x, nfi, goffset,val,prev;
 	__shared__ int rowids[50]; // handle up to fanins of 50 
 	char cache;
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,fin = 1, type;
@@ -135,174 +135,174 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 		cache = 0;
 		row = (char*)((char*)input + tid*pitch);
 		rowResults = (char*)((char*)results + tid*pitch);
-		for (int i = 0; i < width; i++) {
-			rowResults[i] = 0;
-		}
-		for (int i = ncount-1; i >= 0; i--) {
-			tmp = 1;
-			nfi = node[i].nfi;
-			type = node[i].type;
-			if (threadIdx.x == 0) {
-				goffset = node[i].offset;
-				// preload all of the fanin line #s for this gate to shared memory.
-				for (int j = 0; j < nfi;j++) {
-					rowids[j] = fans[goffset+j];
-				}
+		int i = start+blockIdx.x;
+		tmp = 1;
+		nfi = node[i].nfi;
+		type = node[i].type;
+		if (threadIdx.x == 0) {
+			goffset = node[i].offset;
+			// preload all of the fanin line #s for this gate to shared memory.
+			for (int j = 0; j < nfi;j++) {
+				rowids[j] = fans[goffset+j];
 			}
-			__syncthreads();
-			// switching based on value causes divergence, switch based on node type.
-			val = (row[i] > 1);
-			if (node[i].po) {
+		}
+		__syncthreads();
+		// switching based on value causes divergence, switch based on node type.
+		val = (row[i] > 1);
+		if (node[i].po) {
+			rowResults[i] = val;
+			prev = val;
+		} else {
+			prev = rowResults[i];
+		}
+		switch(type) {
+			case FROM:
+				// For FROM, only set the "input" line if it hasn't already
+				// been set (otherwise it'll overwrite the decision of
+				// another system somewhere else.
+
+				val = (rowResults[i] > 0 && row[rowids[0]] > 1);
+				rowResults[rowids[0]] = val || (rowResults[rowids[0]] > 0);
+				rowResults[i] =  val;
+				break;
+			case BUFF:
+			case NOT:
+				val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]) && prev;
+				rowResults[rowids[0]] = val;
 				rowResults[i] = val;
-				prev = val;
-			} else {
-				prev = rowResults[i];
-			}
-			switch(type) {
-				case FROM:
-					// For FROM, only set the "input" line if it hasn't already
-					// been set (otherwise it'll overwrite the decision of
-					// another system somewhere else.
+				break;
+				// For the standard gates, setting three values -- both the
+				// input lines and the output line.  row[i]-1 is the
+				// transition on the output, offset to make the texture
+				// calculations correct because there are 4 possible values
+				// row[i] can take: 0, 1, 2, 3.  0, 1 are the same, as are
+				// 2,3, so we subtract 1 and clamp to an edge if we
+				// overflow.
+				// 0 becomes -1 (which clamps to 0)
+				// 1 becomes 0
+				// 2 becomes 1
+				// 3 becomes 2 (which clamps to 1)
+				// There's only 2 LUTs for each gate type. The input LUT
+				// checks for path existance through the first input, so we
+				// call it twice with the inputs reversed to check both
+				// paths.
 
-					val = (rowResults[i] > 0 && row[rowids[0]] > 1);
-					rowResults[rowids[0]] = val || (rowResults[rowids[0]] > 0);
-					rowResults[i] =  val;
-					break;
-				case BUFF:
-				case NOT:
-					val = tex2D(inptPropLUT, row[rowids[0]],rowResults[i]) && prev;
-					rowResults[rowids[0]] = val;
-					rowResults[i] = val;
-					break;
-					// For the standard gates, setting three values -- both the
-					// input lines and the output line.  row[i]-1 is the
-					// transition on the output, offset to make the texture
-					// calculations correct because there are 4 possible values
-					// row[i] can take: 0, 1, 2, 3.  0, 1 are the same, as are
-					// 2,3, so we subtract 1 and clamp to an edge if we
-					// overflow.
-					// 0 becomes -1 (which clamps to 0)
-					// 1 becomes 0
-					// 2 becomes 1
-					// 3 becomes 2 (which clamps to 1)
-					// There's only 2 LUTs for each gate type. The input LUT
-					// checks for path existance through the first input, so we
-					// call it twice with the inputs reversed to check both
-					// paths.
-
-				case NAND:
-				case AND:
-					for (fin1 = 0; fin1 < nfi; fin1++) {
-						for (fin2 = 0; fin2 < nfi; fin2++) {
-							if (fin1 == fin2) continue;
-							cache = tex2D(and2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
-							pass += (cache > 1);
-							tmp = tmp && (cache > 0);
-						}
+			case NAND:
+			case AND:
+				for (fin1 = 0; fin1 < nfi; fin1++) {
+					for (fin2 = 0; fin2 < nfi; fin2++) {
+						if (fin1 == fin2) continue;
+						cache = tex2D(and2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
+						pass += (cache > 1);
+						tmp = tmp && (cache > 0);
 					}
-					rowResults[i] = val && tmp;
-					break;
-				case OR:
-				case NOR:
-					for (fin1 = 0; fin1 < nfi; fin1++) {
-						fin = 1;
-						for (fin2 = 0; fin2 < nfi; fin2++) {
-							if (fin1 == fin2) continue;
-							cache = tex2D(or2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
-							pass += (cache > 1);
-							tmp = tmp && (cache > 0);
-						}
+				}
+				rowResults[i] = val && tmp;
+				break;
+			case OR:
+			case NOR:
+				for (fin1 = 0; fin1 < nfi; fin1++) {
+					fin = 1;
+					for (fin2 = 0; fin2 < nfi; fin2++) {
+						if (fin1 == fin2) continue;
+						cache = tex2D(or2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
+						pass += (cache > 1);
+						tmp = tmp && (cache > 0);
 					}
-					rowResults[i] = val && tmp && (pass <= nfi);
-					break;
-				case XOR:
-				case XNOR:
-					for (fin1 = 0; fin1 < nfi; fin1++) {
-						fin = 1;
-						for (fin2 = 0; fin2 < nfi; fin2++) {
-							if (fin1 == fin2) continue;
-							cache = tex2D(xor2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
-							pass += (cache > 1);
-							tmp = tmp && (cache > 0);
-							fin = fin && tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
-						}
+				}
+				rowResults[i] = val && tmp && (pass <= nfi);
+				break;
+			case XOR:
+			case XNOR:
+				for (fin1 = 0; fin1 < nfi; fin1++) {
+					fin = 1;
+					for (fin2 = 0; fin2 < nfi; fin2++) {
+						if (fin1 == fin2) continue;
+						cache = tex2D(xor2OutputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
+						pass += (cache > 1);
+						tmp = tmp && (cache > 0);
+						fin = fin && tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
 					}
-					rowResults[i] = val && tmp && (pass <= nfi);
-					break;
-				default:
-					// if there is a transition that will propagate, set = to some positive #?
-					break;
-			}
-			switch(type) {
-				case AND:
-				case NAND:
-					for (fin1 = 0; fin1 < nfi; fin1++) {
-						fin = 1;
-						for (fin2 = 0; fin2 < nfi; fin2++) {
-							if (fin1 == fin2) continue;
-							cache = tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
-							fin = cache && fin;
-						}
-						rowResults[rowids[fin1]] = fin;
-					}
-					break;
-				case OR:
-				case NOR:
-					for (fin1 = 0; fin1 < nfi; fin1++) {
-						fin = 1;
-						for (fin2 = 0; fin2 < nfi; fin2++) {
-							if (fin1 == fin2) continue;
-							cache = tex2D(or2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
-							fin = cache && fin;
-						}
-						rowResults[rowids[fin1]] = fin;
-					}
-				case XOR:
-				case XNOR:
-					for (fin1 = 0; fin1 < nfi; fin1++) {
-						fin = 1;
-						for (fin2 = 0; fin2 < nfi; fin2++) {
-							if (fin1 == fin2) continue;
-							cache = tex2D(xor2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
-							fin = cache && fin;
-						}
-						rowResults[rowids[fin1]] = fin;
-					}
-					break;
-				default:
-					;;
-
-			}
+				}
+				rowResults[i] = val && tmp && (pass <= nfi);
+				break;
+			default:
+				// if there is a transition that will propagate, set = to some positive #?
+				break;
 		}
-//		// replace our working set to save memory.
-//		for (int i = 0; i < width; i++) {
-//			row[i] = rowResults[i];
-//		}
+		switch(type) {
+			case AND:
+			case NAND:
+				for (fin1 = 0; fin1 < nfi; fin1++) {
+					fin = 1;
+					for (fin2 = 0; fin2 < nfi; fin2++) {
+						if (fin1 == fin2) continue;
+						cache = tex2D(and2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
+						fin = cache && fin;
+					}
+					rowResults[rowids[fin1]] = fin;
+				}
+				break;
+			case OR:
+			case NOR:
+				for (fin1 = 0; fin1 < nfi; fin1++) {
+					fin = 1;
+					for (fin2 = 0; fin2 < nfi; fin2++) {
+						if (fin1 == fin2) continue;
+						cache = tex2D(or2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
+						fin = cache && fin;
+					}
+					rowResults[rowids[fin1]] = fin;
+				}
+			case XOR:
+			case XNOR:
+				for (fin1 = 0; fin1 < nfi; fin1++) {
+					fin = 1;
+					for (fin2 = 0; fin2 < nfi; fin2++) {
+						if (fin1 == fin2) continue;
+						cache = tex2D(xor2InputPropLUT, row[rowids[fin1]], row[rowids[fin2]]) && prev;
+						fin = cache && fin;
+					}
+					rowResults[rowids[fin1]] = fin;
+				}
+				break;
+			default:
+				;;
+
+		}
 	}
 }
 
-float gpuMarkPaths(ARRAY2D<char> input, ARRAY2D<char> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan) {
+float gpuMarkPaths(ARRAY2D<char> input, ARRAY2D<char> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan, int maxlevels) {
 	loadPropLUTs();
-	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
+	int *gatesinLevel, startGate=0;
+	gatesinLevel = new int[maxlevels];
+	for (int i = 0; i < maxlevels; i++) {
+		gatesinLevel[i] = 0;
+		for (unsigned int j = 0; j < results.width; j++) {
+			if (graph[j].level == i) {
+				gatesinLevel[i]++;
+			}
+		}
+		startGate += gatesinLevel[i];
+	}
+	int blockcount_y = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
+
 #ifndef NTIMING
 	float elapsed;
-//	cudaEvent_t start, stop;
-//	cudaEventCreate(&start);
-//	cudaEventCreate(&stop);
-//	cudaEventRecord(start,0);
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-	kernMarkPathSegments<<<blockcount,THREAD_PER_BLOCK>>>(input.data, results.data, dgraph.data, fan, results.width, results.height, dgraph.width, results.pitch);
-	cudaDeviceSynchronize();
+	for (int i = maxlevels-1; i >= 0; i--) {
+		dim3 numBlocks(gatesinLevel[i],blockcount_y);
+		startGate -= gatesinLevel[i];
+		kernMarkPathSegments<<<numBlocks,THREAD_PER_BLOCK>>>(input.data, results.data, dgraph.data, fan, results.width, results.height, startGate, results.pitch);
+		cudaDeviceSynchronize();
+	}
+	free(gatesinLevel);
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
-//	cudaEventRecord(stop, 0);
-//	cudaEventSynchronize(stop);
-//	cudaEventElapsedTime(&elapsed,start,stop);
-//	cudaEventDestroy(start);
-//	cudaEventDestroy(stop);
 	return elapsed;
 #else 
 	return 0.0;

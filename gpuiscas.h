@@ -2,10 +2,10 @@
 #define GPUISCAS_H
 #include <cassert>
 #include <math.h>
+#include <cuda.h>
 #include "iscas.h"
 #include "defines.h"
 #include "array2d.h"
-#include <cuda.h>
 
 int* gpuLoad1DVector(int* input, size_t width, size_t height);
 int* loadPinned(int*, size_t);

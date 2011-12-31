@@ -12,8 +12,7 @@
 
 int main(int argc, char ** argv) {
 	FILE *fisc, *fvec;
-	int *fans, *vec,*dvec, levels;
-	GPUNODE *dgraph;
+	int  *vec,levels;
 	NODE* graph;
 	graph = (NODE*)malloc(sizeof(NODE)*Mnod);
 	LINE lgraph[Mnod];
@@ -56,6 +55,8 @@ for (int i = 0; i < test.max_offset; i++) {
 }
 #ifndef CPUCOMPILE
 // GPU implementation
+	int *fans, *dvec;
+	GPUNODE *dgraph;
 	float alltime, pass1=0.0, pass2=0.0, mark = 0.0, merge = 0.0,cover = 0.0;
 	ARRAY2D<char> mergeresult;
 
@@ -96,7 +97,7 @@ for (int i = 0; i < test.max_offset; i++) {
 	freeMemory(inputArray.data);
 
 	mergeresult = gpuAllocateResults(lcnt, vcnt);
-	mark = gpuMarkPaths(resArray, mergeresult, test.graph, graphArray, fans);
+	mark = gpuMarkPaths(resArray, mergeresult, test.graph, graphArray, fans, levels);
 	TPRINT("Path Mark time (GPU): %fms\n",mark);
 	DPRINT("Fiddling with memory...");
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -118,9 +119,10 @@ for (int i = 0; i < test.max_offset; i++) {
 #endif
 // Serial implementation
 	float alltime_s=0.0, pass1_s=0.0, pass2_s=0.0, mark_s=0.0, merge_s=0.0, cover_s=0.0;
-	int *cres, *cfans, *cvec; // serial implementation
+	int *cres, *cfans, *cvec,*markq; // serial implementation
 	GPUNODE *cgraph;
 	cres = cpuAllocateResults(lcnt, vcnt);
+	markq = cpuAllocateResults(lcnt, vcnt);
 	cvec = cpuLoad1DVector(vec, pis, vcnt);
 	cfans = cpuLoadFans(test.offsets,test.max_offset);
 	cgraph = cpuLoadCircuit(test.graph,ncnt);
@@ -128,17 +130,18 @@ for (int i = 0; i < test.max_offset; i++) {
 	ARRAY2D<int> sResArray = ARRAY2D<int>(cres,vcnt,lcnt);
 	ARRAY2D<GPUNODE> sGraphArray = ARRAY2D<GPUNODE>(cgraph,1,ncnt);
 	ARRAY2D<int> sInputArray = ARRAY2D<int>(cvec, 4, 5);
+	ARRAY2D<int> sMarkArray = ARRAY2D<int>(markq, vcnt, lcnt);
 
 	pass1_s = cpuRunSimulation(sResArray, sInputArray, test.graph,sGraphArray,cfans, 1);
 	TPRINT("Simulation Pass 1 time (serial): %f ms\n", pass1_s);
 //	debugCpuSimulationOutput(sResArray,1);
 	cpuShiftVectors(cvec, pis, vcnt);
 	pass2_s = cpuRunSimulation(sResArray, sInputArray, test.graph,sGraphArray,cfans, 2);
-//	debugCpuSimulationOutput(sResArray,2);
+	debugCpuSimulationOutput(sResArray,2);
 	TPRINT("Simulation Pass 2 time (serial): %f ms\n", pass2_s);
-	mark_s = cpuMarkPaths(sResArray, test.graph, sGraphArray, cfans);
+	mark_s = cpuMarkPaths(sResArray, sMarkArray,test.graph, sGraphArray, cfans);
 	TPRINT("Path Mark time (serial) %fms\n",mark_s);
-//	debugCpuMark(sResArray);
+	debugCpuMark(sMarkArray);
 	int* pathcount_s = (int*)malloc(sizeof(int));
 	cover_s = cpuCountPaths(sResArray,test.graph,sGraphArray,cfans, pathcount_s);
 	TPRINT("Path Coverage time (serial) %fms\n",cover_s);

@@ -11,7 +11,8 @@ obj=$(src:.cc=.o) $(main:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)
 out=fcount
-CFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -O -Wall -Werror
+CPFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -O -Wall -Werror
+CFLAGS=${CPFLAGS}
 NVCFLAGS=-arch=sm_20 -O --compiler-options -I/opt/net/apps/cuda/include --compiler-options -Wall --compiler-options -Werror -ccbin ${CC} 
 PYLIB=_fsim.so
 SWIGTEMPLATE=iscas.i sort.i gpuiscas.i simkernel.i
@@ -26,7 +27,7 @@ test: tags $(out)
 	@egrep -e "Total" -e "time " -e "Vector [0-9]{1,2}:" -e "Line:" ${logfile} | tail -n60
 
 .PHONY: cpu
-cpu: CFLAGS = -DCPUCOMPILE -g
+cpu: CFLAGS = ${CPFLAGS} -DCPUCOMPILE
 cpu: tags $(out)-cpu
 
 %.o:

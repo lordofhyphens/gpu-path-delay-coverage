@@ -3,7 +3,7 @@
 #include "iscas.h"
 #include "gpuiscas.h"
 
-float gpuMarkPaths(ARRAY2D<char> input, ARRAY2D<char> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan);
+float gpuMarkPaths(ARRAY2D<char> input, ARRAY2D<char> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan, int);
 
 float gpuMergeHistory(ARRAY2D<char> input, ARRAY2D<char>*, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan);
 
