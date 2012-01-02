@@ -20,6 +20,7 @@ void freeMemory(char* data);
 void freeMemory(GPUNODE* data);
 void clearMemory(ARRAY2D<char> ar);
 
+void gpuPrintVectors(int* vec, size_t height, size_t width);
 void gpuArrayCopy(ARRAY2D<char> dst, ARRAY2D<char> src);
 ARRAY2D<char> gpuAllocateResults(size_t width, size_t height);
 #endif

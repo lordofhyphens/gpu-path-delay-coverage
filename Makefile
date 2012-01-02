@@ -11,9 +11,9 @@ obj=$(src:.cc=.o) $(main:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)
 out=fcount
-CPFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -O -Wall -Werror
+CPFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -O2 -Wall -Werror
 CFLAGS=${CPFLAGS}
-NVCFLAGS=-arch=sm_20 -O --compiler-options -I/opt/net/apps/cuda/include --compiler-options -Wall --compiler-options -Werror -ccbin ${CC} 
+NVCFLAGS=-arch=sm_20 -O2 --compiler-options -I/opt/net/apps/cuda/include --compiler-options -Wall --compiler-options -Werror -ccbin ${CC} --ptxas-options=-v
 PYLIB=_fsim.so
 SWIGTEMPLATE=iscas.i sort.i gpuiscas.i simkernel.i
 

@@ -3,20 +3,29 @@
 #include <ctime>
 #include <time.h>
 #include <unistd.h>
-void cpuMerge(int h, int w, int* input, int* results, int width) {
+#define MERGE_CHUNK 128
+void cpuMerge(int h, int w, int off, int* input, int* results, int width) {
 //	int merge[2][2] = {{0,1},{1,1}};
 	int *r,result, i;
 	if (w < width) {
 		result = 0;
-		for (i = 0; i <= h; i++) {
+		for (i = off; i <= h; i++) {
 			r = (int*)(input + i*width);
-//			DPRINT("i = %d, w = %d, r[w] = %d, result = %d\n",i,w, r[w],result);
-			assert(r[w] < 2 && result < 2 && r[w] >= 0 && result >= 0);
 			result |= r[w];
 		}
 		r = (int*)((char*)results + sizeof(int)*width*h);
 		r[w] = result;
 	}
+}
+void cpuQuickMerge(int comp, int* results, int h, int w, int off, int width) {
+	int *r,result, i;
+	result = comp;
+	for (i = off; i < h; i++) {
+		r = (int*)(results + i*width);
+		result |= r[w];
+	}
+	r = (int*)((char*)results + sizeof(int)*width*h);
+	r[w] = result;
 }
 void cpuMarkPathSegments(int *input, int *results, int tid, GPUNODE* node, int* fans, size_t width, size_t height, int ncount) {
 //	int and2_output_prop[4][4]= {{0,0,0,0},{0,0,2,1},{0,1,1,0},{0,1,1,1}};
@@ -391,16 +400,23 @@ float cpuMarkPaths(ARRAY2D<int> input, ARRAY2D<int> results, GPUNODE* graph, ARR
 	elapsed = floattime(diff(start, stop));
 	return elapsed;
 }
-float cpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
+float cpuMergeHistory(ARRAY2D<int> input, ARRAY2D<int> mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-	*(mergeresult) = (int*)malloc(sizeof(int)*input.height*input.width);
-	for (unsigned int i = 0; i < input.height; i++)
-		for (unsigned int j = 0; j< input.width; j++) {
-			cpuMerge(i,j,input.data, *mergeresult, input.width);
+	int *irow, *mrow, *mrow_prev;
+	for (unsigned int i = 0; i < input.width; i++) {
+		mergeresult.data[i] = input.data[i];
+	}
+	for (unsigned int i = 1; i < input.height; i++){
+		mrow = mergeresult.data+(i*mergeresult.width);
+		mrow_prev = mergeresult.data+((i-1)*mergeresult.width);
+		irow = input.data+(i*input.width);
+		for (unsigned int j = 0; j < input.width; j++) {
+			mrow[j] = mrow_prev[j] | irow[j];
 		}
-	memcpy(*mergeresult, input.data, input.bwidth());
+	}
+	memcpy(mergeresult.data, input.data, input.bwidth());
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
 	return elapsed;

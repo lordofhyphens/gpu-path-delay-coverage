@@ -16,7 +16,7 @@ int* cpuLoad1DVector(int* input, size_t width, size_t height);
 float cpuCountPaths(ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int*);
 
 float cpuMarkPaths(ARRAY2D<int> input, ARRAY2D<int> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan);
-float cpuMergeHistory(ARRAY2D<int> input, int** mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan);
+float cpuMergeHistory(ARRAY2D<int> input, ARRAY2D<int> mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan);
 
 int sReturnPathCount(ARRAY2D<int> results);
 void debugCpuMark(ARRAY2D<int> results);

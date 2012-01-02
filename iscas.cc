@@ -210,8 +210,8 @@ void PrintCircuit(NODE *graph,int Max)
     DPRINT("\nID\tNAME\tTYPE\tLVL\tPO\tIN#\tOUT#\tVAL\tFVAL\tMARK\tFANIN\tFANOUT\n");
     for(i=0; i<=Max; i++) {
         if(graph[i].typ!=0) {
-            DPRINT("%d\t%s\t%d\t%d\t%d\t%d\t%d\t",i,graph[i].nam,graph[i].typ,graph[i].level,graph[i].po,graph[i].nfi,graph[i].nfo);
-            DPRINT("%d\t%d\t%d\t",graph[i].val,graph[i].fval,graph[i].mar);
+            DPRINT("%d\t%4s\t%4d\t%3d\t%2d\t%2d\t%3d\t",i,graph[i].nam,graph[i].typ,graph[i].level,graph[i].po,graph[i].nfi,graph[i].nfo);
+            DPRINT("%4d\t%4d\t%4d\t",graph[i].val,graph[i].fval,graph[i].mar);
             temp=NULL;
             temp=graph[i].fin;
             if(temp!=NULL) {

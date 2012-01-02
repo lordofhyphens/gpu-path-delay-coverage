@@ -90,25 +90,25 @@ __global__ void kernCountCoverage(int toffset, char *results, char *history, GPU
 	}
 
 }
-void debugCoverOutput(ARRAY2D<int> results) {
+void debugCoverOutput(ARRAY2D<char> results) {
 #ifndef NDEBUG
 	// Routine to copy contents of our results array into host memory and print
 	// it row-by-row.
-	int *lvalues, *row;
+	char *lvalues, *row;
 	DPRINT("Path Count results\n");
 	DPRINT("Line:   \t");
 	for (unsigned int i = 0; i < results.width; i++) {
-		DPRINT("%2d ", i);
+		DPRINT("%3d ", i);
 	}
 	DPRINT("\n");
 	for (unsigned int r = 0;r < results.height; r++) {
-		lvalues = (int*)malloc(results.bwidth());
-		row = (int*)((char*)results.data + r*results.bwidth()); // get the current row?
-		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
+		lvalues = (char*)malloc(results.pitch);
+		row = ((char*)results.data + r*results.bwidth()); // get the current row?
+		cudaMemcpy(lvalues,row,results.pitch,cudaMemcpyDeviceToHost);
 		
 		DPRINT("%s %3d:\t", "Vector",r);
 		for (unsigned int i = 0; i < results.width; i++) {
-			DPRINT("%3d ", lvalues[i] == 0 ? -1:lvalues[i]);
+			DPRINT("%3d ", lvalues[i] == 0 ? 255:lvalues[i]);
 		}
 		DPRINT("\n");
 		free(lvalues);
@@ -126,7 +126,7 @@ float gpuCountPaths(ARRAY2D<char> results, ARRAY2D<char> history, GPUNODE* graph
 	cudaDeviceSynchronize();
 #ifndef NTIMING
 #endif
-	kernSumAll<<<1,1>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, results.pitch,dgraph.width);
+//	kernSumAll<<<1,1>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, results.pitch,dgraph.width);
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start,stop));

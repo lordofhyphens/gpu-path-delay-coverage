@@ -12,7 +12,8 @@ void HandleSimError( cudaError_t err, const char *file, int line ) {
 }
 #define STABLE(P, N) (3*(!P & N) + 2*(P & !N) + (P & N))
 #define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
-#define THREAD_PER_BLOCK 128
+#define TID ((blockIdx.y * blockDim.y) + threadIdx.x
+#define THREAD_PER_BLOCK 64
 texture<int, 2> and2LUT;
 texture<int, 2> nand2LUT;
 texture<int, 2> or2LUT;
@@ -21,57 +22,45 @@ texture<int, 2> xor2LUT;
 texture<int, 2> xnor2LUT;
 texture<int, 2> stableLUT;
 texture<int, 1> notLUT;
-
-__global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, size_t iwidth, size_t width, size_t height, size_t pitch, int start, int level, int pass) {
+__global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, size_t iwidth, int pi, size_t height, size_t pitch, int start, int level, int pass) {
 	int tid = (blockIdx.y * blockDim.y) + threadIdx.x, prev=0;
-	int gid = blockIdx.x;
-	__shared__ int rowids[100]; // handle up to fanins of 1000 / 
+	int gid = blockIdx.x+start;
+	__shared__ char rowcache[THREAD_PER_BLOCK][100];
 	char *row;
 	int goffset, nfi, val, j,type, r;
-	if (tid < height) {
-		row = ((char*)res + tid*pitch); // get the current row?
-		int i = gid + start;
-		nfi = graph[i].nfi;
-		if (pass > 1) {
-			prev = row[i];
-		}
-		if (threadIdx.x == 0) { // first thread in every block does the preload.
-			goffset = graph[i].offset;
-			// preload all of the fanin line #s for this gate to shared memory.
-			for (int j = 0; j < nfi;j++) {
-				rowids[j] = fans[goffset+j];
-			}
 
+	if (tid < height) {
+		row = ((char*)res + gid*pitch); // get the line row for the current gate
+		goffset = graph[gid].offset;
+		nfi = graph[gid].nfi;
+		type = graph[gid].type;
+
+		if (pass > 1) {
+			prev = row[tid];
 		}
 		__syncthreads();
-		type = graph[i].type;
-		
+		for (int q = 0; q < nfi; q++) {
+			rowcache[threadIdx.x][q] = ((char*)res+(fans[goffset+q]*pitch))[tid];
+		}
 		switch (type) {
 			case 0: break;
 			case INPT:
-					val = input[(gid+iwidth*tid)];
-					if (pass > 1) {
-						row[i] = STABLE(prev,val);
-					} else {
-						row[i] = val;
-					}
+					val = input[gid+iwidth*(tid)];
 					break;
 			default: 
 					// we're guaranteed at least one fanin per 
 					// gate if not on an input.
 					__syncthreads();
-					if (rowids[0] < 0) {
-						printf("T: %d Node %d, Type %d, Rowid0 %d\n", tid, i, graph[i].type, rowids[0]);
-					}
-					if (graph[i].type != NOT) {
-						val = row[rowids[0]];
+					if (type != NOT) {
+						val = rowcache[threadIdx.x][0];
 					} else {
-						val = tex1D(notLUT, row[rowids[0]]);
+						val = tex1D(notLUT, rowcache[threadIdx.x][0]);
 					}
 
 					j = 1;
 					while (j < nfi) {
-						r = row[rowids[j]]; 
+						__syncthreads();
+						r = rowcache[threadIdx.x][j]; 
 						switch(type) {
 							case XOR:
 								val = tex2D(xor2LUT, val, r );break;
@@ -88,13 +77,12 @@ __global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, s
 						}
 						j++;
 					}
-					if (pass > 1 && type != FROM && type != BUFF) {
-						row[i] = STABLE(prev,val);
-					} else {
-						row[i] = val;
-					}
 		}
-
+		if (pass > 1 && type != FROM && type != BUFF) {
+			row[tid] = tex2D(stableLUT,prev,val);
+		} else {
+			row[tid] = val;
+		}
 	}
 }
 
@@ -163,8 +151,7 @@ float gpuRunSimulation(ARRAY2D<char> results, ARRAY2D<int> inputs, GPUNODE* grap
 #endif // NTIMING
 	for (int i = 0; i < maxlevels; i++) {
 		dim3 numBlocks(gatesinLevel[i],blockcount_y);
-//		DPRINT("Level %d: Simulating %d gates in parallel.\n",i,gatesinLevel[i]);
-		kernSimulate<<<numBlocks,THREAD_PER_BLOCK>>>(dgraph.data,results.data, inputs.data,fan,inputs.pitch, results.width, results.height, results.pitch, startGate, i, pass);
+		kernSimulate<<<numBlocks,THREAD_PER_BLOCK>>>(dgraph.data,results.data, inputs.data,fan,inputs.width*sizeof(int), inputs.height, results.height, results.pitch, startGate, i, pass);
 		startGate += gatesinLevel[i];
 		cudaDeviceSynchronize();
 	}
@@ -183,17 +170,17 @@ void debugSimulationOutput(ARRAY2D<char> results, int pass = 1) {
 #ifndef NDEBUG
 	char *lvalues, *row;
 	DPRINT("Post-simulation device results, pass %d:\n\n", pass);
-	DPRINT("Line:   \t");
-	for (unsigned int i = 0; i < results.width; i++) {
+	DPRINT("Vector:   \t");
+	for (unsigned int i = 0; i < results.height; i++) {
 		DPRINT("%2d ", i);
 	}
 	DPRINT("\n");
-	for (unsigned int r = 0;r < results.height; r++) {
-		lvalues = (char*)malloc(results.bwidth());
+	for (unsigned int r = 0;r < results.width; r++) {
+		lvalues = (char*)malloc(results.height*sizeof(char));
 		row = ((char*)results.data + r*results.pitch); // get the current row?
-		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
-		DPRINT("%s %d:\t", pass > 1 ? "Vector" : "Pattern",r);
-		for (unsigned int i = 0; i < results.width; i++) {
+		cudaMemcpy(lvalues,row,results.height*sizeof(char),cudaMemcpyDeviceToHost);
+		DPRINT("%s %d:\t", pass > 1 ? "Line " : "Line ",r);
+		for (unsigned int i = 0; i < results.height; i++) {
 			switch(lvalues[i]) {
 				case S0:
 					DPRINT("S0 "); break;

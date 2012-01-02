@@ -69,11 +69,11 @@ void gpuShiftVectors(int* input, size_t width, size_t height) {
 ARRAY2D<char> gpuAllocateResults(size_t width, size_t height) {
 	char *tgt = NULL;
 	size_t pitch = 0;
-	DPRINT("Attempting to allocate %u * %u = %lu bytes... %G megabytes ",(int)sizeof(char)*(unsigned)width,(unsigned)height, sizeof(char)*width*height, (sizeof(char)*width*height) / pow(2,20));
-	HANDLE_ERROR(cudaMallocPitch(&tgt, &pitch, sizeof(char)*(width),height));
+	DPRINT("Attempting to allocate %u * %u = %lu bytes... %G megabytes ",(int)sizeof(char)*(unsigned)height,(unsigned)width, sizeof(char)*width*height, (sizeof(char)*width*height) / pow(2,20));
+	HANDLE_ERROR(cudaMallocPitch(&tgt, &pitch, sizeof(char)*(height),width));
 	DPRINT("...complete.\n");
-	DPRINT("Allocated %u*%u = %lu bytes, %G megabytes\n", (unsigned)pitch,(unsigned)height, pitch*height, ((pitch*height) / pow(2,20)));
-	HANDLE_ERROR(cudaMemset2D(tgt, pitch,0, sizeof(char)*width,height));
+	DPRINT("Allocated %u*%u = %lu bytes, %G megabytes\n", (unsigned)pitch,(unsigned)width, pitch*width, ((pitch*width) / pow(2,20)));
+	HANDLE_ERROR(cudaMemset2D(tgt, pitch,0, sizeof(char)*height,width));
 	return ARRAY2D<char>(tgt, height, width, pitch);
 }
 int* gpuLoad1DVector(int* input, size_t width, size_t height) {
@@ -98,9 +98,18 @@ void freeMemory(GPUNODE* data) {
 	cudaFree(data);
 }
 void clearMemory(ARRAY2D<char> ar) {
-	HANDLE_ERROR(cudaMemset2D(ar.data, ar.pitch,0, sizeof(char)*ar.width,ar.height));
+	HANDLE_ERROR(cudaMemset2D(ar.data, ar.pitch,0, sizeof(char)*ar.height,ar.width));
 }
-
+void gpuPrintVectors(int* vec, size_t height, size_t width) {
+	int* tmp = (int*)malloc(sizeof(int)*width*height);
+	cudaMemcpy(tmp, vec, sizeof(int)*width*height, cudaMemcpyDeviceToHost);
+	for (unsigned int i = 0; i < height; i++) {
+		for (unsigned int j = 0; j < width; j++) {
+			printf("%d", tmp[(i*width) + j]);
+		}
+		printf("\n");
+	}
+}
 void gpuArrayCopy(ARRAY2D<char> dst, ARRAY2D<char> src) {
-	HANDLE_ERROR(cudaMemcpy2D(dst.data, dst.pitch, src.data, src.pitch, sizeof(char)*src.width, src.height, cudaMemcpyDeviceToDevice));
+	HANDLE_ERROR(cudaMemcpy2D(dst.data, dst.pitch, src.data, src.pitch, sizeof(char)*src.height, src.width, cudaMemcpyDeviceToDevice));
 }
