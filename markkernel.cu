@@ -12,7 +12,7 @@ void HandleMarkError( cudaError_t err, const char *file, int line ) {
 
 #define HANDLE_ERROR( err ) (HandleMarkError( err, __FILE__, __LINE__ ))
 #define THREAD_PER_BLOCK 32
-#define MTHREAD_BLOCK 1024
+#define MTHREAD_BLOCK 32
 texture<int, 2> and2OutputPropLUT;
 texture<int, 2> and2InputPropLUT;
 texture<int, 2> or2OutputPropLUT;
@@ -40,13 +40,64 @@ __global__ void kernMerge(char* input, char* results,int width, int height, int 
 		results[tid] = input[tid];
 		irow = input+(blockIdx.x*pitch);
 		mrow = results+(blockIdx.x*rpitch);
-		current[tid] = irow[0];
+		current[threadIdx.x] = irow[0];
 		for (unsigned int i = 1; i < tid; i++){
-			current[tid] = irow[i] || current[tid];
+			current[threadIdx.x] = irow[i] || current[threadIdx.x];
 		}
-		mrow[tid] = current[tid];
+		mrow[tid] = current[threadIdx.x];
 	}
 }
+
+/*
+   	Parallel reduction
+    This version adds multiple elements per thread sequentially.  This reduces the overall
+    cost of the algorithm while keeping the work complexity O(n) and the step complexity O(log n).
+    (Brent's Theorem optimization)
+	Modified from Cuda SDK to fit our specific problem (not sum, but logical OR, which is close enough.)
+*/
+template <unsigned int blockSize>
+__global__ void reduce6(char *g_idata, char *g_odata, size_t n, size_t pitch)
+{
+    extern __shared__ int sdata[];
+	char* irow = g_idata+(blockIdx.x*pitch);
+	char* mrow = g_odata+(blockIdx.x*pitch);
+
+    // perform first level of reduction,
+    // reading from global memory, writing to shared memory
+    unsigned int tid = threadIdx.x;
+    unsigned int i = blockIdx.y*(blockSize*2) + threadIdx.x;
+    unsigned int gridSize = blockSize*2*gridDim.y;
+    sdata[tid] = 0;
+
+    // we reduce multiple elements per thread.  The number is determined by the 
+    // number of active thread blocks (via gridSize).  More blocks will result
+    // in a larger gridSize and therefore fewer elements per thread
+    while (i < n)
+    {
+        sdata[tid] |= irow[i] || irow[i+blockSize];  
+        i += gridSize;
+    } 
+    __syncthreads();
+
+    // do reduction in shared mem
+    if (blockSize >= 512) { if (tid < 256) { sdata[tid] |= sdata[tid + 256]; } __syncthreads(); }
+    if (blockSize >= 256) { if (tid < 128) { sdata[tid] |= sdata[tid + 128]; } __syncthreads(); }
+    if (blockSize >= 128) { if (tid <  64) { sdata[tid] |= sdata[tid +  64]; } __syncthreads(); }
+    
+	// unroll at compile time! 
+    {
+        if (blockSize >=  64) { sdata[tid] |= sdata[tid + 32];  }
+        if (blockSize >=  32) { sdata[tid] |= sdata[tid + 16];  }
+        if (blockSize >=  16) { sdata[tid] |= sdata[tid +  8];  }
+        if (blockSize >=   8) { sdata[tid] |= sdata[tid +  4];  }
+        if (blockSize >=   4) { sdata[tid] |= sdata[tid +  2];  }
+        if (blockSize >=   2) { sdata[tid] |= sdata[tid +  1];  }
+    }
+    
+    // write result for this block to global mem 
+    if (tid == 0) mrow[blockIdx.x] = sdata[0];
+}
+
 void loadPropLUTs() {
 	// Creating a set of static arrays that represent our LUTs
 		// Addressing for the propagations:
@@ -303,14 +354,17 @@ float gpuMarkPaths(ARRAY2D<char> input, ARRAY2D<char> results, GPUNODE* graph, A
 #endif // NTIMING
 }
 float gpuMergeHistory(ARRAY2D<char> input, ARRAY2D<char> *mergeresult, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
-	int blockcount = (input.height / MTHREAD_BLOCK) + 1;
+//	int blockcount = (input.height / MTHREAD_BLOCK) + 1;
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-	dim3 blocks(input.width, blockcount);
-	kernMerge<<<blocks,MTHREAD_BLOCK>>>(input.data, mergeresult->data, input.width, input.height, input.pitch, mergeresult->pitch);
+	
+	dim3 blocks(input.width, input.height);
+	//kernMerge<<<blocks,MTHREAD_BLOCK>>>(input.data, mergeresult->data, input.width, input.height, input.pitch, mergeresult->pitch);
+	reduce6<MTHREAD_BLOCK><<< blocks, MTHREAD_BLOCK, MTHREAD_BLOCK*sizeof(int) >>>(input.data, mergeresult->data, input.height, input.pitch);
+
 	cudaDeviceSynchronize();
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);

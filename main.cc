@@ -72,7 +72,6 @@ for (int i = 0; i < test.max_offset; i++) {
 	fans = gpuLoadFans(test.offsets,test.max_offset);
 //	DPRINT("Loading test vectors into GPU Memory...");
 //	PrintVectors(vec, vcnt, pis);
-	ARRAY2D<int> inputArray =  gpuLoad1DVector(vec, pis, vcnt);
 //	gpuPrintVectors(dvec, vcnt, pis);
 	dvec = gpuLoad1DVector(vec, pis, vcnt);
 	freeMemory(vec);
@@ -91,7 +90,7 @@ for (int i = 0; i < test.max_offset; i++) {
 //	debugSimulationOutput(resArray,1);
 	gpuShiftVectors(inputArray.data, pis, vcnt);
 	pass2 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, levels, 2);
-//	debugSimulationOutput(resArray,2);
+	debugSimulationOutput(resArray,2);
 	TPRINT("Simulation Pass 2 time (GPU): %f ms\n", pass2);
 	freeMemory(inputArray.data); // cleaning up the input vector array on GPU
 	mergeresult = gpuAllocateResults(lcnt, vcnt);
@@ -104,9 +103,9 @@ for (int i = 0; i < test.max_offset; i++) {
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed += floattime(diff(start, stop));
 	DPRINT("...complete.\n");
-//	debugMarkOutput(resArray);
+	debugMarkOutput(resArray);
 	merge = gpuMergeHistory(resArray, &(mergeresult), test.graph, graphArray, fans);
-//	debugMarkOutput(mergeresult);
+	debugMarkOutput(mergeresult);
 	TPRINT("Path Merge time (GPU): %fms\n",merge);
 	cover = gpuCountPaths(resArray,mergeresult,test.graph,graphArray,fans);
 //	debugCoverOutput(resArray);
