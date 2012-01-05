@@ -5,6 +5,7 @@
 #include "gpuiscas.h"
 #include "simkernel.h"
 #include "markkernel.h"
+#include "mergekernel.h"
 #include "coverkernel.h"
 #include "serial.h"
 #include "sort.h"
@@ -90,7 +91,7 @@ for (int i = 0; i < test.max_offset; i++) {
 //	debugSimulationOutput(resArray,1);
 	gpuShiftVectors(inputArray.data, pis, vcnt);
 	pass2 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, levels, 2);
-	debugSimulationOutput(resArray,2);
+//	debugSimulationOutput(resArray,2);
 	TPRINT("Simulation Pass 2 time (GPU): %f ms\n", pass2);
 	freeMemory(inputArray.data); // cleaning up the input vector array on GPU
 	mergeresult = gpuAllocateResults(lcnt, vcnt);
@@ -103,16 +104,16 @@ for (int i = 0; i < test.max_offset; i++) {
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed += floattime(diff(start, stop));
 	DPRINT("...complete.\n");
-	debugMarkOutput(resArray);
-	merge = gpuMergeHistory(resArray, &(mergeresult), test.graph, graphArray, fans);
-	debugMarkOutput(mergeresult);
+//	debugMarkOutput(resArray);
+	merge = gpuMergeHistory(resArray, mergeresult);
+//	debugMarkOutput(mergeresult);
 	TPRINT("Path Merge time (GPU): %fms\n",merge);
-	cover = gpuCountPaths(resArray,mergeresult,test.graph,graphArray,fans);
+//	cover = gpuCountPaths(resArray,mergeresult,test.graph,graphArray,fans);
 //	debugCoverOutput(resArray);
 	TPRINT("Path Coverage time (GPU): %fms\n",cover);
 	alltime = pass1 + pass2 + mark + merge + cover;
 
-	TPRINT("Total Path Count for vectors (GPU): %d\n", returnPathCount(resArray));
+//	TPRINT("Total Path Count for vectors (GPU): %d\n", returnPathCount(resArray));
 #endif
 // Serial implementation
 	float alltime_s=0.0, pass1_s=0.0, pass2_s=0.0, mark_s=0.0, merge_s=0.0, cover_s=0.0;

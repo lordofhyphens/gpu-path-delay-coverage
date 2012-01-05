@@ -26,12 +26,14 @@ __global__ void kernSumAll(int toffset, char *results, char *history, GPUNODE* n
 }
 
 // reference: design book 1, page 38.
-__global__ void kernCountCoverage(int toffset, char *results, char *history, GPUNODE* node, int* fans, size_t width, size_t height, size_t pitch, size_t hpitch, int ncount) {
+__global__ void kernCountCoverage(GPUNODE* graph, char* result_array, size_t result_pitch, char* history_array, size_t history_pitch, size_t result_width, size_t pattern_count, int* fanout_index, size_t width, size_t start_gate) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset;
+	int gid = blockIdx.x + start_gate;
 	char *row, *historyRow;
 	int *current, *historyCount;
 	__shared__ int rowids[50]; // handle up to fanins of 50 /
-	if (tid < height) {
+	if (tid < pattern_count) {
+		goffset = node[i].offset;
 		row = ((char*)results + tid*pitch);
 		if (tid == 0) {
 			historyRow = (char*)malloc(sizeof(char)*width);
@@ -41,14 +43,8 @@ __global__ void kernCountCoverage(int toffset, char *results, char *history, GPU
 		}
 		current = (int*)malloc(sizeof(int)*width);
 		historyCount = (int*)malloc(sizeof(int)*width);
-		for (int i = 0; i < ncount; i++) {
-			current[i] = 0;
-			historyCount[i] = 0;
-		}
-		for (int i = ncount-1; i >= 0; i--) {
 			nfi = node[i].nfi;
 			if (tid == 0) {
-				goffset = node[i].offset;
 				// preload all of the fanin line #s for this gate to shared memory.
 				// Guaranteed 1 cycle access time.
 				for (int j = 0; j < nfi;j++) {
@@ -78,7 +74,6 @@ __global__ void kernCountCoverage(int toffset, char *results, char *history, GPU
 						}
 
 			}
-		}
 		for (int i = 0; i < ncount; i++) {
 			row[i] = current[i];
 		}
@@ -116,16 +111,31 @@ void debugCoverOutput(ARRAY2D<char> results) {
 #endif 
 }
 float gpuCountPaths(ARRAY2D<char> results, ARRAY2D<char> history, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
+	int *gatesinLevel, startGate=0;
+	gatesinLevel = new int[maxlevels];
+	for (int i = 0; i < maxlevels; i++) {
+		gatesinLevel[i] = 0;
+		for (unsigned int j = 0; j < results.width; j++) {
+			if (graph[j].level == i) {
+				gatesinLevel[i]++;
+			}
+		}
+		startGate += gatesinLevel[i];
+	}
+	int blockcount_y = (int)(input.height/THREAD_PER_BLOCK) + (input.height%THREAD_PER_BLOCK > 0);
+
 #ifndef NTIMING
-	float elapsed = 0.0;
+	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-#endif
-	int blockcount = (int)(results.height/THREAD_PER_BLOCK) + (results.height%THREAD_PER_BLOCK > 0);
-	kernCountCoverage<<<blockcount,THREAD_PER_BLOCK>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, results.pitch, history.pitch, dgraph.width);
-	cudaDeviceSynchronize();
-#ifndef NTIMING
-#endif
+#endif // NTIMING
+	for (int i = maxlevels-1; i >= 0; i--) {
+		dim3 numBlocks(gatesinLevel[i],blockcount_y);
+		startGate -= gatesinLevel[i];
+		kernCountCoverage<<<numBlocks,THREAD_PER_BLOCK>>>(input.data, results.data, dgraph.data, fan, results.width, results.height, startGate, results.pitch);
+		cudaDeviceSynchronize();
+	}
+	delete gatesinLevel;
 //	kernSumAll<<<1,1>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, results.pitch,dgraph.width);
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);

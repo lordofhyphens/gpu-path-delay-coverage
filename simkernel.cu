@@ -13,7 +13,8 @@ void HandleSimError( cudaError_t err, const char *file, int line ) {
 #define STABLE(P, N) (3*(!P & N) + 2*(P & !N) + (P & N))
 #define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
 #define TID ((blockIdx.y * blockDim.y) + threadIdx.x
-#define THREAD_PER_BLOCK 64
+#define GID (blockIdx.x + start_offset)
+#define THREAD_PER_BLOCK 768
 texture<int, 2> and2LUT;
 texture<int, 2> nand2LUT;
 texture<int, 2> or2LUT;
@@ -22,45 +23,39 @@ texture<int, 2> xor2LUT;
 texture<int, 2> xnor2LUT;
 texture<int, 2> stableLUT;
 texture<int, 1> notLUT;
-__global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, size_t iwidth, int pi, size_t height, size_t pitch, int start, int level, int pass) {
-	int tid = (blockIdx.y * blockDim.y) + threadIdx.x, prev=0;
-	int gid = blockIdx.x+start;
-	__shared__ char rowcache[THREAD_PER_BLOCK][100];
-	char *row;
-	int goffset, nfi, val, j,type, r;
+__global__ void kernSimulateP1(GPUNODE* graph, int* pi_data, size_t pi_pitch, char* output_data, size_t pattern_count, size_t pitch, int* fanout_index, int start_offset) {
+	int tid = (blockIdx.y * blockDim.y) + threadIdx.x;
+	int gid = blockIdx.x+start_offset;
+	__shared__ char rowcache[THREAD_PER_BLOCK];
+	char *row, r, val;
+	int goffset, nfi, j,type;
 
-	if (tid < height) {
-		row = ((char*)res + gid*pitch); // get the line row for the current gate
+	if (tid < pattern_count) {
+		row = ((char*)output_data + gid*pitch); // get the line row for the current gate
 		goffset = graph[gid].offset;
 		nfi = graph[gid].nfi;
 		type = graph[gid].type;
 
-		if (pass > 1) {
-			prev = row[tid];
-		}
 		__syncthreads();
-		for (int q = 0; q < nfi; q++) {
-			rowcache[threadIdx.x][q] = ((char*)res+(fans[goffset+q]*pitch))[tid];
-		}
+		rowcache[threadIdx.x] = ((char*)output_data+(fanout_index[goffset]*pitch))[tid];
 		switch (type) {
-			case 0: break;
 			case INPT:
-					val = input[gid+iwidth*(tid)];
+					val = pi_data[gid+pi_pitch*(tid)];
 					break;
 			default: 
 					// we're guaranteed at least one fanin per 
 					// gate if not on an input.
 					__syncthreads();
 					if (type != NOT) {
-						val = rowcache[threadIdx.x][0];
+						val = rowcache[threadIdx.x];
 					} else {
-						val = tex1D(notLUT, rowcache[threadIdx.x][0]);
+						val = tex1D(notLUT, rowcache[threadIdx.x]);
 					}
 
 					j = 1;
 					while (j < nfi) {
 						__syncthreads();
-						r = rowcache[threadIdx.x][j]; 
+						r = ((char*)output_data+(fanout_index[goffset+j]*pitch))[tid]; 
 						switch(type) {
 							case XOR:
 								val = tex2D(xor2LUT, val, r );break;
@@ -78,11 +73,60 @@ __global__ void kernSimulate(GPUNODE* graph, char* res, int* input, int* fans, s
 						j++;
 					}
 		}
-		if (pass > 1 && type != FROM && type != BUFF) {
-			row[tid] = tex2D(stableLUT,prev,val);
-		} else {
-			row[tid] = val;
+		row[tid] = val;
+	}
+}
+__global__ void kernSimulateP2(GPUNODE* graph, int* pi_data, size_t pi_pitch, char* output_data, size_t pattern_count, size_t pitch, int* fanout_index, int start_offset) {
+	int tid = (blockIdx.y * blockDim.y) + threadIdx.x, prev=0;
+	__shared__ char rowcache[THREAD_PER_BLOCK];
+	char *row, r;
+	int goffset, nfi, val, j,type;
+
+	if (tid < pattern_count) {
+		row = ((char*)output_data + GID*pitch)+tid; // get the line row for the current gate
+		goffset = graph[GID].offset;
+		nfi = graph[GID].nfi;
+		type = graph[GID].type;
+		prev = *row;
+
+		rowcache[threadIdx.x] = ((char*)output_data+(fanout_index[goffset]*pitch))[tid];
+		switch (type) {
+			case INPT:
+					val = pi_data[GID+pi_pitch*(tid)];
+					break;
+			default: 
+					// we're guaranteed at least one fanin per 
+					// gate if not on an input.
+					__syncthreads();
+					if (type != NOT) {
+						val = rowcache[threadIdx.x];
+					} else {
+						val = tex1D(notLUT, rowcache[threadIdx.x]);
+					}
+
+					j = 1;
+					while (j < nfi) {
+						__syncthreads();
+						r = ((char*)output_data+(fanout_index[goffset+j]*pitch))[tid]; 
+						switch(type) {
+							case XOR:
+								val = tex2D(xor2LUT, val, r );break;
+							case XNOR:
+								val = tex2D(xnor2LUT, val, r);break;
+							case OR:
+								val = tex2D(or2LUT, val, r);break;
+							case NOR:
+								val = tex2D(nor2LUT, val, r);break;
+							case AND:
+								val = tex2D(and2LUT, val, r);break;
+							case NAND:
+								val = tex2D(nand2LUT, val, r);break;
+						}
+						j++;
+					}
 		}
+		if (type != FROM && type != BUFF)
+			*row = tex2D(stableLUT,prev,val);
 	}
 }
 
@@ -151,7 +195,11 @@ float gpuRunSimulation(ARRAY2D<char> results, ARRAY2D<int> inputs, GPUNODE* grap
 #endif // NTIMING
 	for (int i = 0; i < maxlevels; i++) {
 		dim3 numBlocks(gatesinLevel[i],blockcount_y);
-		kernSimulate<<<numBlocks,THREAD_PER_BLOCK>>>(dgraph.data,results.data, inputs.data,fan,inputs.width*sizeof(int), inputs.height, results.height, results.pitch, startGate, i, pass);
+		if (pass > 1) {
+			kernSimulateP2<<<numBlocks,THREAD_PER_BLOCK>>>(dgraph.data,inputs.data, inputs.pitch, results.data, results.pitch, results.height, fan, startGate);
+		} else {
+			kernSimulateP1<<<numBlocks,THREAD_PER_BLOCK>>>(dgraph.data,inputs.data, inputs.pitch, results.data, results.pitch, results.height, fan, startGate);
+		}
 		startGate += gatesinLevel[i];
 		cudaDeviceSynchronize();
 	}

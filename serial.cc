@@ -12,6 +12,7 @@ void cpuMerge(int h, int w, int off, int* input, int* results, int width) {
 		for (i = off; i <= h; i++) {
 			r = (int*)(input + i*width);
 			result |= r[w];
+			if (result > 0) { i = h+1; continue; }
 		}
 		r = (int*)((char*)results + sizeof(int)*width*h);
 		r[w] = result;
@@ -408,11 +409,11 @@ float cpuMergeHistory(ARRAY2D<int> input, ARRAY2D<int> mergeresult, GPUNODE* gra
 	for (unsigned int i = 0; i < input.width; i++) {
 		mergeresult.data[i] = input.data[i];
 	}
-	for (unsigned int i = 1; i < input.height; i++){
+	for (unsigned int i = 1; i < input.width; i++){
 		mrow = mergeresult.data+(i*mergeresult.width);
 		mrow_prev = mergeresult.data+((i-1)*mergeresult.width);
 		irow = input.data+(i*input.width);
-		for (unsigned int j = 0; j < input.width; j++) {
+		for (unsigned int j = 0; j < input.height; j++) {
 			mrow[j] = mrow_prev[j] | irow[j];
 		}
 	}
