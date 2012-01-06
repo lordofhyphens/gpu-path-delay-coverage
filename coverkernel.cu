@@ -25,66 +25,95 @@ __global__ void kernSumAll(int toffset, char *results, char *history, GPUNODE* n
 	}
 }
 
-// reference: design book 1, page 38.
-__global__ void kernCountCoverage(GPUNODE* graph, char* result_array, size_t result_pitch, char* history_array, size_t history_pitch, size_t result_width, size_t pattern_count, int* fanout_index, size_t width, size_t start_gate) {
-	int tid = blockIdx.x * blockDim.x + threadIdx.x, nfi, goffset;
-	int gid = blockIdx.x + start_gate;
-	char *row, *historyRow;
-	int *current, *historyCount;
-	__shared__ int rowids[50]; // handle up to fanins of 50 /
-	if (tid < pattern_count) {
-		goffset = node[i].offset;
-		row = ((char*)results + tid*pitch);
-		if (tid == 0) {
-			historyRow = (char*)malloc(sizeof(char)*width);
-			memset(historyRow, 0, sizeof(char)*width);
-		} else {
-			historyRow = ((char*)history + (tid-1)*hpitch);
-		}
-		current = (int*)malloc(sizeof(int)*width);
-		historyCount = (int*)malloc(sizeof(int)*width);
-			nfi = node[i].nfi;
-			if (tid == 0) {
-				// preload all of the fanin line #s for this gate to shared memory.
-				// Guaranteed 1 cycle access time.
-				for (int j = 0; j < nfi;j++) {
-					rowids[j] = fans[goffset+j];
-				}
-			}
-			__syncthreads();
-			if (node[i].po) {
-				current[i] = (row[i] > historyRow[i]); // only set = 1 if there's a new line here
-				historyCount[i] = historyRow[i];
-			}
-			switch(node[i].type) {
-				case 0: continue;
-				case FROM:
-						// Add the current fanout count to the fanin if this line is marked (and the history isn't).
-						current[rowids[0]] += current[i]*(row[rowids[0]] > historyRow[rowids[0]]);
-						historyCount[rowids[0]] += historyCount[i]*(historyRow[rowids[0]]);
-						break;
-				case INPT:
-						continue;
-				default: 
-						for (int fin = 0; fin < node[i].nfi; fin++) {
-							// if the fanout total is 0 but this line is marked (and the history isn't), add a path to the count.
-							// If the fanout total is > 1 and this line is marked (and the history isn't), assign the fanout total to the fanins.
-							historyCount[rowids[fin]] += (historyRow[rowids[fin]] || historyCount[i] > 1) * historyCount[i];
-							current[rowids[fin]] += ((row[rowids[fin]] > historyRow[rowids[fin]]) || current[i] > 1) * current[i] + historyCount[i]*(current[i] == 0 && row[rowids[fin]] > historyRow[rowids[fin]]);
-						}
+// reference: design book 1, page 38.  Modified such that input_array is
+// expected to be an array of integers containing, for each gate the first
+// vector ID that is marked in the history.
 
+__global__ void kernCountCoverage(GPUNODE* graph, char* input_array, size_t input_pitch, int* h_line, size_t result_width, size_t pattern_count, int* count_array, size_t count_pitch, int hcount_array, size_t hcount_pitch, int* fanout_index, size_t width, size_t start_gate, size_t poffset) {
+	int tid = blockIdx.x * blockDim.x + threadIdx.x + poffset;
+	__shared__ int nfi, goffset, po, type, fanouts[50];
+	int gid = blockIdx.x + start_gate, fin = 0;
+	char *line;
+	int *count, *h_count;
+	if (tid < pattern_count) {
+		if (threadIdx.x == 0) {
+			goffset = graph[gid].offset;
+			nfi = graph[gid].nfi;
+			po = graph[gid].po;
+			type = graph[gid].type;
+			for (fin = 0; fin < nfi; fin++) {
+				fanouts[fin] = fanout_index[fin+goffset];
 			}
-		for (int i = 0; i < ncount; i++) {
-			row[i] = current[i];
 		}
-		free(current);
-		free(historyCount);
+		__syncthreads();
+
+		line = ((char*)input_array + gid*input_pitch);
+		count = (int*)((char*)count_array + gid*count_pitch);
+		if (tid > 0) {
+			h_count = (int*)((char*)hcount_array + gid*hcount_pitch);
+		} else {
+			h_line = (int*)malloc(sizeof(char)*result_width);
+			h_count = (int*)malloc(sizeof(int)*result_width);
+		}
+		if (po) {
+			count[tid] = line[tid] && (tid < h_line[gid]); // only set = 1 if there's a new line here
+			h_count[tid] = tid >= h_line[gid];
+		}
+		if (type == FROM) {
+			atomicAdd(count+fanouts[gid], count[gid]*(line[fanouts[0]])*(tid < h_line[fanouts[0]]));
+			atomicAdd(h_count+fanouts[0], h_count[gid]*(tid >= h_line[fanouts[0]]));
+		} else if (type != INPT) {
+			for (fin = 0; fin < nfi; fin++) {
+				// if the fanout total is 0 but this line is marked (and the history isn't), add a path to the count.
+				// If the fanout total is > 1 and this line is marked (and the history isn't), assign the fanout total to the fanins.
+				h_count[fanouts[fin]] = ((tid >= h_line[fanouts[fin]]) || h_count[tid] > 1) * h_count[tid];
+				count[fanouts[fin]] = ((line[fanouts[fin]] && (tid < h_line[fanouts[fin]])) || count[tid] > 1) * count[tid] + h_count[tid]*(count[tid] == 0 && line[fanouts[fin]] > 1 && (tid < h_line[fanouts[fin]]));
+			}
+		}
 		if (tid == 0) {
-			free(historyRow);
+			free(h_line);
+			free(h_count);
 		}
 	}
-
 }
+/*
+float gpuCountPaths(ARRAY2D<char> results, int* history, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
+	int *gatesinLevel, startGate=0;
+	gatesinLevel = new int[maxlevels];
+	for (int i = 0; i < maxlevels; i++) {
+		gatesinLevel[i] = 0;
+		for (unsigned int j = 0; j < results.width; j++) {
+			if (graph[j].level == i) {
+				gatesinLevel[i]++;
+			}
+		}
+		startGate += gatesinLevel[i];
+	}
+	int blockcount_y = (int)(input.height/THREAD_PER_BLOCK) + (input.height%THREAD_PER_BLOCK > 0);
+
+#ifndef NTIMING
+	float elapsed;
+	timespec start, stop;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+#endif // NTIMING
+	// figure out how much GPU memory we have
+	for (int i = maxlevels-1; i >= 0; i--) {
+		dim3 numBlocks(gatesinLevel[i],blockcount_y);
+		startGate -= gatesinLevel[i];
+		kernCountCoverage<<<numBlocks,THREAD_PER_BLOCK>>>(input.data, results.data, dgraph.data, fan, results.width, results.height, startGate, results.pitch);
+		cudaDeviceSynchronize();
+	}
+	delete gatesinLevel;
+//	kernSumAll<<<1,1>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, results.pitch,dgraph.width);
+#ifndef NTIMING
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+	elapsed = floattime(diff(start,stop));
+	return elapsed;
+#else
+	return 0.0;
+#endif
+}
+*/
 void debugCoverOutput(ARRAY2D<char> results) {
 #ifndef NDEBUG
 	// Routine to copy contents of our results array into host memory and print
@@ -109,41 +138,6 @@ void debugCoverOutput(ARRAY2D<char> results) {
 		free(lvalues);
 	}
 #endif 
-}
-float gpuCountPaths(ARRAY2D<char> results, ARRAY2D<char> history, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan) {
-	int *gatesinLevel, startGate=0;
-	gatesinLevel = new int[maxlevels];
-	for (int i = 0; i < maxlevels; i++) {
-		gatesinLevel[i] = 0;
-		for (unsigned int j = 0; j < results.width; j++) {
-			if (graph[j].level == i) {
-				gatesinLevel[i]++;
-			}
-		}
-		startGate += gatesinLevel[i];
-	}
-	int blockcount_y = (int)(input.height/THREAD_PER_BLOCK) + (input.height%THREAD_PER_BLOCK > 0);
-
-#ifndef NTIMING
-	float elapsed;
-	timespec start, stop;
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-#endif // NTIMING
-	for (int i = maxlevels-1; i >= 0; i--) {
-		dim3 numBlocks(gatesinLevel[i],blockcount_y);
-		startGate -= gatesinLevel[i];
-		kernCountCoverage<<<numBlocks,THREAD_PER_BLOCK>>>(input.data, results.data, dgraph.data, fan, results.width, results.height, startGate, results.pitch);
-		cudaDeviceSynchronize();
-	}
-	delete gatesinLevel;
-//	kernSumAll<<<1,1>>>(0, results.data, history.data,dgraph.data, fan, results.width, results.height, results.pitch,dgraph.width);
-#ifndef NTIMING
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-	elapsed = floattime(diff(start,stop));
-	return elapsed;
-#else
-	return 0.0;
-#endif
 }
 char returnPathCount(ARRAY2D<char> results) {
 	char tmp;
