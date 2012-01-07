@@ -102,6 +102,7 @@ float gpuCountPaths(ARRAY2D<char> input, ARRAY2D<int> count, ARRAY2D<int> hcount
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
+
 	// figure out how much GPU memory we have left that is available, 
 	int batch_row = (free_memory / sizeof(int)) / input.width; // remaining GPU memory in terms of # of patterns;
 	if ((unsigned)batch_row > input.height) {
