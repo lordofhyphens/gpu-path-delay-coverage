@@ -11,14 +11,16 @@ struct ARRAY2D {
 	ARRAY2D(t *, int, int, int);
 	size_t size();
 	size_t bwidth();
+	size_t mem_footprint;
 };
 
 template <class t>
 ARRAY2D<t>::ARRAY2D(t *in, int height, int width) {
 	this->data = in;
-	this->pitch = width;
+	this->pitch = width*sizeof(t);
 	this->height = height;
 	this->width = width;
+	this->mem_footprint = height * pitch;
 }
 
 template <class t>
@@ -27,6 +29,7 @@ ARRAY2D<t>::ARRAY2D() {
 	this->pitch = 0;
 	this->height = 0;
 	this->width = 0;
+	this->mem_footprint = sizeof(t) * height * pitch;
 }
 template <class t>
 ARRAY2D<t>::ARRAY2D(t *in, int height, int width, int pitch) {
@@ -34,10 +37,11 @@ ARRAY2D<t>::ARRAY2D(t *in, int height, int width, int pitch) {
 	this->pitch = pitch;
 	this->height = height;
 	this->width = width;
+	this->mem_footprint = sizeof(t) * height * pitch;
 }
 template <class t>
 size_t ARRAY2D<t>::size() {
-	return (sizeof(t) * height * width);
+	return (sizeof(t) * height * pitch);
 }
 template <class t>
 size_t ARRAY2D<t>::bwidth() {

@@ -57,14 +57,23 @@ int* gpuLoadFans(int* offset, int maxid) {
 #endif // debugging memory check and assertion
 	return devAr;
 }
-void gpuShiftVectors(int* input, size_t width, size_t height) {
+void gpuShiftVectors(ARRAY2D<int> input) {
 	int* tgt = NULL;
+	int* tgt2 = NULL;
+	char* src = (char*)input.data + input.pitch;
+	char* dst = (char*)input.data + (input.height-1)*input.pitch;
 	// create a temporary buffer area on the device
-	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(width)));
-	HANDLE_ERROR(cudaMemcpy(tgt, input,sizeof(int)*(width),cudaMemcpyDeviceToDevice));
-	HANDLE_ERROR(cudaMemcpy(input, input+width,sizeof(int)*(width)*(height-1),cudaMemcpyDeviceToDevice));
-	HANDLE_ERROR(cudaMemcpy(input+(height-1)*(width),tgt, sizeof(int)*(width), cudaMemcpyDeviceToDevice));
+	HANDLE_ERROR(cudaMalloc(&tgt, input.pitch));
+	HANDLE_ERROR(cudaMalloc(&tgt2, input.pitch*(input.height-1)));
+
+	HANDLE_ERROR(cudaMemcpy(tgt,  input.data,            input.pitch,cudaMemcpyDeviceToDevice));
+	HANDLE_ERROR(cudaMemcpy(tgt2, src,(input.pitch)*(input.height-1),cudaMemcpyDeviceToDevice));
+
+	HANDLE_ERROR(cudaMemcpy(input.data, tgt2, input.pitch*(input.height-1),cudaMemcpyDeviceToDevice));
+	HANDLE_ERROR(cudaMemcpy(dst,tgt, input.pitch, cudaMemcpyDeviceToDevice));
+
 	HANDLE_ERROR(cudaFree(tgt));
+	HANDLE_ERROR(cudaFree(tgt2));
 }
 ARRAY2D<char> gpuAllocateResults(size_t width, size_t height) {
 	char *tgt = NULL;
@@ -75,6 +84,12 @@ ARRAY2D<char> gpuAllocateResults(size_t width, size_t height) {
 	DPRINT("Allocated %u*%u = %lu bytes, %G megabytes\n", (unsigned)pitch,(unsigned)width, pitch*width, ((pitch*width) / pow(2,20)));
 	HANDLE_ERROR(cudaMemset2D(tgt, pitch,0, sizeof(char)*height,width));
 	return ARRAY2D<char>(tgt, height, width, pitch);
+}
+ARRAY2D<int> gpuAllocateBlockResults(size_t height) {
+	int* tgt = NULL;
+	HANDLE_ERROR(cudaMalloc(&tgt, sizeof(int)*(height)));
+	HANDLE_ERROR(cudaMemset(tgt, -1, sizeof(int)*height));
+	return ARRAY2D<int>(tgt, height, 1);
 }
 int* gpuLoad1DVector(int* input, size_t width, size_t height) {
 	int *tgt;
@@ -89,13 +104,13 @@ int* loadPinned(int* input, size_t vcnt) {
 	return tgt;
 }
 void freeMemory(int* data) {
-	cudaFree(data);
+	HANDLE_ERROR(cudaFree(data));
 }
 void freeMemory(char* data) {
-	cudaFree(data);
+	HANDLE_ERROR(cudaFree(data));
 }
 void freeMemory(GPUNODE* data) {
-	cudaFree(data);
+	HANDLE_ERROR(cudaFree(data));
 }
 void clearMemory(ARRAY2D<char> ar) {
 	HANDLE_ERROR(cudaMemset2D(ar.data, ar.pitch,0, sizeof(char)*ar.height,ar.width));
@@ -109,6 +124,45 @@ void gpuPrintVectors(int* vec, size_t height, size_t width) {
 		}
 		printf("\n");
 	}
+}
+void gpu1PrintVectors(int* vec, size_t height, size_t width) {
+	int* tmp = (int*)malloc(sizeof(int)*width*height);
+	cudaMemcpy(tmp, vec, sizeof(int)*width*height, cudaMemcpyDeviceToHost);
+	for (unsigned int i = 0; i < height; i++) {
+		for (unsigned int j = 0; j < width; j++) {
+			printf("%d ", tmp[(i*width) + j]);
+		}
+		printf("\n");
+	}
+}
+void debugPrintVectors(ARRAY2D<int> results) {
+#ifndef NDEBUG
+int *lvalues, *row;
+DPRINT("Primary Input Vectors\n");
+DPRINT("Gate:   \t");
+for (unsigned int i = 0; i < results.width; i++) {
+	DPRINT("%2d ", i);
+}
+DPRINT("\n");
+for (unsigned int r = 0;r < results.height; r++) {
+	lvalues = (int*)malloc(results.pitch);
+	row = (int*)((char*)results.data + r*results.pitch); // get the current row?
+	cudaMemcpy(lvalues,row,results.width,cudaMemcpyDeviceToHost);
+	DPRINT("%s %d:\t", "Vector ",r);
+	for (unsigned int i = 0; i < results.width; i++) {
+		switch(lvalues[i]) {
+			case S0:
+				DPRINT(" 0 "); break;
+			case S1:
+				DPRINT(" 1 "); break;
+			default:
+				DPRINT("%2d ", lvalues[i]); break;
+		}
+	}
+	DPRINT("\n");
+	free(lvalues);
+}
+#endif
 }
 void gpuArrayCopy(ARRAY2D<char> dst, ARRAY2D<char> src) {
 	HANDLE_ERROR(cudaMemcpy2D(dst.data, dst.pitch, src.data, src.pitch, sizeof(char)*src.height, src.width, cudaMemcpyDeviceToDevice));

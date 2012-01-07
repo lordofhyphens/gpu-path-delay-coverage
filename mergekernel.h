@@ -4,7 +4,6 @@
 #include "iscas.h"
 #include "gpuiscas.h"
 
-float gpuMergeHistory(ARRAY2D<char> input, ARRAY2D<char> result);
-
+float gpuMergeHistory(ARRAY2D<char> input, ARRAY2D<int> mergeids);
 void debugUnionOutput(ARRAY2D<char> results);
 #endif

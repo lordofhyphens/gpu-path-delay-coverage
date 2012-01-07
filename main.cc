@@ -75,10 +75,10 @@ for (int i = 0; i < test.max_offset; i++) {
 //	PrintVectors(vec, vcnt, pis);
 //	gpuPrintVectors(dvec, vcnt, pis);
 	dvec = gpuLoad1DVector(vec, pis, vcnt);
-	freeMemory(vec);
 //	DPRINT("...complete.\n");
 
 	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, vcnt, pis);
+	ARRAY2D<int> merges = gpuAllocateBlockResults(lcnt);
 	ARRAY2D<char> resArray = gpuAllocateResults(lcnt, vcnt);
 	ARRAY2D<GPUNODE> graphArray = ARRAY2D<GPUNODE>(dgraph,1,ncnt);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
@@ -89,7 +89,7 @@ for (int i = 0; i < test.max_offset; i++) {
 	
 	TPRINT("Simulation Pass 1 time (GPU): %f ms\n", pass1);
 //	debugSimulationOutput(resArray,1);
-	gpuShiftVectors(inputArray.data, pis, vcnt);
+	gpuShiftVectors(inputArray);
 	pass2 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, levels, 2);
 //	debugSimulationOutput(resArray,2);
 	TPRINT("Simulation Pass 2 time (GPU): %f ms\n", pass2);
@@ -100,16 +100,17 @@ for (int i = 0; i < test.max_offset; i++) {
 	DPRINT("Fiddling with memory...");
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	gpuArrayCopy(resArray, mergeresult);
-	clearMemory(mergeresult);
+	freeMemory(mergeresult.data);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed += floattime(diff(start, stop));
 	DPRINT("...complete.\n");
 //	debugMarkOutput(resArray);
-	merge = gpuMergeHistory(resArray, mergeresult);
-//	debugMarkOutput(mergeresult);
+	merge = gpuMergeHistory(resArray, merges);
+//	gpu1PrintVectors(merges.data, lcnt, 1);
 	TPRINT("Path Merge time (GPU): %fms\n",merge);
-//	cover = gpuCountPaths(resArray,mergeresult,test.graph,graphArray,fans);
-//	debugCoverOutput(resArray);
+	ARRAY2D<int> count((int*)malloc(sizeof(int)*resArray.width*resArray.height),resArray.width, resArray.height);
+	ARRAY2D<int> history_count((int*)malloc(sizeof(int)*resArray.width*resArray.height),resArray.width, resArray.height);
+	cover = gpuCountPaths(resArray,count, history_count, merges,test.graph,graphArray,fans, levels);
 	TPRINT("Path Coverage time (GPU): %fms\n",cover);
 	alltime = pass1 + pass2 + mark + merge + cover;
 
@@ -146,11 +147,7 @@ for (int i = 0; i < test.max_offset; i++) {
 	cover_s = cpuCountPaths(sResArray,test.graph,sGraphArray,cfans, pathcount_s);
 	TPRINT("Path Coverage time (serial) %fms\n",cover_s);
 	alltime_s = pass1_s + pass2_s + mark_s + merge_s + cover_s;
-#ifndef CPUCOMPILE
-	freeMemory(mergeresult.data);
-	freeMemory(resArray.data);
-	freeMemory(inputArray.data);
-#endif
+
 	TPRINT("Total Path Count for vectors (serial): %d\n", *pathcount_s);
 #ifndef CPUCOMPILE	
 	TPRINT("%d, %f,%f,", vcnt,elapsed, alltime);

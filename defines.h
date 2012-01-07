@@ -22,4 +22,23 @@
 #define XOR_IN(A,B) ( (A>=T0)*(B<=S1) )
 #define XOR_OUT(A,B) ( (A>=T0)*(B<=S1) + (A<=S1)*(B>=T0) )
 
+// utility macros to makke addressing a little easier.
+#define REF2D(TYPE,ARRAY,PITCH,X,Y) ( (((TYPE*)((char*)ARRAY + Y*PITCH))[X] ))
+#define ADDR2D(TYPE,ARRAY,PITCH,X,Y) ( (((TYPE*)((char*)ARRAY + Y*PITCH))+X ))
+//Usage: REF2D(int,o_count,p_count,pid,gid)
+#define GREF(GRAPH,SUB,OFFSET, X) ( GRAPH[SUB[OFFSET+X]] )
+#define FIN(AR, OFFSET, ID) ( AR[OFFSET+ID] ) 
+
+#define TID ((blockIdx.y * blockDim.y) + threadIdx.x
+#define GID(OFFSET) (blockIdx.x + OFFSET)
+
+//utility macro that serve same function as the stability lookup table.
+
+#define STABLE(P, N) (3*(!P & N) + 2*(P & !N) + (P & N))
+
+//thread-per-block sizes, per kernel.
+#define SIM_BLOCK 768
+#define MARK_BLOCK 128
+#define MERGE_SIZE 512
+#define COVER_BLOCK 256
 #endif // include guard.
