@@ -108,9 +108,8 @@ for (int i = 0; i < test.max_offset; i++) {
 	merge = gpuMergeHistory(resArray, merges);
 //	gpu1PrintVectors(merges.data, lcnt, 1);
 	TPRINT("Path Merge time (GPU): %fms\n",merge);
-	ARRAY2D<int> count((int*)malloc(sizeof(int)*resArray.width*resArray.height),resArray.width, resArray.height);
-	ARRAY2D<int> history_count((int*)malloc(sizeof(int)*resArray.width*resArray.height),resArray.width, resArray.height);
-	cover = gpuCountPaths(resArray,count, history_count, merges,test.graph,graphArray,fans, levels);
+	ARRAY2D<int> count =  gpuAllocateBlockResults(resArray.height);
+	cover = gpuCountPaths(resArray,count, merges,test.graph,graphArray,fans, levels);
 	TPRINT("Path Coverage time (GPU): %fms\n",cover);
 	alltime = pass1 + pass2 + mark + merge + cover;
 

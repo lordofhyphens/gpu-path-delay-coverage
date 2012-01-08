@@ -29,7 +29,7 @@
 #define GREF(GRAPH,SUB,OFFSET, X) ( GRAPH[SUB[OFFSET+X]] )
 #define FIN(AR, OFFSET, ID) ( AR[OFFSET+ID] ) 
 
-#define TID ((blockIdx.y * blockDim.y) + threadIdx.x
+#define TID (((blockIdx.y * blockDim.y) + threadIdx.x))
 #define GID(OFFSET) (blockIdx.x + OFFSET)
 
 //utility macro that serve same function as the stability lookup table.

@@ -9,32 +9,31 @@ void HandleCoverError( cudaError_t err, const char *file, int line ) {
 }
 
 #define HANDLE_ERROR( err ) (HandleCoverError( err, __FILE__, __LINE__ ))
-// badly sums everything and places it into row[0][0]
-__global__ void kernSumAll(int toffset, char *results, char *history, GPUNODE* node, int* fans, size_t width, size_t height, size_t pitch, int ncount) {
-	int tid = blockIdx.x * gridDim.x + threadIdx.x, nfi, goffset;
-	char *row;
-	__shared__ int sum;
-	if (tid < 1) {
-		sum = 0;
-		for (int j = 0; j < height; j++) {
-			row = (char*)((char*)results + j*(pitch));
-			for (int c = ncount-1; c >= 0; c--) {
-				goffset = node[c].offset;
-				nfi = node[c].nfi;
-				if (node[c].type == INPT)
-					sum = sum + row[fans[goffset+nfi]];
-				//printf("Sum Count: %d\n",sum);
+// sums, for every pattern, the total paths at the inputs
+__global__ void kernSum(GPUNODE* graph, int* i_count, size_t i_count_pitch, int* o_count, int start_pattern, int max_pattern, int gate_count) {
+	int tid = TID;
+	int pid = TID+start_pattern;
+
+	if (pid < max_pattern) {
+		int sum = 0;
+		for (int i = 0; i < gate_count; i++) {
+			if (graph[i].type == INPT) {
+				sum += REF2D(int, i_count, i_count_pitch, tid, i);
 			}
 		}
-		row = ((char*)results);
-		row[0] = sum;
+		o_count[pid] = sum;
+	}
+
+}
+// clean out the temporary arrays
+__global__ void kernZeroArray(int* o_count, size_t p_count, int* o_hcount, size_t p_hcount, int max) {
+	int tid = TID;
+	int gid = GID(0);
+	if (tid < max) {
+		REF2D(int, o_count,p_count,tid,gid) = 0;
+		REF2D(int, o_hcount,p_hcount,tid,gid) = 0;
 	}
 }
-#define REF2D(TYPE,ARRAY,PITCH,X,Y) ( (((TYPE*)((char*)ARRAY + Y*PITCH))[X] ))
-#define ADDR2D(TYPE,ARRAY,PITCH,X,Y) ( (((TYPE*)((char*)ARRAY + Y*PITCH))+X ))
-//Usage: REF2D(int,o_count,p_count,pid,gid)
-#define GREF(GRAPH,SUB,OFFSET, X) ( GRAPH[SUB[OFFSET+X]] )
-#define FIN(AR, OFFSET, ID) ( AR[OFFSET+ID] ) 
 // reference: design book 1, page 38.
 // lines -> 2d array of marked lines from marking kernel.
 // p_lines -> pitch of lines array.
@@ -49,7 +48,7 @@ __global__ void kernCountCoverage(GPUNODE* graph, char* lines,  size_t p_lines, 
 	int gid = start_gate + blockIdx.x;
 	int nfi, po, type, goffset;
 	int val = 0; 
-	if (tid < max_pattern) {
+	if (pid < max_pattern) {
 		int marked = REF2D(char,lines,p_lines,pid,gid);
 		type = graph[gid].type;
 		nfi = graph[gid].nfi;
@@ -63,8 +62,8 @@ __global__ void kernCountCoverage(GPUNODE* graph, char* lines,  size_t p_lines, 
 		}
 		if (type == FROM) {
 			// Add the current paths to the fanin's count if this line is marked and the history is not.
-			val = REF2D(int,o_count,p_hcount,pid,tid)*(REF2D(char,lines,p_lines,tid,gid) > 0)*(pid < history[gid]);
-			atomicAdd(ADDR2D(int,o_count,p_count,pid,FIN(fanins,goffset,0)),val);
+			val = REF2D(int,o_count,p_hcount,tid,tid)*(REF2D(char,lines,p_lines,tid,gid) > 0)*(pid < history[gid]);
+			atomicAdd(ADDR2D(int,o_count,p_count,tid,FIN(fanins,goffset,0)),val);
 			// Add the current paths to the fanin's hcount if this line is marked.
 			atomicAdd(ADDR2D(int,o_hcount,p_hcount,tid,FIN(fanins,goffset,0)), REF2D(int,o_hcount,p_hcount,tid,gid)*(pid >= history[gid]));
 		} else { 
@@ -78,11 +77,11 @@ __global__ void kernCountCoverage(GPUNODE* graph, char* lines,  size_t p_lines, 
 	}
 }
 
-float gpuCountPaths(ARRAY2D<char> input, ARRAY2D<int> count, ARRAY2D<int> hcount, ARRAY2D<int> history, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int maxlevels) {
+float gpuCountPaths(ARRAY2D<char> input, ARRAY2D<int> count, ARRAY2D<int> history, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int maxlevels) {
 	int *gatesinLevel, startGate=0;
-	int *gpu_count, *gpu_hcount, *cpu_count, *cpu_hcount;
+	int *gpu_count, *gpu_hcount, *gpu_total_count, *cpu_count, *cpu_hcount;
 	size_t gpu_count_pitch, gpu_hcount_pitch;
-	size_t free_memory = 0, used_memory, total_memory = 0;
+	size_t free_memory = 0, total_memory = 0;
 	gatesinLevel = new int[maxlevels];
 	size_t start_pattern = 0;
 	for (int i = 0; i < maxlevels; i++) {
@@ -94,9 +93,9 @@ float gpuCountPaths(ARRAY2D<char> input, ARRAY2D<int> count, ARRAY2D<int> hcount
 		}
 		startGate += gatesinLevel[i];
 	}
-	used_memory = dgraph.size() + input.size() + history.size();
 	cudaMemGetInfo(&free_memory, &total_memory);
-	DPRINT("Used memory: %lu, Free Memory: %lu, Total Memory: %lu\n",used_memory, free_memory, total_memory);
+	HANDLE_ERROR(cudaMalloc(&gpu_total_count, sizeof(int)*input.height));
+	DPRINT("Used memory: %lu Free Memory: %lu, Total Memory: %lu\n",total_memory-free_memory, free_memory, total_memory);
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
@@ -104,23 +103,22 @@ float gpuCountPaths(ARRAY2D<char> input, ARRAY2D<int> count, ARRAY2D<int> hcount
 #endif // NTIMING
 
 	// figure out how much GPU memory we have left that is available, 
-	int batch_row = (free_memory / sizeof(int)) / input.width; // remaining GPU memory in terms of # of patterns;
-	if ((unsigned)batch_row > input.height) {
+	unsigned int batch_row = ((free_memory / (sizeof(int) *  input.width))) / 2; // remaining GPU memory in terms of # of patterns;
+	if (batch_row > sizeof(int)*input.height) {
 		batch_row = input.height*2;
 	}
-	batch_row /= 2;
-	DPRINT("Allocating 2*%d columns of %lu rows. \n", batch_row, input.width);
+	batch_row *= .8;
 	HANDLE_ERROR(cudaMallocPitch(&gpu_count, &gpu_count_pitch, sizeof(int)*batch_row, input.width));
 	HANDLE_ERROR(cudaMallocPitch(&gpu_hcount, &gpu_hcount_pitch, sizeof(int)*batch_row, input.width));
-	DPRINT("Actually allocated %lu bytes of memory, including pitch of %lu, width of %lu\n",input.width*gpu_count_pitch*2, gpu_count_pitch, sizeof(int)*batch_row);
 	cpu_count = (int*)malloc(gpu_count_pitch*input.width);
 	cpu_hcount = (int*)malloc(gpu_hcount_pitch*input.width);
-	DPRINT("Starting pattern = %lu\n", start_pattern);
 	// allocate two blocks of memory for that many rows*lines, one for history, one for actual results.
-	DPRINT("History array width %lu, height %lu\n", history.width, history.height);
 	do {
 		int blockcount_y = (int)(batch_row/COVER_BLOCK) + (batch_row%COVER_BLOCK > 0);
-		printf("yblocks: %d\n", blockcount_y);
+		dim3 allGates(input.width, blockcount_y);
+		kernZeroArray<<<allGates,COVER_BLOCK>>>(gpu_count, gpu_count_pitch, gpu_hcount, gpu_hcount_pitch, batch_row);
+		cudaDeviceSynchronize();
+		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		for (int i = maxlevels-1; i >= 0; i--) {
 			dim3 numBlocks(gatesinLevel[i],blockcount_y);
 			startGate -= gatesinLevel[i];
@@ -128,11 +126,12 @@ float gpuCountPaths(ARRAY2D<char> input, ARRAY2D<int> count, ARRAY2D<int> hcount
 			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
-		// copy the patterns from 
-		cudaMemcpy2D(cpu_count, gpu_count_pitch, gpu_count, gpu_count_pitch, sizeof(int)*batch_row, input.width, cudaMemcpyDeviceToHost);
-		cudaMemcpy2D(cpu_hcount, gpu_hcount_pitch, gpu_hcount, gpu_hcount_pitch, sizeof(int)*batch_row, input.width, cudaMemcpyDeviceToHost);
+		dim3 blocks(1, (input.height/COVER_BLOCK) + (input.height%COVER_BLOCK > 0));
+		// sum these into the output array
+		kernSum<<<blocks, COVER_BLOCK>>>(dgraph.data, gpu_count, gpu_count_pitch, count.data, start_pattern, start_pattern + batch_row, input.width);
+		cudaDeviceSynchronize();
+		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		start_pattern += batch_row;
-		printf("Input.height %lu, start pattern: %lu\n", input.height, start_pattern);
 	} while (start_pattern < input.height); 
 	free(cpu_count);
 	free(cpu_hcount);
