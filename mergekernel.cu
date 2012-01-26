@@ -81,11 +81,14 @@ float gpuMergeHistory(ARRAY2D<char> input, ARRAY2D<int> mergeids) {
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
+	DPRINT("Blocks: (%lu, %lu), %d\n", block_x, block_y, MERGE_SIZE);
 	kernReduce<<<blocks, MERGE_SIZE>>>(input.data, input.height, input.pitch, 0, temparray, pitch);
 	cudaDeviceSynchronize();
+	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	dim3 blocksmin(1, block_y);
 	kernSetMin<<<blocksmin, MERGE_SIZE>>>(mergeids.data, mergeids.pitch, temparray, block_x, pitch, 0);
 	cudaDeviceSynchronize();
+	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));

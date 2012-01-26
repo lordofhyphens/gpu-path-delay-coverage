@@ -22,7 +22,7 @@ texture<int, 1> notLUT;
 __global__ void kernSimulateP1(GPUNODE* graph, int* pi_data, size_t pi_pitch, char* output_data, size_t pitch,size_t pattern_count, int* fanout_index, int start_offset) {
 	int tid = (blockIdx.y * blockDim.y) + threadIdx.x;
 	int gid = blockIdx.x+start_offset;
-	__shared__ char rowcache[SIM_BLOCK];
+	char rowcache;
 	char *row, r, val;
 	int goffset, nfi, j,type;
 	if (tid < pattern_count) {
@@ -30,9 +30,9 @@ __global__ void kernSimulateP1(GPUNODE* graph, int* pi_data, size_t pi_pitch, ch
 		goffset = graph[gid].offset;
 		nfi = graph[gid].nfi;
 		type = graph[gid].type;
-
 		__syncthreads();
-		rowcache[threadIdx.x] = ((char*)output_data+(fanout_index[goffset]*pitch))[tid];
+//		rowcache = ((char*)output_data+(fanout_index[goffset]*pitch))[tid]; 
+		rowcache = REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,0));
 		switch (type) {
 			case INPT:
 				val = pi_data[gid+pi_pitch*(tid)];
@@ -42,22 +42,23 @@ __global__ void kernSimulateP1(GPUNODE* graph, int* pi_data, size_t pi_pitch, ch
 					// gate if not on an input.
 					__syncthreads();
 					if (type != NOT) {
-						val = rowcache[threadIdx.x];
+						val = rowcache;
 					} else {
-						val = tex1D(notLUT, rowcache[threadIdx.x]);
+						val = tex1D(notLUT, rowcache);
 					}
 
 					j = 1;
 					while (j < nfi) {
 						__syncthreads();
-						r = REF2D(char,output_data,pitch,FIN(fanout_index,goffset,j),tid); //((char*)output_data+(fanout_index[goffset+j]*pitch))[tid]; 
+						r = ((char*)output_data+(fanout_index[goffset+j]*pitch))[tid];//REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,j));  
 						switch(type) {
 							case XOR:
 								val = tex2D(xor2LUT, val, r);break;
 							case XNOR:
 								val = tex2D(xnor2LUT, val, r);break;
 							case OR:
-								val = tex2D(or2LUT, val, r);break;
+								val = tex2D(or2LUT, val, r);
+								break;
 							case NOR:
 								val = tex2D(nor2LUT, val, r);break;
 							case AND:
@@ -174,18 +175,24 @@ void loadSimLUTs() {
 }
 
 float gpuRunSimulation(ARRAY2D<char> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int maxlevels, int pass = 1) {
+	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	loadSimLUTs(); // set up our lookup tables for simulation.
 	int startGate = 0;
 	int *gatesinLevel;
 	gatesinLevel = new int[maxlevels];
+//	DPRINT("Calculating gates in each level. %lu \n", results.width);
 	for (int i = 0; i < maxlevels; i++) {
 		gatesinLevel[i] = 0;
-		for (unsigned int j = 0; j < results.width; j++) {
+		for (unsigned int j = startGate; j < results.width; j++) {
 			if (graph[j].level == i) {
 				gatesinLevel[i]++;
+//				DPRINT("Gate: %d, %d\n", j, graph[j].level);
 			}
 		}
+		startGate += gatesinLevel[i];
+//		DPRINT("%d gates in level %d\n", gatesinLevel[i],i);
 	}
+	startGate = 0;
 	int blockcount_y = (int)(results.height/SIM_BLOCK) + (results.height%SIM_BLOCK > 0);
 #ifndef NTIMING
 	float elapsed;
@@ -201,6 +208,8 @@ float gpuRunSimulation(ARRAY2D<char> results, ARRAY2D<int> inputs, GPUNODE* grap
 		}
 		startGate += gatesinLevel[i];
 		cudaDeviceSynchronize();
+//		DPRINT("Pass: %d, blocks for level %d: (%d, %d) %d \n",pass, i, gatesinLevel[i], blockcount_y, SIM_BLOCK);
+		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}
 	free(gatesinLevel);
 	// We're done simulating at this point.

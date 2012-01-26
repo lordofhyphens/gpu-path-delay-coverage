@@ -109,13 +109,13 @@ void loadPropLUTs() {
 __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, int* fans, size_t width, size_t height, int start, int pitch) {
 	int tid = (blockIdx.y * blockDim.y) + threadIdx.x, nfi, goffset,val,prev;
 	int gid = (blockIdx.x) + start;
-	__shared__ char rowCache[MARK_BLOCK];
-	__shared__ char resultCache[MARK_BLOCK];
+	char rowCache, resultCache;
 	char cache, fin = 1;
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type, g;
 	char *rowResults;
 	char *row;
 	if (tid < height) {
+//		printf("Line: %d, gate: %d, start: %d\n", __LINE__,gid, start);
 		cache = 0;
 		row = (char*)((char*)input + gid*pitch);
 		rowResults = (char*)((char*)results + gid*pitch);
@@ -123,37 +123,32 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 		nfi = node[gid].nfi;
 		type = node[gid].type;
 		goffset = node[gid].offset;
-		rowCache[threadIdx.x] = row[tid];
-		resultCache[threadIdx.x] = rowResults[tid];
-/*		for (int q = 0; q < nfi; q++) {
-			cache_f = fans[goffset+q];
-			resultCache[threadIdx.x][q+1] = ((char*)results+(cache_f*pitch))[tid];
-		}
- */
+		rowCache = row[tid];
+		resultCache = rowResults[tid];
 		__syncthreads();
 		// switching based on value causes divergence, switch based on node type.
-		val = (rowCache[threadIdx.x] > 1);
+		val = (rowCache > 1);
 		if (node[gid].po > 0) {
-			resultCache[threadIdx.x] = val;
+			resultCache = val;
 			prev = val;
 		} else {
-			prev = resultCache[threadIdx.x];
+			prev = resultCache;
 		}
 		switch(type) {
 			case FROM:
 				// For FROM, only set the "input" line if it hasn't already
 				// been set (otherwise it'll overwrite the decision of
 				// another system somewhere else.
-				val = (resultCache[threadIdx.x] > 0 && (rowCache[threadIdx.x] > 1));
-				g = val || (REF2D(char,input,pitch,FIN(fans,goffset,0),tid) > 0);
-				REF2D(char,input,pitch,FIN(fans,goffset,0),tid) |= g;
-				resultCache[threadIdx.x] = val;
+				val = (resultCache > 0 && (rowCache > 1));
+				g = val || (REF2D(char,input,pitch,tid,FIN(fans,goffset,0)) > 0);
+				REF2D(char,input,pitch,tid,FIN(fans,goffset,0)) |= g;
+				resultCache = val;
 				break;
 			case BUFF:
 			case NOT:
-				val = tex2D(inptPropLUT, rowCache[threadIdx.x],resultCache[threadIdx.x]) && prev;
+				val = tex2D(inptPropLUT, rowCache,resultCache) && prev;
 				((char*)row+(fans[goffset]*pitch))[tid] = val;
-				resultCache[threadIdx.x] = val;
+				resultCache = val;
 				break;
 				// For the standard gates, setting three values -- both the
 				// input lines and the output line.  rowCache[threadIdx.x][i]-1 is the
@@ -177,18 +172,19 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 					fin = 1;
 					for (fin2 = 1; fin2 <= nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						cache = tex2D(and2OutputPropLUT, REF2D(char,input,pitch,FIN(fans,goffset,fin1),tid), REF2D(char,input,pitch,FIN(fans,goffset,fin2),tid));
+						cache = tex2D(and2OutputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
 						if (nfi > 2) {
-							cache = tex2D(and2InputPropLUT, REF2D(char,input,pitch,FIN(fans,goffset,fin1),tid), REF2D(char,input,pitch,FIN(fans,goffset,fin2),tid));
+							cache = tex2D(and2InputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
 							fin = cache && fin && prev;
 						}
 					}
+					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
 					((char*)results+(fans[goffset+fin1]*pitch))[tid] = fin;
 				}
 
-				resultCache[threadIdx.x] = val && tmp && (pass < nfi) && prev;
+				resultCache= val && tmp && (pass < nfi) && prev;
 				break;
 			case OR:
 			case NOR:
@@ -196,7 +192,7 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 					fin = 1;
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						cache = tex2D(or2OutputPropLUT, REF2D(char,input,pitch,FIN(fans,goffset,fin1),tid), REF2D(char,input,pitch,FIN(fans,goffset,fin2),tid));
+						cache = tex2D(or2OutputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
 
@@ -208,7 +204,7 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 					}
 					((char*)results+(fans[goffset+fin1]*pitch))[tid] = fin;
 				}
-				resultCache[threadIdx.x] = val && tmp && (pass <= nfi) && prev;
+				resultCache= val && tmp && (pass <= nfi) && prev;
 				break;
 			case XOR:
 			case XNOR:
@@ -216,17 +212,17 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 					fin = 1;
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						cache = tex2D(xor2OutputPropLUT, REF2D(char,input,pitch,FIN(fans,goffset,fin1),tid), REF2D(char,input,pitch,FIN(fans,goffset,fin2),tid));
+						cache = tex2D(xor2OutputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
 						if (nfi > 2) {
-							cache = tex2D(xor2InputPropLUT, REF2D(char,input,pitch,FIN(fans,goffset,fin1),tid), REF2D(char,input,pitch,FIN(fans,goffset,fin2),tid));
+							cache = tex2D(xor2InputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
 							fin = cache && fin && prev;
 						}
 					}
 					((char*)results+(fans[goffset+fin1]*pitch))[tid] = fin;
 				}
-				resultCache[threadIdx.x] = val && tmp && (pass <= nfi) && prev;
+				resultCache = val && tmp && (pass <= nfi) && prev;
 				break;
 			default:
 				// if there is a transition that will propagate, set = to some positive #?
@@ -234,17 +230,19 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 		}
 		// stick the contents of resultCache into the results array
 
-		rowResults[tid] = resultCache[threadIdx.x];
+//		printf("Line: %d, gate: %d\n", __LINE__,gid);
+		rowResults[tid] = resultCache;
 	}
 }
 
 float gpuMarkPaths(ARRAY2D<char> input, ARRAY2D<char> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan, int maxlevels) {
+	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting before we hit this point.
 	loadPropLUTs();
 	int *gatesinLevel, startGate=0;
 	gatesinLevel = new int[maxlevels];
 	for (int i = 0; i < maxlevels; i++) {
 		gatesinLevel[i] = 0;
-		for (unsigned int j = 0; j < results.width; j++) {
+		for (unsigned int j = startGate; j < results.width; j++) {
 			if (graph[j].level == i) {
 				gatesinLevel[i]++;
 			}
@@ -261,8 +259,10 @@ float gpuMarkPaths(ARRAY2D<char> input, ARRAY2D<char> results, GPUNODE* graph, A
 	for (int i = maxlevels-1; i >= 0; i--) {
 		dim3 numBlocks(gatesinLevel[i],blockcount_y);
 		startGate -= gatesinLevel[i];
+//		DPRINT("Marking level %d, inital gate %d. %d gates in level, %d blocks\n",i, startGate, gatesinLevel[i],blockcount_y);
 		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.data, results.data, dgraph.data, fan, results.width, results.height, startGate, results.pitch);
 		cudaDeviceSynchronize();
+		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}
 	delete gatesinLevel;
 #ifndef NTIMING

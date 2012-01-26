@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import argparse
 import re
 def toint(z):
@@ -11,11 +12,12 @@ def getfanins(lst, d):
 	return out	
 
 parser = argparse.ArgumentParser(description='Convert ISCAS89 to ISCAS85')
-parser.add_argument('benchmark', metavar='IN', type=str,
-                   help='input')
+parser.add_argument('benchmark', metavar='IN', type=str, help='input')
+parser.add_argument('output', metavar='OUT', type=str, help='output')
 args = parser.parse_args()
 
 f = open(args.benchmark, 'r')
+outfile = open(args.output,'w')
 pis = list()
 pos = list()
 fins = dict()
@@ -52,21 +54,21 @@ for i in fins.keys():
 	for r in fins:
 		if i in fins[r][1]:
 			fins[i][2]+= 1
-for i in pos:
-	fins[i][2] += 1
 counter = 1
 #print fins
-for i in sorted(fins.iterkeys(), cmp=lambda x,y: fins[x][3] <= fins[y][3]):
+for i in sorted(fins.iterkeys(), cmp=lambda x,y: (fins[x][3] < fins[y][3])*-1 + (fins[x][3] > fins[y][3])):
 	if fins[i][0] == "inpt": 
-		print "%d %s inpt %d 0 >sa0" % (counter, i, fins[i][2])
+		outfile.write("\t%d %s inpt %d 0 >sa0\n" % (counter, i, fins[i][2]))
 		fins[i][3] = counter
 	else:
-		print "%d %s %s %d %d >sa0" % (counter, i, fins[i][0], fins[i][2], len(fins[i][1]))
+		outfile.write("\t%d %s %s %d %d >sa0\n" % (counter, i, fins[i][0], fins[i][2], len(fins[i][1])))
 		fins[i][3] = counter
 		lst = getfanins(fins[i][1],fins)
-		print "     %s" % (lst)
+		outfile.write("     %s" % (lst))
 	counter += 1
 	if fins[i][2] > 1:
 		for z in range(0,fins[i][2]):
-			print "%d %sfan from %s >sa0" % (counter, i, i)
+			outfile.write("\t%d %sfan from %s >sa0\n" % (counter, i, i))
 			counter += 1
+
+outfile.close()

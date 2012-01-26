@@ -3,6 +3,6 @@
 #include <deque>
 #include "iscas.h"
 int topologicalSort(NODE *graph, int ncount);
-void levelSort(NODE* graph, int ncount);
+int levelSort(NODE* graph, int ncount);
 int levelize(NODE* graph, int ncount);
 #endif

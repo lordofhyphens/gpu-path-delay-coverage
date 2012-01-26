@@ -349,7 +349,8 @@ int* cpuLoad1DVector(int* input, size_t width, size_t height) {
 int* cpuAllocateResults(size_t width, size_t height) {
 	int *tgt;
 	tgt = (int*)malloc(sizeof(int)*(width)*(height));
-	memset(tgt, 0, sizeof(int)*width*height);
+	assert(tgt!=NULL);
+	//memset(tgt, 0, sizeof(int)*width*height);
 	return tgt;
 }
 
@@ -405,16 +406,16 @@ float cpuMergeHistory(ARRAY2D<int> input, ARRAY2D<int> mergeresult, GPUNODE* gra
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-	int *irow, *mrow, *mrow_prev;
 	for (unsigned int i = 0; i < input.width; i++) {
 		mergeresult.data[i] = input.data[i];
 	}
-	for (unsigned int i = 1; i < input.width; i++){
-		mrow = mergeresult.data+(i*mergeresult.width);
-		mrow_prev = mergeresult.data+((i-1)*mergeresult.width);
-		irow = input.data+(i*input.width);
-		for (unsigned int j = 0; j < input.height; j++) {
-			mrow[j] = mrow_prev[j] | irow[j];
+	DPRINT("input size: %lu x %lu\n", input.width, input.height);
+	TPRINT("result size: %lu x %lu\n", mergeresult.width, mergeresult.height);
+	for (unsigned int i = 1; i < input.height; i++){
+		for (unsigned int j = 0; j < input.width; j++) {
+			REF2D(int, mergeresult.data, mergeresult.pitch, j,i) = 
+			REF2D(int, mergeresult.data, mergeresult.pitch, j,i-1) |
+			REF2D(int, input.data, input.pitch, j,i);
 		}
 	}
 	memcpy(mergeresult.data, input.data, input.bwidth());

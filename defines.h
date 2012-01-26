@@ -8,6 +8,12 @@
 	#define DPRINT(...) fprintf(stderr, __VA_ARGS__)
 #endif // DPRINT definition
 
+#ifdef NDEBUG 
+	#define GPRINT(A, ...) 
+#else
+	#define GPRINT(...) (if (tid == 0) { printf( __VA_ARGS__); })
+#endif // GPRINT definition
+
 #ifdef NTIMING
 	#define TPRINT(...) 
 #else

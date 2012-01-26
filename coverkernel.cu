@@ -115,6 +115,7 @@ float gpuCountPaths(ARRAY2D<char> input, ARRAY2D<int> count, ARRAY2D<int> histor
 	// allocate two blocks of memory for that many rows*lines, one for history, one for actual results.
 	do {
 		int blockcount_y = (int)(batch_row/COVER_BLOCK) + (batch_row%COVER_BLOCK > 0);
+		DPRINT("gates: %lu, %d, %d \n", input.width, blockcount_y, COVER_BLOCK);
 		dim3 allGates(input.width, blockcount_y);
 		kernZeroArray<<<allGates,COVER_BLOCK>>>(gpu_count, gpu_count_pitch, gpu_hcount, gpu_hcount_pitch, batch_row);
 		cudaDeviceSynchronize();

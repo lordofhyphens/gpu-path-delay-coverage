@@ -10,19 +10,27 @@
 #include "serial.h"
 #include "sort.h"
 #include "array2d.h"
+#include <vector>
+#include "ckt.h"
+#define MARKTYPE char
+#define SIMTYPE char
 
 int main(int argc, char ** argv) {
 	FILE *fisc, *fvec;
 	int  *vec,levels;
 	NODE* graph;
 	graph = (NODE*)malloc(sizeof(NODE)*Mnod);
+	std::vector<MARKTYPE*> markdata;
+	std::vector<SIMTYPE*> simdata;
 	LINE lgraph[Mnod];
 	GPUNODE_INFO test;
 	int vcnt, lcnt, ncnt, pis = 0; // count of lines in the circuit
-
+	Circuit ckt;
 	// Load circuit from file
 	fisc=fopen(argv[1],"r");
 	fvec=fopen(argv[2],"r");
+	ckt.read_bench(argv[3]);
+	ckt.print();
 	vcnt = readVectors(&vec, fvec);
 	DPRINT("%d characters read.\n",vcnt);
 //	vec = loadPinned(vec, vcnt);
@@ -33,11 +41,13 @@ int main(int argc, char ** argv) {
 	levels = levelize(graph,ncnt);
 	levelSort(graph,ncnt);
 	DPRINT("...complete. Maximum level = %d\n", levels);
+	DPRINT("Nodes: %d\n",ncnt);
 //	DPRINT("Initializing line structure.\n");	
 	for (int i = 0; i < ncnt; i++)
 		InitializeLines(lgraph, i);
 	DPRINT("Enumerating lines....");
-	lcnt = EnumerateLines(graph,lgraph,ncnt);
+	EnumerateLines(graph,lgraph,ncnt);
+	lcnt = ncnt;
 	DPRINT(" %d lines complete.\n", lcnt);
 	DPRINT("Copying to flat arrays...");
 	test = GraphsetToArrays(graph, lgraph, ncnt);
@@ -48,6 +58,7 @@ int main(int argc, char ** argv) {
 			pis++;
 	}
 	DPRINT("%d primary inputs, %d input vectors.\n", pis, vcnt);
+	DPRINT("%d lines in the circuit\n", lcnt);
 //	PrintCircuit(graph,ncnt);
 for (int i = 0; i < test.max_offset; i++) {
 	if (test.offsets[i] < 0)
@@ -60,8 +71,8 @@ for (int i = 0; i < test.max_offset; i++) {
 	float alltime, pass1=0.0, pass2=0.0, mark = 0.0, merge = 0.0,cover = 0.0;
 	ARRAY2D<char> mergeresult;
 
-//	DPRINT("Begin GPU Calculations\n");
-//	DPRINT("Load data into GPU Memory....");
+	DPRINT("Begin GPU Calculations\n");
+	DPRINT("Load data into GPU Memory....");
 	float elapsed = 0.0;
 	timespec start, stop;
 //	DPRINT("Getting time.");
@@ -71,11 +82,11 @@ for (int i = 0; i < test.max_offset; i++) {
 	dgraph = gpuLoadCircuit(test.graph,ncnt);
 //	DPRINT("complete.\n");
 	fans = gpuLoadFans(test.offsets,test.max_offset);
-//	DPRINT("Loading test vectors into GPU Memory...");
+	DPRINT("Loading test vectors into GPU Memory...");
 //	PrintVectors(vec, vcnt, pis);
 //	gpuPrintVectors(dvec, vcnt, pis);
 	dvec = gpuLoad1DVector(vec, pis, vcnt);
-//	DPRINT("...complete.\n");
+	DPRINT("...complete.\n");
 
 	ARRAY2D<int> inputArray = ARRAY2D<int>(dvec, vcnt, pis);
 	ARRAY2D<int> merges = gpuAllocateBlockResults(lcnt);
@@ -83,7 +94,7 @@ for (int i = 0; i < test.max_offset; i++) {
 	ARRAY2D<GPUNODE> graphArray = ARRAY2D<GPUNODE>(dgraph,1,ncnt);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
-//	DPRINT("GPU Memory Time: %f ms\n", elapsed);
+	DPRINT("GPU Memory Time: %f ms\n", elapsed);
 
 	pass1 = gpuRunSimulation(resArray, inputArray, test.graph,graphArray,fans, levels, 1);
 	
@@ -112,8 +123,8 @@ for (int i = 0; i < test.max_offset; i++) {
 	cover = gpuCountPaths(resArray,count, merges,test.graph,graphArray,fans, levels);
 	TPRINT("Path Coverage time (GPU): %fms\n",cover);
 	alltime = pass1 + pass2 + mark + merge + cover;
-
 //	TPRINT("Total Path Count for vectors (GPU): %d\n", returnPathCount(resArray));
+	TPRINT("Total GPU Time: %f ms\n", alltime);
 #endif
 // Serial implementation
 	float alltime_s=0.0, pass1_s=0.0, pass2_s=0.0, mark_s=0.0, merge_s=0.0, cover_s=0.0;
@@ -129,7 +140,7 @@ for (int i = 0; i < test.max_offset; i++) {
 	ARRAY2D<GPUNODE> sGraphArray = ARRAY2D<GPUNODE>(cgraph,1,ncnt);
 	ARRAY2D<int> sInputArray = ARRAY2D<int>(cvec, 4, 5);
 	ARRAY2D<int> sMarkArray = ARRAY2D<int>(markq, vcnt, lcnt);
-
+	
 	pass1_s = cpuRunSimulation(sResArray, sInputArray, test.graph,sGraphArray,cfans, 1);
 	TPRINT("Simulation Pass 1 time (serial): %f ms\n", pass1_s);
 //	debugCpuSimulationOutput(sResArray,1);
@@ -140,17 +151,17 @@ for (int i = 0; i < test.max_offset; i++) {
 	mark_s = cpuMarkPaths(sResArray, sMarkArray,test.graph, sGraphArray, cfans);
 	TPRINT("Path Mark time (serial) %fms\n",mark_s);
 //	debugCpuMark(sMarkArray);
-	merge_s = cpuMergeHistory(sResArray, sMarkArray, test.graph, sGraphArray, cfans);
+	merge_s = cpuMergeHistory(sMarkArray, sResArray, test.graph, sGraphArray, cfans);
 	TPRINT("Path Merge time (serial) %fms\n",merge_s);
 	int* pathcount_s = (int*)malloc(sizeof(int));
 	cover_s = cpuCountPaths(sResArray,test.graph,sGraphArray,cfans, pathcount_s);
 	TPRINT("Path Coverage time (serial) %fms\n",cover_s);
 	alltime_s = pass1_s + pass2_s + mark_s + merge_s + cover_s;
 
-	TPRINT("Total Path Count for vectors (serial): %d\n", *pathcount_s);
+//	TPRINT("Total Path Count for vectors (serial): %d\n", *pathcount_s);
 #ifndef CPUCOMPILE	
-	TPRINT("%d, %f,%f,", vcnt,elapsed, alltime);
-	TPRINT("%f\n", alltime_s);
+	printf("%d, %f,%f,", vcnt,elapsed, alltime);
+	printf("%f\n", alltime_s);
 #else
 	TPRINT("Total CPU Time: %f\n", alltime_s);
 #endif 

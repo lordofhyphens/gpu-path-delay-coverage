@@ -83,6 +83,7 @@ ARRAY2D<char> gpuAllocateResults(size_t width, size_t height) {
 	DPRINT("...complete.\n");
 	DPRINT("Allocated %u*%u = %lu bytes, %G megabytes\n", (unsigned)pitch,(unsigned)width, pitch*width, ((pitch*width) / pow(2,20)));
 	HANDLE_ERROR(cudaMemset2D(tgt, pitch,0, sizeof(char)*height,width));
+	HANDLE_ERROR(cudaGetLastError());
 	return ARRAY2D<char>(tgt, height, width, pitch);
 }
 ARRAY2D<int> gpuAllocateBlockResults(size_t height) {

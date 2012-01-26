@@ -18,7 +18,7 @@ Constant Declarations
 *************************************************************/
 // VARIOUS CONSTANTS
 #define Mfnam      20			// max size for a file name
-#define Mnod    15000 		        // max number of nodes in a graph/node
+#define Mnod   305000 		        // max number of nodes in a graph/node
 #define Mlin      512			// max size of characters in a line
 #define Mnam       25			// max size of a node name
 #define Mtyp       10			// max type of nodes/gates

@@ -105,7 +105,7 @@ int levelize(NODE* graph, int ncount) {
 
 // Memory-expensive level/bucket sort using a deques (used mostly as a list here
 // because of the [] deque has.)
-void levelSort(NODE* graph, int ncount){
+int levelSort(NODE* graph, int ncount){
 	deque<nodepair> nodes;
 	int mappings[ncount];
 	int maxLevel = 0;
@@ -154,5 +154,6 @@ void levelSort(NODE* graph, int ncount){
 		j++;
 
  	}
+	return maxLevel;
 }
 

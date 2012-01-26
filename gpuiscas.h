@@ -1,8 +1,8 @@
 #ifndef GPUISCAS_H
 #define GPUISCAS_H
+#include <cuda.h>
 #include <cassert>
 #include <math.h>
-#include <cuda.h>
 #include "iscas.h"
 #include "defines.h"
 #include "array2d.h"
