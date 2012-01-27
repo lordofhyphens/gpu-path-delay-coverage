@@ -2,10 +2,11 @@ CC=g++-4.4
 CTAG_FLAGS=--langmap=C++:+.cu --append=yes
 GPUCC=/opt/net/apps/cuda/bin/nvcc
 header=array2d.h iscas.h gpuiscas.h simkernel.h markkernel.h coverkernel.h sort.h serial.h defines.h mergekernel.h ckt.h
+header=array2d.h iscas.h gpuiscas.h simkernel.h markkernel.h coverkernel.h sort.h serial.h defines.h mergekernel.h ckt.h gpuckt.h
 logfile=log.txt
 main=main.cc
 tgenobj=Utility.o BlifParse.o Graph.o
-src=iscas.cc sort.cc serial.cc ckt.cc
+src=iscas.cc sort.cc serial.cc ckt.cc node.cc
 gsrc=gpuiscas.cu simkernel.cu markkernel.cu  mergekernel.cu coverkernel.cu
 obj=$(src:.cc=.o) $(main:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)
@@ -24,8 +25,9 @@ pylib: ${PYLIB}
 .PHONY: new
 new: cktest
 
-cktest: ckt.h ckt.cc cktest.cc
-	${CC} -o cktest ckt.cc cktest.cc
+cktest: ckt.cc cktest.cc node.cc ${header}
+	${CC} ${CFLAGS} -o cktest ckt.cc cktest.cc node.cc
+	${GPUCC} ${NVCFLAGS} -c -o gpuckt.o gpuckt.cu
 	./cktest data/c17.bench
 test: tags $(out)
 	@./${out} data/c17.isc data/c17.vec 2> ${logfile}

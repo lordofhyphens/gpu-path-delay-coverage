@@ -33,24 +33,29 @@ struct NODEC {
 	char typ;
 	int nfi, nfo, level;
 	int cur_fo;
-	bool po;
+	bool po, placed;
 	std::string finlist;
 	std::vector<std::string> fin;
 	std::vector<std::string> fot;
 	NODEC(std::string);
 	NODEC(std::string, int type);
 	NODEC(std::string id, std::string type, int nfi, std::string finlist);
+	bool operator==(const std::string& other) const;
 	bool operator==(const NODEC& other) const;
+	bool operator<(const NODEC& other) const;
+	bool operator>(const NODEC& other) const;
+	bool operator<=(const NODEC& other) const;
+	bool operator>=(const NODEC& other) const;
 	private:
 		void initialize(std::string id, int type, int nfi, int nfo, bool po, std::string finlist);
 		void initialize(std::string id, std::string type, int nfi, int nfo, bool po, std::string finlist);
 };
 
 class Circuit {
-	private:
+	protected:
 		std::vector<NODEC>* graph;
 		std::string name;
-		void sort();
+		void levelize();
 		void mark_lines();
 		int _levels;
 	public:
@@ -62,4 +67,5 @@ class Circuit {
 };
 
 std::ostream& operator<<(std::ostream& outstream, const NODEC& node);
+bool isPlaced(const NODEC& node);
 #endif //CKT_H
