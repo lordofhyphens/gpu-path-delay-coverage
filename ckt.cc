@@ -7,9 +7,6 @@ Circuit::Circuit() {
 Circuit::~Circuit() {
 	delete this->graph;
 }
-int Circuit::levels() { 
-	return this->_levels;
-}
 
 void Circuit::read_bench(char* benchfile) {
 	std::ifstream tfile(benchfile);
@@ -147,4 +144,21 @@ void Circuit::print() {
 	for (nodeiter iter = g->begin(); iter < g->end(); iter++) {
 		std::cout << *iter;
 	}
+}
+
+int Circuit::levelsize(int l) {
+	return countInLevel(*graph, l);
+}
+
+int countInLevel(std::vector<NODEC>& v, int level) {
+	int cnt = 0;
+	for (std::vector<NODEC>::iterator iter = v.begin(); iter < v.end(); iter++) {
+		if (isInLevel(*iter, level)) 
+			cnt++;
+	}
+	return cnt;
+}
+
+bool isInLevel(const NODEC& node, int N) {
+	return node.level == N;
 }

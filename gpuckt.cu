@@ -1,9 +1,6 @@
 #include "gpuckt.h"
 #include <cuda.h>
 
-int* GPU_Circuit::offset() {
-	return this->_offset;
-}
 int GPU_Circuit::max_offset() {
 	return this->_max_offset;
 }
@@ -24,7 +21,7 @@ void GPU_Circuit::copy() {
 		}
 	}
 	offsets = (int*)malloc(sizeof(int)*maxoff); 
-	for (unsigned int i = 0; i <= g->size(); i++) {
+	for (unsigned int i = 0; i < g->size(); i++) {
 		ggraph[i].type = graph->at(i).typ;
 		ggraph[i].nfi = graph->at(i).nfi;
 		ggraph[i].nfo = graph->at(i).nfo;

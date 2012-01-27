@@ -63,9 +63,14 @@ class Circuit {
 		~Circuit();
 		void read_bench(char* benchfile);
 		void print();
-		int levels();
+		inline int levels() { return this->_levels;}
+		int levelsize(int);
+		int size() { return this->graph->size();}
 };
 
 std::ostream& operator<<(std::ostream& outstream, const NODEC& node);
 bool isPlaced(const NODEC& node);
+bool isInLevel(const NODEC& node, int N);
+
+int countInLevel(std::vector<NODEC>& v, int level);
 #endif //CKT_H

@@ -15,7 +15,7 @@ class GPU_Circuit : public Circuit {
 		int _max_offset;
 		int id(std::string);
 	public:
-		int* offset();
+		int* offset() { return this->_offset;}
 		int max_offset();
 		GPUNODE* gpu_graph();
 		void copy();

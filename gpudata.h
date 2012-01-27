@@ -20,7 +20,7 @@ class GPU_Data {
 		std::vector<ARRAY2D<char> >* _data; // variable size CPU memory space.
 		int _current; // current chunk on GPU.
 		size_t _block_size;
-		size_t _pitch;
+		size_t _pitch, _width, _height;
 		ARRAY2D<char>* _gpu; // fixed size GPU memory space.
 		int initialize(size_t, size_t);
 		int copy(int);
@@ -29,13 +29,17 @@ class GPU_Data {
 		char* gpu() { return gpu(this->_current);}
 		char* cpu(int ref); // this will throw an out_of_range exception if ref > size
 		char* cpu() { return cpu(this->_current);} // gets the CPU value for current;
-		void gpu_refresh(); // ensures that the GPU memory space is equivalent to cpu-current.
+		int refresh(); // ensures that the GPU memory space is equivalent to cpu-current.
 		int current();
 		size_t pitch() { return this->_pitch;}
+		size_t height() { return this->_height;}
+		size_t width() { return this->_width;}
+		size_t size() { return this->_data->size();}
 		GPU_Data();
 		GPU_Data(size_t rows, size_t columns);
 		~GPU_Data();
 		std::string debug();
 };
 
+void gpu_shift(GPU_Data& pack);
 #endif //GPUDATA_H

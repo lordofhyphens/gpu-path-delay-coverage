@@ -1,7 +1,4 @@
 #include <cuda.h>
-#include <cassert>
-#include "defines.h"
-#include "iscas.h"
 #include "simkernel.h"
 
 void HandleSimError( cudaError_t err, const char *file, int line ) {
@@ -19,7 +16,7 @@ texture<int, 2> xor2LUT;
 texture<int, 2> xnor2LUT;
 texture<int, 2> stableLUT;
 texture<int, 1> notLUT;
-__global__ void kernSimulateP1(GPUNODE* graph, int* pi_data, size_t pi_pitch, char* output_data, size_t pitch,size_t pattern_count, int* fanout_index, int start_offset) {
+__global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, char* output_data, size_t pitch,size_t pattern_count, int* fanout_index, int start_offset) {
 	int tid = (blockIdx.y * blockDim.y) + threadIdx.x;
 	int gid = blockIdx.x+start_offset;
 	char rowcache;
@@ -72,7 +69,7 @@ __global__ void kernSimulateP1(GPUNODE* graph, int* pi_data, size_t pi_pitch, ch
 		row[tid] = val;
 	}
 }
-__global__ void kernSimulateP2(GPUNODE* graph, int* pi_data, size_t pi_pitch, char* output_data, size_t pitch,size_t pattern_count,  int* fanout_index, int start_offset) {
+__global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, char* output_data, size_t pitch,size_t pattern_count,  int* fanout_index, int start_offset) {
 	int tid = (blockIdx.y * blockDim.y) + threadIdx.x, prev=0;
 	int gid = blockIdx.x+start_offset;
 	__shared__ char rowcache[SIM_BLOCK];
@@ -174,44 +171,28 @@ void loadSimLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(notLUT,cuNotArray,channelDesc));
 }
 
-float gpuRunSimulation(ARRAY2D<char> results, ARRAY2D<int> inputs, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph, int* fan, int maxlevels, int pass = 1) {
+float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, int pass = 1) {
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	loadSimLUTs(); // set up our lookup tables for simulation.
 	int startGate = 0;
-	int *gatesinLevel;
-	gatesinLevel = new int[maxlevels];
-//	DPRINT("Calculating gates in each level. %lu \n", results.width);
-	for (int i = 0; i < maxlevels; i++) {
-		gatesinLevel[i] = 0;
-		for (unsigned int j = startGate; j < results.width; j++) {
-			if (graph[j].level == i) {
-				gatesinLevel[i]++;
-//				DPRINT("Gate: %d, %d\n", j, graph[j].level);
-			}
-		}
-		startGate += gatesinLevel[i];
-//		DPRINT("%d gates in level %d\n", gatesinLevel[i],i);
-	}
-	startGate = 0;
-	int blockcount_y = (int)(results.height/SIM_BLOCK) + (results.height%SIM_BLOCK > 0);
+	int blockcount_y = (int)(results.height()/SIM_BLOCK) + (results.height()%SIM_BLOCK > 0);
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-	for (int i = 0; i < maxlevels; i++) {
-		dim3 numBlocks(gatesinLevel[i],blockcount_y);
+	for (int i = 0; i < ckt.levels(); i++) {
+		dim3 numBlocks(ckt.levelsize(i),blockcount_y);
 		if (pass > 1) {
-			kernSimulateP2<<<numBlocks,SIM_BLOCK>>>(dgraph.data,inputs.data, inputs.width, results.data, results.pitch, inputs.height, fan, startGate);
+			kernSimulateP2<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu(),inputs.width(), results.gpu(), results.pitch(), inputs.height(), ckt.offset(), startGate);
 		} else {
-			kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(dgraph.data,inputs.data, inputs.width, results.data, results.pitch, inputs.height, fan, startGate);
+			kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu(),inputs.width(), results.gpu(), results.pitch(), inputs.height(), ckt.offset(), startGate);
 		}
-		startGate += gatesinLevel[i];
+		startGate += ckt.levelsize(i);
 		cudaDeviceSynchronize();
 //		DPRINT("Pass: %d, blocks for level %d: (%d, %d) %d \n",pass, i, gatesinLevel[i], blockcount_y, SIM_BLOCK);
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}
-	free(gatesinLevel);
 	// We're done simulating at this point.
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
