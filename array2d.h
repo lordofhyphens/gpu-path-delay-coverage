@@ -9,6 +9,9 @@ struct ARRAY2D {
 	ARRAY2D(t *, int, int);
 	ARRAY2D();
 	ARRAY2D(t *, int, int, int);
+	ARRAY2D(size_t, size_t, size_t);
+	ARRAY2D(const ARRAY2D<t>&);
+	void initialize(t*, size_t, size_t, size_t);
 	size_t size();
 	size_t bwidth();
 	size_t mem_footprint;
@@ -16,28 +19,36 @@ struct ARRAY2D {
 
 template <class t>
 ARRAY2D<t>::ARRAY2D(t *in, int height, int width) {
+	this->initialize(in, height, width, width*sizeof(t));
+}
+template <class t>
+ARRAY2D<t>::ARRAY2D(size_t height, size_t width, size_t pitch) {
+	t* in = (t*)malloc(pitch);
+	this->initialize(in, height, width, pitch);
+}
+template <class t>
+ARRAY2D<t>::ARRAY2D(const ARRAY2D<t>& other) {
+	this->data = other.data;
+	this->height = other.height;
+	this->pitch = other.pitch;
+	this->width = other.width;
+	this->mem_footprint = other.mem_footprint;
+}
+template <class t> 
+void ARRAY2D<t>::initialize(t *in, size_t height, size_t width, size_t pitch) {
 	this->data = in;
-	this->pitch = width*sizeof(t);
+	this->pitch = pitch;;
 	this->height = height;
 	this->width = width;
 	this->mem_footprint = height * pitch;
 }
-
 template <class t>
 ARRAY2D<t>::ARRAY2D() {
-	this->data = NULL;
-	this->pitch = 0;
-	this->height = 0;
-	this->width = 0;
-	this->mem_footprint = sizeof(t) * height * pitch;
+	this->initialize(NULL, 0, 0, 0);
 }
 template <class t>
 ARRAY2D<t>::ARRAY2D(t *in, int height, int width, int pitch) {
-	this->data = in;
-	this->pitch = pitch;
-	this->height = height;
-	this->width = width;
-	this->mem_footprint = sizeof(t) * height * pitch;
+	this->initialize(in, height, width, pitch);
 }
 template <class t>
 size_t ARRAY2D<t>::size() {

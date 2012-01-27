@@ -1,13 +1,12 @@
 CC=g++-4.4
 CTAG_FLAGS=--langmap=C++:+.cu --append=yes
 GPUCC=/opt/net/apps/cuda/bin/nvcc
-header=array2d.h iscas.h gpuiscas.h simkernel.h markkernel.h coverkernel.h sort.h serial.h defines.h mergekernel.h ckt.h
-header=array2d.h iscas.h gpuiscas.h simkernel.h markkernel.h coverkernel.h sort.h serial.h defines.h mergekernel.h ckt.h gpuckt.h
+header=simkernel.h markkernel.h coverkernel.h serial.h defines.h mergekernel.h ckt.h gpuckt.h gpudata.h vectors.h
 logfile=log.txt
 main=main.cc
 tgenobj=Utility.o BlifParse.o Graph.o
-src=iscas.cc sort.cc serial.cc ckt.cc node.cc
-gsrc=gpuiscas.cu simkernel.cu markkernel.cu  mergekernel.cu coverkernel.cu
+src=ckt.cc node.cc vectors.cc
+gsrc=gpuckt.cu gpudata.cu #simkernel.cu markkernel.cu  mergekernel.cu coverkernel.cu
 obj=$(src:.cc=.o) $(main:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)
@@ -22,16 +21,9 @@ SWIGTEMPLATE=iscas.i sort.i gpuiscas.i simkernel.i
 all: tags $(out)
 .PHONY: pylib
 pylib: ${PYLIB}
-.PHONY: new
-new: cktest
-
-cktest: ckt.cc cktest.cc node.cc ${header}
-	${CC} ${CFLAGS} -o cktest ckt.cc cktest.cc node.cc
-	${GPUCC} ${NVCFLAGS} -c -o gpuckt.o gpuckt.cu
-	./cktest data/c17.bench
+.PHONY: test
 test: tags $(out)
-	@./${out} data/c17.isc data/c17.vec 2> ${logfile}
-	@egrep -e "Total" -e "time " -e "Vector [0-9]{1,2}:" -e "Line:" ${logfile} | tail -n60
+	@./${out} data/c17.bench test.vec
 
 .PHONY: cpu
 cpu: CFLAGS = ${CPFLAGS} -DCPUCOMPILE
@@ -51,8 +43,6 @@ tags: ${src} ${gsrc} ${header}
 	ctags ${CTAG_FLAGS} $?
 clean:
 	rm -f ${out} ${out}-cpu ${obj} ${gobj} $(header:.h=.h.gch) ${logfile} ${gsrc:.cu=_wrap.cu} ${src:.cc=_wrap.cxx} ${PYLIB} ${gsrc:.cu=_wrap.o}  ${src:.cc=_wrap.o} swig_*.py
-
-
 
 ${src:.cc=_wrap.cxx}: ${SWIGTEMPLATE}
 	swig -classic -c++ -python $(@:_wrap.cxx=.i)

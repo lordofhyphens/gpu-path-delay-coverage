@@ -47,4 +47,6 @@
 #define MARK_BLOCK 128
 #define MERGE_SIZE 512
 #define COVER_BLOCK 256
+
+#define WARP_SIZE 32
 #endif // include guard.
