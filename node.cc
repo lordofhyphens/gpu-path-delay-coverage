@@ -12,6 +12,7 @@ NODEC::NODEC(std::string id, std::string type, int nfi, std::string finlist) {
 void NODEC::initialize(std::string id, int type, int nfi, int nfo, bool po, std::string finlist) {
 	this->name = id;
 	this->name.erase(std::remove_if(this->name.begin(), this->name.end(),isspace),this->name.end());
+	this->placed = false;
 	this->typ = type;
 	this->level = 0;
 	this->cur_fo = 1;

@@ -1,5 +1,5 @@
 #include "ckt.h"
-
+typedef std::vector<NODEC>::iterator nodeiter;
 Circuit::Circuit() {
 	this->graph = new std::vector<NODEC>();
 	this->_levels = 1;
@@ -47,7 +47,7 @@ void Circuit::read_bench(char* benchfile) {
 				g->push_back(NODEC(id, gatetype, nfi, finlist));
 			} else {
 				// modify the pre-existing node. Node type should be unknown, and PO should be set.
-				std::vector<NODEC>::iterator iter = find(g->begin(), g->end(), id);
+				nodeiter iter = find(g->begin(), g->end(), id);
 				assert(iter->po == true);
 				assert(iter->typ == UNKN);
 				*iter = NODEC(id, gatetype, nfi, finlist);
@@ -57,24 +57,24 @@ void Circuit::read_bench(char* benchfile) {
 			continue;
 		}
 	}
-	for (std::vector<NODEC>::iterator iter = g->begin(); iter < g->end(); iter++) {
+	for (nodeiter iter = g->begin(); iter < g->end(); iter++) {
 		if (iter->finlist == "")
 			continue;
 		node.str(iter->finlist);
 		node.clear();
 		while (getline(node,buffer,',')) {
 			// figure out which which node has this as a fanout.
-			std::vector<NODEC>::iterator j = find(g->begin(), g->end(), buffer);
+			nodeiter j = find(g->begin(), g->end(), buffer);
 			j->nfo++;
 		}
 	}
 	std::vector<NODEC> temp_batch;
-	for (std::vector<NODEC>::iterator iter = g->begin(); iter < g->end(); iter++) {
+	for (nodeiter iter = g->begin(); iter < g->end(); iter++) {
 		node.str(iter->finlist);
 		node.clear();
 		std::string newfin = "";
 		while (getline(node,buffer,',')) {
-			std::vector<NODEC>::iterator j = find(g->begin(), g->end(), buffer);
+			nodeiter j = find(g->begin(), g->end(), buffer);
 			if (j->nfo < 2) {
 				iter->fin.push_back(j->name);
 				j->fot.push_back(iter->name);
@@ -102,11 +102,11 @@ void Circuit::read_bench(char* benchfile) {
 		}
 		iter->finlist = newfin;
 	}
-	for (std::vector<NODEC>::iterator iter = temp_batch.begin(); iter < temp_batch.end(); iter++) {
+	for (nodeiter iter = temp_batch.begin(); iter < temp_batch.end(); iter++) {
 		g->push_back(*iter);
 	}
 	this->levelize();
-	std::stable_sort(g->begin(), g->end());
+	std::sort(g->begin(), g->end());
 }
 bool isPlaced(const NODEC& node) {
 	return (node.placed == 0);
@@ -114,30 +114,27 @@ bool isPlaced(const NODEC& node) {
 // levelize the circuit.
 void Circuit::levelize() {
 	std::vector<NODEC>* g = this->graph;
-	std::vector<NODEC> dest;
+
 	while (count_if(g->begin(),g->end(), isPlaced) > 0) {
-		for (std::vector<NODEC>::iterator iter = g->begin(); iter < g->end(); iter++) {
+		for (nodeiter iter = g->begin(); iter < g->end(); iter++) {
 			if (iter->placed == false) {
 				if (iter->typ == INPT)  {
 					iter->level = 0;
 					iter->placed = true;
-					continue;
-				}
-				bool allplaced = true;
-				int level = 0;
-				for (unsigned int i = 0; i < iter->fin.size(); i++) {
-					if (find(g->begin(), g->end(), iter->fin[i])->placed != true) {
-						allplaced = false;
-					} else {
+				} else {
+					bool allplaced = true;
+					int level = 0;
+					for (unsigned int i = 0; i < iter->fin.size(); i++) {
+						allplaced = allplaced && find(g->begin(), g->end(), iter->fin[i])->placed;
 						if (level < find(g->begin(), g->end(), iter->fin[i])->level) 
 							level = find(g->begin(), g->end(), iter->fin[i])->level;
 					}
-				}
-				if (allplaced == true) { 
-					iter->level = level+1;
-					iter->placed = true;
-					if (level+1 > this->_levels)
-						this->_levels = level+1;
+					if (allplaced == true) { 
+						iter->level = ++level;
+						iter->placed = true;
+						if (level+1 > this->_levels)
+							this->_levels = level;
+					}
 				}
 			}
 		}
@@ -147,7 +144,7 @@ void Circuit::print() {
 	std::vector<NODEC>* g = this->graph;
 	std::cout << "Circuit: " << this->name << std::endl;
 	std::cout << "Name\tType\tPO?\tLevel\tNFI\tNFO\tFinlist\t\tFin | Fot" << std::endl;
-	for (std::vector<NODEC>::iterator iter = g->begin(); iter < g->end(); iter++) {
+	for (nodeiter iter = g->begin(); iter < g->end(); iter++) {
 		std::cout << *iter;
 	}
 }
