@@ -1,4 +1,5 @@
 #include "ckt.h"
+
 NODEC::NODEC(std::string id) {
 	this->initialize(id, 0, 0, 0, false, "");
 }
@@ -13,6 +14,7 @@ void NODEC::initialize(std::string id, int type, int nfi, int nfo, bool po, std:
 	this->name.erase(std::remove_if(this->name.begin(), this->name.end(),isspace),this->name.end());
 	this->typ = type;
 	this->level = 0;
+	this->cur_fo = 1;
 	this->nfi = nfi;
 	this->nfo = nfo;
 	this->po = po;
@@ -79,7 +81,20 @@ std::ostream& operator<<(std::ostream& outstream, const NODEC& node) {
 		default:
 			outstream << "UNKN\t";break;
 	}
-	outstream << (node.po == true ? "Yes" : "No" ) << "\t" << node.nfi << "\t" << node.nfo << "\t" << node.finlist << "\n";
+	outstream << (node.po == true ? "Yes" : "No" ) << "\t" << node.nfi << "\t" << node.nfo << "\t" << node.finlist << "\t\t";
+	std::vector< std::string >::iterator iter;
+	for (int i = 0; i < node.fin.size(); i++) {
+		outstream << node.fin[i];
+		if (i != node.fin.size()-1)
+			outstream << ",";
+	}
+	outstream << " | ";
+	for (int i = 0; i < node.fot.size(); i++) {
+		outstream << node.fot[i];
+		if (i != node.fot.size()-1)
+			outstream << ",";
+	}
+	outstream << std::endl;
 	return outstream;
 }
 
@@ -136,19 +151,57 @@ void Circuit::read_bench(char* benchfile) {
 		}
 	}
 	for (std::vector<NODEC>::iterator iter = g->begin(); iter < g->end(); iter++) {
+		if (iter->finlist == "")
+			continue;
 		node.str(iter->finlist);
 		node.clear();
 		while (getline(node,buffer,',')) {
 			// figure out which which node has this as a fanout.
 			std::vector<NODEC>::iterator j = find(g->begin(), g->end(), NODEC(buffer));
-			j->nfo += 1;
-			if (j->nfo > 1) {
-			}
-				iter->fin.push_back()
-			std::cout << buffer << std::endl;
+			j->nfo++;
 		}
 	}
-
+	std::vector<NODEC> temp_batch;
+	for (std::vector<NODEC>::iterator iter = g->begin(); iter < g->end(); iter++) {
+		node.str(iter->finlist);
+		node.clear();
+		std::string newfin = "";
+		while (getline(node,buffer,',')) {
+			std::vector<NODEC>::iterator j = find(g->begin(), g->end(), NODEC(buffer));
+			if (j->nfo < 2) {
+				iter->fin.push_back(j->name);
+				j->fot.push_back(iter->name);
+				if (newfin == "") {
+					newfin += j->name;
+				} else {
+					newfin += "," + j->name;
+				}
+			} else {
+				std::stringstream tmp;
+				tmp << j->cur_fo;
+				j->cur_fo+=1;
+				temp_batch.push_back(NODEC((j->name+"fan"+tmp.str()),"FROM",1,j->name));
+				temp_batch.back().fot.push_back(iter->name);
+				temp_batch.back().fin.push_back(j->name);
+				temp_batch.back().nfo = 1;
+				j->fot.push_back(temp_batch.back().name);
+				iter->fin.push_back(j->name+"fan"+tmp.str());
+				if (newfin == "") {
+					newfin += j->name+"fan"+tmp.str();
+				} else {
+					newfin += "," + j->name+"fan"+tmp.str();
+				}
+			}
+		}
+		iter->finlist = newfin;
+	}
+	for (std::vector<NODEC>::iterator iter = temp_batch.begin(); iter < temp_batch.end(); iter++) {
+		g->push_back(*iter);
+	}
+}
+void Circuit::sort() {
+	std::vector<NODEC>* g = this->graph;
+	std::vector<NODEC> dest;
 
 }
 void Circuit::print() {

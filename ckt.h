@@ -32,10 +32,11 @@ struct NODEC {
 	std::string name;
 	char typ;
 	int nfi, nfo, level;
+	int cur_fo;
 	bool po;
 	std::string finlist;
-	std::list<int> fin;
-	std::list<int> fot;
+	std::vector<std::string> fin;
+	std::vector<std::string> fot;
 	NODEC(std::string);
 	NODEC(std::string, int type);
 	NODEC(std::string id, std::string type, int nfi, std::string finlist);

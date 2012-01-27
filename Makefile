@@ -21,7 +21,12 @@ SWIGTEMPLATE=iscas.i sort.i gpuiscas.i simkernel.i
 all: tags $(out)
 .PHONY: pylib
 pylib: ${PYLIB}
+.PHONY: new
+new: cktest
 
+cktest: ckt.h ckt.cc cktest.cc
+	${CC} -o cktest ckt.cc cktest.cc
+	./cktest data/c17.bench
 test: tags $(out)
 	@./${out} data/c17.isc data/c17.vec 2> ${logfile}
 	@egrep -e "Total" -e "time " -e "Vector [0-9]{1,2}:" -e "Line:" ${logfile} | tail -n60
