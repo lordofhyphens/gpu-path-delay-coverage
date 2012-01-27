@@ -52,11 +52,13 @@ class Circuit {
 		std::string name;
 		void sort();
 		void mark_lines();
+		int _levels;
 	public:
 		Circuit();
 		~Circuit();
 		void read_bench(char* benchfile);
 		void print();
+		int levels();
 };
 
 std::ostream& operator<<(std::ostream& outstream, const NODEC& node);

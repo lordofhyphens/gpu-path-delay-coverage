@@ -100,9 +100,13 @@ std::ostream& operator<<(std::ostream& outstream, const NODEC& node) {
 
 Circuit::Circuit() {
 	this->graph = new std::vector<NODEC>();
+	levels = 1;
 }
 Circuit::~Circuit() {
 	delete this->graph;
+}
+int Circuit::levels() { 
+	return this->_levels;
 }
 
 void Circuit::read_bench(char* benchfile) {
