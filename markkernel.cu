@@ -114,7 +114,7 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type, g;
 	char *rowResults;
 	char *row;
-	if (tid < height) {
+	if (tid < height && node[gid].type != UNKN) {
 //		printf("Line: %d, gate: %d, start: %d\n", __LINE__,gid, start);
 		cache = 0;
 		row = (char*)((char*)input + gid*pitch);

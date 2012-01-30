@@ -66,6 +66,8 @@ class Circuit {
 		inline int levels() { return this->_levels;}
 		int levelsize(int);
 		int size() { return this->graph->size();}
+		void save(char*); // save a copy of the circuit in its current levelized form
+		void load(char* memfile); // load a circuit that has been levelized.
 };
 
 std::ostream& operator<<(std::ostream& outstream, const NODEC& node);
@@ -73,4 +75,5 @@ bool isPlaced(const NODEC& node);
 bool isInLevel(const NODEC& node, int N);
 
 int countInLevel(std::vector<NODEC>& v, int level);
+bool isUnknown(const NODEC& node);
 #endif //CKT_H

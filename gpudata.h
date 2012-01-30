@@ -32,6 +32,7 @@ class GPU_Data {
 		int refresh(); // ensures that the GPU memory space is equivalent to cpu-current.
 		int current();
 		size_t pitch() { return this->_pitch;}
+		size_t block_width() { return this->_block_size;}
 		size_t height() { return this->_height;}
 		size_t width() { return this->_width;}
 		size_t size() { return this->_data->size();}

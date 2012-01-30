@@ -7,7 +7,12 @@ Circuit::Circuit() {
 Circuit::~Circuit() {
 	delete this->graph;
 }
-
+void Circuit::save(char* memfile) {
+	std::ofstream ofile(memfile);
+	
+}
+void Circuit::load(char* memfile) {
+}
 void Circuit::read_bench(char* benchfile) {
 	std::ifstream tfile(benchfile);
 	this->name = benchfile;
@@ -102,6 +107,7 @@ void Circuit::read_bench(char* benchfile) {
 	for (nodeiter iter = temp_batch.begin(); iter < temp_batch.end(); iter++) {
 		g->push_back(*iter);
 	}
+	remove_if(g->begin(),g->end(),isUnknown);
 	this->levelize();
 	std::sort(g->begin(), g->end());
 }
@@ -158,7 +164,9 @@ int countInLevel(std::vector<NODEC>& v, int level) {
 	}
 	return cnt;
 }
-
+bool isUnknown(const NODEC& node) {
+	return node.typ == UNKN;
+}
 bool isInLevel(const NODEC& node, int N) {
 	return node.level == N;
 }

@@ -19,6 +19,8 @@ class GPU_Circuit : public Circuit {
 		int max_offset();
 		GPUNODE* gpu_graph();
 		void copy();
+		~GPU_Circuit();
+		GPU_Circuit();
 };
 
 template <class T> bool Yes(const T& item) {

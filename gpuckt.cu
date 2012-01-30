@@ -7,7 +7,21 @@ int GPU_Circuit::max_offset() {
 GPUNODE* GPU_Circuit::gpu_graph() {
 	return this->_gpu_graph;
 }
-
+GPU_Circuit::GPU_Circuit() {
+	this->_offset = NULL;
+	this->_gpu_graph = NULL;
+}
+GPU_Circuit::~GPU_Circuit() {
+	// Clean up GPU memory afterwards.
+	if (this->_offset != NULL) {
+		cudaFree(this->_offset);
+		this->_offset = NULL;
+	}
+	if (this->_gpu_graph != NULL) {
+		cudaFree(this->_gpu_graph);
+		this->_gpu_graph = NULL;
+	}
+}
 // Copy the circuit representation to the GPU.
 void GPU_Circuit::copy() {
 	std::vector<NODEC>* g = this->graph;
@@ -27,8 +41,10 @@ void GPU_Circuit::copy() {
 		ggraph[i].nfo = graph->at(i).nfo;
 		ggraph[i].po = graph->at(i).po;
 		ggraph[i].level = graph->at(i).level;
-		if (graph->at(i).typ == 0)
+		if (graph->at(i).typ == 0) {
+			std::cout << graph->at(i).name << " is type 0?"<<std::endl;
 			continue;
+		}
 		ggraph[i].offset = off;
 		// position of a particular node
 		for (std::vector<std::string>::iterator fins = graph->at(i).fin.begin(); fins < graph->at(i).fin.end();fins++) {
