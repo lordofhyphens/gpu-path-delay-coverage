@@ -1,4 +1,5 @@
 #include "mergekernel.h"
+#include <cuda.h>
 
 void HandleMergeError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
@@ -69,9 +70,9 @@ __global__ void kernSetMin(int* g_odata, size_t pitch,int* intermediate, int len
 	__syncthreads();
 }
 // scan through input until the first 1 is found, save the identifier and memset all indicies above that.
-float gpuMergeHistory(ARRAY2D<char> input, ARRAY2D<int> mergeids) {
-	size_t block_x = (input.height / MERGE_SIZE) + (input.height % MERGE_SIZE) > 1;
-	size_t block_y = input.width;
+float gpuMergeHistory(GPU_Data& input, ARRAY2D<int> mergeids) {
+	size_t block_x = (input.width() / MERGE_SIZE) + (input.width() % MERGE_SIZE) > 1;
+	size_t block_y = input.height();
 	int* temparray;
 	size_t pitch;
 	cudaMallocPitch(&temparray, &pitch, sizeof(int)*block_x, block_y);
@@ -82,7 +83,7 @@ float gpuMergeHistory(ARRAY2D<char> input, ARRAY2D<int> mergeids) {
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
 	DPRINT("Blocks: (%lu, %lu), %d\n", block_x, block_y, MERGE_SIZE);
-	kernReduce<<<blocks, MERGE_SIZE>>>(input.data, input.height, input.pitch, 0, temparray, pitch);
+	kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(), input.height(), input.pitch(), 0, temparray, pitch);
 	cudaDeviceSynchronize();
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	dim3 blocksmin(1, block_y);

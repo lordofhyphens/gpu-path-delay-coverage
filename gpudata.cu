@@ -1,23 +1,15 @@
 #include <cuda.h>
 #include "gpudata.h"
 
-static void delete_data(const ARRAY2D<char>& item) {
-	if (item.data != NULL)
-		free(item.data);
-}
-
 GPU_Data::GPU_Data() {
-	this->_data = new std::vector<ARRAY2D<char> >();
 	this->_gpu = new ARRAY2D<char>();
 	this->_block_size = 0;
 }
 GPU_Data::GPU_Data(size_t rows, size_t columns) {
-	this->_data = new std::vector<ARRAY2D<char> >();
 	this->_gpu = new ARRAY2D<char>();
 	this->initialize(rows, columns);
 }
 GPU_Data::~GPU_Data() {
-	std::for_each(this->_data->begin(), this->_data->end(), delete_data);
 	if (this->_gpu->data != NULL)
 		cudaFree(this->_gpu->data);
 }
@@ -39,9 +31,6 @@ char* GPU_Data::gpu(int ref) {
 	return this->_gpu->data;
 }
 
-char* GPU_Data::cpu(int ref) {
-	return this->_data->at(ref).data;
-}
 // total size in columns, rows. 
 int GPU_Data::initialize(size_t in_columns, size_t in_rows) {
 	size_t free_memory, total_memory, free_cols;
@@ -50,7 +39,7 @@ int GPU_Data::initialize(size_t in_columns, size_t in_rows) {
 	free_cols = free_memory / (sizeof(char)*in_rows);
 	undersized = (free_cols < sizeof(char)*in_columns ? false : true);
 	free_cols = (free_cols < sizeof(char)*in_columns ? free_cols : (sizeof(char)*in_columns + (WARP_SIZE - (sizeof(char)*in_columns % WARP_SIZE)))); // set to the smaller of the two
-	std::cout << "Warp size: " << WARP_SIZE << " and free_cols " << free_cols  << " " << free_cols % WARP_SIZE << std::endl;
+//	std::cout << "Warp size: " << WARP_SIZE << " and free_cols " << free_cols  << " " << free_cols % WARP_SIZE << std::endl;
 	// cut back to the nearest warp size
 	free_cols = (free_cols % WARP_SIZE > 0 ? free_cols : free_cols - (free_cols % WARP_SIZE));
 	// Allocate on the GPU.
@@ -96,10 +85,6 @@ int GPU_Data::refresh() {
 		return ERR_NONE;
 	return error;
 }
-int GPU_Data::current() {
-	return this->_current;
-}
-
 std::string GPU_Data::debug() {
 	std::stringstream st; 
 	st << "GPU DATA,width="<<this->width()<<",height="<< this->height()<< ",pitch="<<this->pitch()<<",blocksize="<< this->_block_size << ",chunks="<<this->_data->size()<<",current="<<this->_current << std::endl;

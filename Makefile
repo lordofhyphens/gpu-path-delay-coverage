@@ -1,19 +1,19 @@
 CC=g++-4.4
 CTAG_FLAGS=--langmap=C++:+.cu --append=yes
 GPUCC=/opt/net/apps/cuda/bin/nvcc
-header=array2d.h simkernel.h markkernel.h coverkernel.h serial.h defines.h mergekernel.h ckt.h gpuckt.h gpudata.h vectors.h utility.h
+header=array2d.h simkernel.h markkernel.h coverkernel.h serial.h defines.h mergekernel.h ckt.h gpuckt.h gpudata.h vectors.h utility.h cpudata.h
 logfile=log.txt
 main=main.cc
 tgenobj=Utility.o BlifParse.o Graph.o
-src=ckt.cc node.cc vectors.cc utility.cc
-gsrc=gpuckt.cu gpudata.cu simkernel.cu # markkernel.cu  mergekernel.cu coverkernel.cu
+src=ckt.cc cpudata.cc node.cc vectors.cc utility.cc serial.cc
+gsrc=gutility.cu gpuckt.cu gpudata.cu simkernel.cu markkernel.cu mergekernel.cu # coverkernel.cu
 obj=$(src:.cc=.o) $(main:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)
 out=fcount
 CPFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -O2 -Wall -Werror # -DNDEBUG #-DNTIMING
 CFLAGS=${CPFLAGS}
-NVCFLAGS=-arch=sm_20 -g -G --compiler-options -I/opt/net/apps/cuda/include --compiler-options -Wall --compiler-options -Werror -ccbin ${CC} # --compiler-options -DNDEBUG --ptxas-options=-v #--compiler-options -DNTIMING  
+NVCFLAGS=-arch=sm_20 -O2 --compiler-options -I/opt/net/apps/cuda/include --compiler-options -Wall --compiler-options -Werror -ccbin ${CC} # --compiler-options -DNDEBUG --ptxas-options=-v #--compiler-options -DNTIMING  
 PYLIB=_fsim.so
 SWIGTEMPLATE=iscas.i sort.i gpuiscas.i simkernel.i
 

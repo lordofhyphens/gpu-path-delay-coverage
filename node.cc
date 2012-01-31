@@ -58,7 +58,7 @@ bool NODEC::operator==(const std::string& other) const {
 }
 bool NODEC::operator==(const NODEC& other) const {
  // if a is not in the fanin of b and vice-versa, they are considered "equal"
-	return (find(this->fin.begin(), this->fin.end(), other.name) != this->fin.end()) && (find(other.fin.begin(),other.fin.end(), this->name) != other.fin.end());
+	return (find_if(this->fin.begin(), this->fin.end(), StringFinder(other.name)) != this->fin.end()) && (find_if(other.fin.begin(),other.fin.end(), StringFinder(this->name)) != other.fin.end());
 }
 bool NODEC::operator<(const NODEC& other) const {
 	// if a is in the fanin of b, then a < b
@@ -93,13 +93,13 @@ std::ostream& operator<<(std::ostream& outstream, const NODEC& node) {
 	outstream << (node.po == true ? "Yes" : "No" ) << "\t" << node.level << "\t" << node.nfi << "\t" << node.nfo << "\t" << node.finlist << "\t\t";
 	std::vector< std::string >::iterator iter;
 	for (unsigned int i = 0; i < node.fin.size(); i++) {
-		outstream << node.fin[i];
+		outstream << node.fin[i].first;
 		if (i != node.fin.size()-1)
 			outstream << ",";
 	}
 	outstream << " | ";
 	for (unsigned int i = 0; i < node.fot.size(); i++) {
-		outstream << node.fot[i];
+		outstream << node.fot[i].first;
 		if (i != node.fot.size()-1)
 			outstream << ",";
 	}

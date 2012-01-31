@@ -1,4 +1,5 @@
 #include "ckt.h"
+
 typedef std::vector<NODEC>::iterator nodeiter;
 Circuit::Circuit() {
 	this->graph = new std::vector<NODEC>();
@@ -78,8 +79,8 @@ void Circuit::read_bench(char* benchfile) {
 		while (getline(node,buffer,',')) {
 			nodeiter j = find(g->begin(), g->end(), buffer);
 			if (j->nfo < 2) {
-				iter->fin.push_back(j->name);
-				j->fot.push_back(iter->name);
+				iter->fin.push_back(std::make_pair(j->name, -1));
+				j->fot.push_back(std::make_pair(iter->name, -1));
 				if (newfin == "") {
 					newfin += j->name;
 				} else {
@@ -90,11 +91,11 @@ void Circuit::read_bench(char* benchfile) {
 				tmp << j->cur_fo;
 				j->cur_fo+=1;
 				temp_batch.push_back(NODEC((j->name+"fan"+tmp.str()),"FROM",1,j->name));
-				temp_batch.back().fot.push_back(iter->name);
-				temp_batch.back().fin.push_back(j->name);
+				temp_batch.back().fot.push_back(std::make_pair(iter->name,-1));
+				temp_batch.back().fin.push_back(std::make_pair(j->name,-1));
 				temp_batch.back().nfo = 1;
-				j->fot.push_back(temp_batch.back().name);
-				iter->fin.push_back(j->name+"fan"+tmp.str());
+				j->fot.push_back(std::make_pair(temp_batch.back().name,-1));
+				iter->fin.push_back(std::make_pair(j->name+"fan"+tmp.str(),-1));
 				if (newfin == "") {
 					newfin += j->name+"fan"+tmp.str();
 				} else {
@@ -110,9 +111,13 @@ void Circuit::read_bench(char* benchfile) {
 	remove_if(g->begin(),g->end(),isUnknown);
 	this->levelize();
 	std::sort(g->begin(), g->end());
+	annotate();
 }
 bool isPlaced(const NODEC& node) {
 	return (node.placed == 0);
+}
+inline bool Yes(const NODEC& node) {
+	return true;
 }
 // levelize the circuit.
 void Circuit::levelize() {
@@ -128,9 +133,9 @@ void Circuit::levelize() {
 					bool allplaced = true;
 					int level = 0;
 					for (unsigned int i = 0; i < iter->fin.size(); i++) {
-						allplaced = allplaced && find(g->begin(), g->end(), iter->fin[i])->placed;
-						if (level < find(g->begin(), g->end(), iter->fin[i])->level) 
-							level = find(g->begin(), g->end(), iter->fin[i])->level;
+						allplaced = allplaced && find(g->begin(), g->end(), iter->fin[i].first)->placed;
+						if (level < find(g->begin(), g->end(), iter->fin[i].first)->level) 
+							level = find(g->begin(), g->end(), iter->fin[i].first)->level;
 					}
 					if (allplaced == true) { 
 						iter->level = ++level;
@@ -152,11 +157,22 @@ void Circuit::print() {
 	}
 }
 
-int Circuit::levelsize(int l) {
+int Circuit::levelsize(int l) const {
 	return countInLevel(*graph, l);
 }
-
-int countInLevel(std::vector<NODEC>& v, int level) {
+// labels each fanin of each circuit 
+void Circuit::annotate() {
+	std::vector<NODEC>* g = this->graph;
+	for (std::vector<NODEC>::iterator iter = g->begin(); iter < g->end(); iter++) {
+		for (std::vector<std::pair<std::string, int> >::iterator i = iter->fin.begin(); i < iter->fin.end(); i++) {
+			i->second = count_if(g->begin(), find(g->begin(),g->end(),i->first), Yes);
+		}
+		for (std::vector<std::pair<std::string, int> >::iterator i = iter->fot.begin(); i < iter->fot.end(); i++) {
+			i->second = count_if(g->begin(), find(g->begin(),g->end(),i->first), Yes);
+		}
+	}
+}
+int countInLevel(std::vector<NODEC>& v, int level)  {
 	int cnt = 0;
 	for (std::vector<NODEC>::iterator iter = v.begin(); iter < v.end(); iter++) {
 		if (isInLevel(*iter, level)) 

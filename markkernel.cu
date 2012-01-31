@@ -1,4 +1,5 @@
 #include "markkernel.h"
+#include <cuda.h>
 void HandleMarkError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -114,8 +115,8 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type, g;
 	char *rowResults;
 	char *row;
-	if (tid < height && node[gid].type != UNKN) {
-//		printf("Line: %d, gate: %d, start: %d\n", __LINE__,gid, start);
+	if (tid < height) {
+//		printf("%s - Line: %d, gate: %d\n",__FILE__, __LINE__,gid);
 		cache = 0;
 		row = (char*)((char*)input + gid*pitch);
 		rowResults = (char*)((char*)results + gid*pitch);
@@ -141,7 +142,7 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 				// another system somewhere else.
 				val = (resultCache > 0 && (rowCache > 1));
 				g = val || (REF2D(char,input,pitch,tid,FIN(fans,goffset,0)) > 0);
-				REF2D(char,input,pitch,tid,FIN(fans,goffset,0)) |= g;
+//				REF2D(char,input,pitch,tid,FIN(fans,goffset,0)) |= g;
 				resultCache = val;
 				break;
 			case BUFF:
@@ -230,41 +231,29 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 		}
 		// stick the contents of resultCache into the results array
 
-//		printf("Line: %d, gate: %d\n", __LINE__,gid);
+//		printf("%s - Line: %d, gate: %d\n",__FILE__, __LINE__,gid);
 		rowResults[tid] = resultCache;
 	}
 }
 
-float gpuMarkPaths(ARRAY2D<char> input, ARRAY2D<char> results, GPUNODE* graph, ARRAY2D<GPUNODE> dgraph,  int* fan, int maxlevels) {
+float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting before we hit this point.
 	loadPropLUTs();
-	int *gatesinLevel, startGate=0;
-	gatesinLevel = new int[maxlevels];
-	for (int i = 0; i < maxlevels; i++) {
-		gatesinLevel[i] = 0;
-		for (unsigned int j = startGate; j < results.width; j++) {
-			if (graph[j].level == i) {
-				gatesinLevel[i]++;
-			}
-		}
-		startGate += gatesinLevel[i];
-	}
-	int blockcount_y = (int)(input.height/MARK_BLOCK) + (input.height%MARK_BLOCK > 0);
+	int startGate=ckt.size();
+	int blockcount_y = (int)(results.block_width()/MARK_BLOCK) + (results.block_width()%MARK_BLOCK > 0);
 
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-	for (int i = maxlevels-1; i >= 0; i--) {
-		dim3 numBlocks(gatesinLevel[i],blockcount_y);
-		startGate -= gatesinLevel[i];
-//		DPRINT("Marking level %d, inital gate %d. %d gates in level, %d blocks\n",i, startGate, gatesinLevel[i],blockcount_y);
-		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.data, results.data, dgraph.data, fan, results.width, results.height, startGate, results.pitch);
+	for (int i = ckt.levels(); i >= 0; i--) {
+		dim3 numBlocks(ckt.levelsize(i),blockcount_y);
+		startGate -= ckt.levelsize(i);
+		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu(),results.gpu(), ckt.gpu_graph(), ckt.offset(), results.width(), results.height(), startGate, results.pitch());
 		cudaDeviceSynchronize();
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}
-	delete gatesinLevel;
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));

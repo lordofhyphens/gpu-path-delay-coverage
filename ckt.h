@@ -9,6 +9,9 @@
 #include <list>
 #include <algorithm>
 #include <cassert>
+#include <utility>
+
+#define FBENCH 1 // iscas89 BENCH format.
 // NODE TYPE CONSTANTS 
 #define UNKN 0				// unknown node
 #define INPT 1				// Primary Input
@@ -35,8 +38,8 @@ struct NODEC {
 	int cur_fo;
 	bool po, placed;
 	std::string finlist;
-	std::vector<std::string> fin;
-	std::vector<std::string> fot;
+	std::vector<std::pair<std::string, int > > fin;
+	std::vector<std::pair<std::string, int > > fot;
 	NODEC(std::string);
 	NODEC(std::string, int type);
 	NODEC(std::string id, std::string type, int nfi, std::string finlist);
@@ -58,14 +61,22 @@ class Circuit {
 		void levelize();
 		void mark_lines();
 		int _levels;
+		void annotate();
 	public:
 		Circuit();
+		Circuit(int type, char* benchfile) {
+			this->graph = new std::vector<NODEC>();
+			this->_levels = 1;
+			if (type == FBENCH)
+				this->read_bench(benchfile);
+		}
 		~Circuit();
 		void read_bench(char* benchfile);
 		void print();
-		inline int levels() { return this->_levels;}
-		int levelsize(int);
-		int size() { return this->graph->size();}
+		NODEC& at(int node) const { return this->graph->at(node);}
+		inline int levels() const { return this->_levels;}
+		int levelsize(int) const;
+		int size() const { return this->graph->size();}
 		void save(char*); // save a copy of the circuit in its current levelized form
 		void load(char* memfile); // load a circuit that has been levelized.
 };
@@ -75,5 +86,15 @@ bool isPlaced(const NODEC& node);
 bool isInLevel(const NODEC& node, int N);
 
 int countInLevel(std::vector<NODEC>& v, int level);
-bool isUnknown(const NODEC& node);
+bool isUnknown(const NODEC& node) ;
+
+struct StringFinder
+{
+  StringFinder(const std::string & st) : s(st) { }
+  const std::string s;
+  bool operator()(const std::pair<std::string, int>& lhs) const { return lhs.first == s; }
+};
+
+
+
 #endif //CKT_H

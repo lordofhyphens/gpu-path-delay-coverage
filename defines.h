@@ -28,6 +28,7 @@
 #define XOR_IN(A,B) ( (A>=T0)*(B<=S1) )
 #define XOR_OUT(A,B) ( (A>=T0)*(B<=S1) + (A<=S1)*(B>=T0) )
 
+
 // utility macros to makke addressing a little easier.
 #define REF2D(TYPE,ARRAY,PITCH,X,Y) ( (((TYPE*)((char*)ARRAY + Y*PITCH))[X] ))
 #define ADDR2D(TYPE,ARRAY,PITCH,X,Y) ( (((TYPE*)((char*)ARRAY + Y*PITCH))+X ))

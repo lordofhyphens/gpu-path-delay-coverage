@@ -2,6 +2,7 @@
 #define GPUCKT_H
 
 #include "ckt.h"
+#include <utility>
 
 typedef struct GPU_NODE_type {
 	int type, nfi, nfo, po, offset,level; // initial offset for fanin and fanout

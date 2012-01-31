@@ -1,6 +1,7 @@
 #ifndef ARRAY2D_H
 #define ARRAY2D_H
 #include <cassert>
+#include <cstdlib>
 template <class t>
 struct ARRAY2D {
 	t* data;

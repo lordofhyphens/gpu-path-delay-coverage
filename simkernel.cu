@@ -33,7 +33,8 @@ __global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 		rowcache = REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,0));
 		switch (type) {
 			case INPT:
-				val = pi_data[gid+pi_pitch*(tid+pi_offset)];
+				val = REF2D(char, pi_data, pi_pitch, (tid+pi_offset), gid);
+//				val = pi_data[gid+pi_pitch*(tid+pi_offset)];
 				break;
 			default: 
 					// we're guaranteed at least one fanin per 
@@ -88,7 +89,8 @@ __global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 		rowcache[threadIdx.x] = ((char*)output_data+(fanout_index[goffset]*pitch))[tid];
 		switch (type) {
 			case INPT:
-				val = pi_data[gid+pi_pitch*(tid+pi_offset)];
+				val = REF2D(char, pi_data, pi_pitch, (tid+pi_offset), gid);
+//				val = pi_data[gid+pi_pitch*(tid+pi_offset)];
 				break;
 			default: 
 					// we're guaranteed at least one fanin per 
@@ -178,6 +180,7 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, in
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	loadSimLUTs(); // set up our lookup tables for simulation.
 	int startGate = 0;
+//	DPRINT("Results block width: %lu\n",results.block_width());
 	int blockcount_y = (int)(results.block_width()/SIM_BLOCK) + (results.block_width()%SIM_BLOCK > 0);
 #ifndef NTIMING
 	float elapsed;
@@ -190,13 +193,13 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, in
 		for (int i = 0; i < ckt.levels(); i++) {
 			dim3 numBlocks(ckt.levelsize(i),blockcount_y);
 			if (pass > 1) {
-				kernSimulateP2<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu(),inputs.width(),chunk*results.block_width(), results.gpu(chunk), results.pitch(), inputs.block_width(), ckt.offset(), startGate);
+				kernSimulateP2<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu(),inputs.height(),chunk*results.block_width(), results.gpu(chunk), results.pitch(), inputs.block_width(), ckt.offset(), startGate);
 			} else {
-				kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu(),inputs.width(),chunk*results.block_width(), results.gpu(chunk), results.pitch(), inputs.block_width(), ckt.offset(), startGate);
+				kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu(),inputs.height(),chunk*results.block_width(), results.gpu(chunk), results.pitch(), inputs.block_width(), ckt.offset(), startGate);
 			}
 			startGate += ckt.levelsize(i);
 			cudaDeviceSynchronize();
-//					DPRINT("Pass: %d, blocks for level %d: (%d, %d) %d \n",pass, i, ckt.levelsize(i), blockcount_y, SIM_BLOCK);
+//			DPRINT("Pass: %d, blocks for level %d: (%d, %d) %d \n",pass, i, ckt.levelsize(i), blockcount_y, SIM_BLOCK);
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
 	}
