@@ -32,16 +32,16 @@ int main(int argc, char ** argv) {
 		std::cerr << "Vector set " << argv[i] << std::endl;
 		std::pair<size_t,size_t> vecdim = get_vector_dim(argv[i]);
 		GPU_Data *vec = new GPU_Data(vecdim.first,vecdim.second);
-		float serial_time = serial(ckt, *vec);
-		std::cerr << "Performing serial work." << std::endl;
-		std::cerr << "Serial: " << serial_time << " ms" << std::endl;
-
 		std::cerr << "Reading vector file....";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		read_vectors(*vec, argv[i], vec->pitch());
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
+		float serial_time = serial(ckt, *vec);
+		std::cerr << "Performing serial work." << std::endl;
+		std::cerr << "Serial: " << serial_time << " ms" << std::endl;
+
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size()); // initializing results array for simulation
