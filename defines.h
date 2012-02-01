@@ -20,6 +20,11 @@
 	#define TPRINT(...) fprintf(stderr, __VA_ARGS__)
 #endif // TPRINT definition
 
+#define S0 0
+#define S1 1
+#define T0 2 // 1->0 transition, or "Transition to 0"
+#define T1 3 // 0->1 transition, or "Transition to 1"
+
 #define NOT_IN(A) ( A >= T0 )
 #define AND_OUT(A,B) ( (B>=T0)*(A!=S0) + (B==S1)*(A==S1)*2 + (B==S1)*(A>=T0) )
 #define AND_IN(A,B) ((A==T0)*(B>S0)+(A==T1)*((B==S1)+(B==T1)))
@@ -36,13 +41,17 @@
 #define GREF(GRAPH,SUB,OFFSET, X) ( GRAPH[SUB[OFFSET+X]] )
 #define FIN(AR, OFFSET, ID) ( AR[OFFSET+ID] ) 
 
+#define FREF(AR, GATE, FIN, REF) ((AR[GATE.FIN.at(REF).second]))
+#define FADDR(GATE,FIN,REF) (GATE.FIN.at(REF).second)
+#define NOTMARKED(MARK, HIST, GATE) ((MARK[GATE] > HIST[GATE]))
+
 #define TID (((blockIdx.y * blockDim.y) + threadIdx.x))
 #define GID(OFFSET) (blockIdx.x + OFFSET)
 
 //utility macro that serve same function as the stability lookup table.
 
 #define STABLE(P, N) (3*(!P & N) + 2*(P & !N) + (P & N))
-
+#define BIN(V) ( (V==T1 || V==S1) )
 //thread-per-block sizes, per kernel.
 #define SIM_BLOCK 768
 #define MARK_BLOCK 128

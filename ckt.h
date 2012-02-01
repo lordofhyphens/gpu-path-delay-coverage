@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cassert>
 #include <utility>
+#include "defines.h"
 
 #define FBENCH 1 // iscas89 BENCH format.
 // NODE TYPE CONSTANTS 
@@ -26,10 +27,7 @@
 #define FROM 10				// STEM BRANCH
 #define DFF 11				// Dflipflop
 
-#define S0 0
-#define S1 1
-#define T0 2 // 1->0 transition, or "Transition to 0"
-#define T1 3 // 0->1 transition, or "Transition to 1"
+
 
 struct NODEC {
 	std::string name;

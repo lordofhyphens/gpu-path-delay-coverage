@@ -141,8 +141,8 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 				// been set (otherwise it'll overwrite the decision of
 				// another system somewhere else.
 				val = (resultCache > 0 && (rowCache > 1));
-				g = val || (REF2D(char,input,pitch,tid,FIN(fans,goffset,0)) > 0);
-//				REF2D(char,input,pitch,tid,FIN(fans,goffset,0)) |= g;
+				g = val || (REF2D(char,results,pitch,tid,FIN(fans,goffset,0)) > 0);
+				REF2D(char,results,pitch,tid,FIN(fans,goffset,0)) |= g;
 				resultCache = val;
 				break;
 			case BUFF:

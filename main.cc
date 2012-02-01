@@ -21,6 +21,7 @@ int main(int argc, char ** argv) {
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
 	std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
+	ckt.print();
 	std::cerr << "Copying circuit to GPU...";
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	ckt.copy(); // convert and copy circuit to GPU

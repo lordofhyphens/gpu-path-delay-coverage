@@ -40,12 +40,13 @@ float serial(Circuit& ckt, CPU_Data& input) {
     int* cover = new int[ckt.size()];
     int* coverage = new int;
     *coverage = 0;
-	std::cerr << input.pitch() << " " << input.width()<< std::endl;
-/*	for (unsigned int i = 0; i < input.width(); i++) {
-		for (int g = 0; g < ckt.size(); g++)
-			DPRINT("%2d ",REF2D(char,input.cpu(),input.pitch(),i,g)); 
-		DPRINT("\n");
-	}*/
+	std::cerr << "CPU results:" << std::endl;
+	std::cerr << "    Line: ";
+	for (int i = 0; i < ckt.size(); i++) { 
+		DPRINT("%2d ", i);
+	}
+	std::cerr << std::endl;
+
     for (unsigned int pattern = 0; pattern < input.width(); pattern++) {
         simulate = new int[ckt.size()];
         mark = new int[ckt.size()];
@@ -57,6 +58,8 @@ float serial(Circuit& ckt, CPU_Data& input) {
         // simulate pattern 1
         //std::cerr << "Serial Simulate P1" << std::endl;
         cpuSimulateP1(ckt, input.cpu(), simulate, input.pitch(),pattern);
+		std::cerr << "Simulate: ";
+		debugPrintSim(ckt, simulate,pattern, 2);
         // simulate pattern 2
         //std::cerr << "Serial Simulate P2" << std::endl;
 		if (pattern == (input.width()-1))  {
@@ -65,18 +68,18 @@ float serial(Circuit& ckt, CPU_Data& input) {
 		else {
 			cpuSimulateP2(ckt, input.cpu(), simulate, input.pitch(),pattern+1);
 		}
+		std::cerr << "Simulate: ";
+		debugPrintSim(ckt, simulate,pattern, 2);
         // mark
         //std::cerr << "Mark" << std::endl;
         cpuMark(ckt, simulate, mark);
-		std::cerr << "Simulate: ";
-		debugPrintSim(ckt, simulate,pattern, 2);
 		std::cerr << "    Mark: ";
 		debugPrintSim(ckt, mark,pattern, 3);
         // calculate coverage against all previous runs
         //std::cerr << "Cover" << std::endl;
         cpuCover(ckt, mark, merge, cover, coverage);
-		std::cerr << "   Cover: ";
-		debugPrintSim(ckt, cover,pattern, 4);
+//		std::cerr << "   Cover: ";
+//		debugPrintSim(ckt, cover,pattern, 4);
         // merge mark to history
         //std::cerr << "Merge" << std::endl;
         cpuMerge(ckt, mark, merge);
@@ -94,36 +97,38 @@ float serial(Circuit& ckt, CPU_Data& input) {
 void cpuSimulateP1(const Circuit& ckt, char* pi, int* sim, size_t pi_pitch, size_t pattern) {
     for (int g = 0; g < ckt.size(); g++) {
         const NODEC gate = ckt.at(g);
-        char val=0;
+        int val=0;
         switch(gate.typ) {
             case INPT:
                 val = REF2D(char,pi,pi_pitch,pattern,g); break;
+			case FROM:
+				val = FREF(sim,gate,fin,0); break;
             default:
                 if (gate.typ != NOT) {
-                    val = sim[gate.fin.at(0).second];
+                    val = FREF(sim,gate,fin,0);
                 } else {
-                    val = !sim[gate.fin.at(0).second];
+                    val = (FREF(sim,gate,fin,0) != 1);
                 }
                 int j = 1;
                 while (j < gate.nfi) {
                     switch(gate.typ) {
                         case AND: 
-                            val = !(val & sim[gate.fin.at(j).second]);
+                            val = (val & FREF(sim,gate,fin,j));
                             break;
                         case NAND:
-                            val = !(val & sim[gate.fin.at(j).second]);
+                            val = !(val & FREF(sim,gate,fin,j));
                             break;
                         case OR:
-                            val = (val | sim[gate.fin.at(j).second]);
+                            val = (val | FREF(sim,gate,fin,j));
                             break;
                         case NOR: 
-                            val = !(val | sim[gate.fin.at(j).second]);
+                            val = !(val | FREF(sim,gate,fin,j));
                             break;
                         case XOR: 
-                            val = (val ^ sim[gate.fin.at(j).second]);
+                            val = (val ^ FREF(sim,gate,fin,j));
                             break;
                         case XNOR:
-                            val = !(val ^ sim[gate.fin.at(j).second]);
+                            val = !(val ^ FREF(sim,gate,fin,j));
                             break;
                     }
                     j++;
@@ -138,48 +143,34 @@ void cpuSimulateP2(const Circuit& ckt, char* pi, int* sim,size_t pi_pitch, size_
         const NODEC gate = ckt.at(g);
         int val;
         switch(gate.typ) {
-            case INPT:
-                val = REF2D(char,pi,pi_pitch,pattern, g);
-                break;
+            case INPT: val = REF2D(char,pi,pi_pitch,pattern, g); break;
+			case FROM: val = BIN(FREF(sim,gate,fin,0)); break;
             default:
                 if (gate.typ != NOT) {
-                    val = sim[(int)gate.fin.at(0).second];
+                    val = BIN(FREF(sim,gate,fin,0));
                 } else {
-                    val = !sim[(int)gate.fin.at(0).second];
+                    val = (BIN(FREF(sim,gate,fin,0)) != 1);
                 }
                 int j = 1;
                 while (j < gate.nfi) {
                     switch(gate.typ) {
-                        case AND: 
-                            val = !(val & sim[gate.fin.at(j).second]);
-                            break;
-                        case NAND:
-                            val = !(val & sim[gate.fin.at(j).second]);
-                            break;
-                        case OR:
-                            val = (val | sim[gate.fin.at(j).second]);
-                            break;
-                        case NOR: 
-                            val = !(val | sim[gate.fin.at(j).second]);
-                            break;
-                        case XOR: 
-                            val = (val ^ sim[gate.fin.at(j).second]);
-                            break;
-                        case XNOR:
-                            val = !(val ^ sim[gate.fin.at(j).second]);
-                            break;
+                        case AND: val = (BIN(val) & BIN(FREF(sim,gate,fin,j))); break;
+                        case NAND: val = !(BIN(val) & BIN(FREF(sim,gate,fin,j))); break;
+                        case OR: val = (BIN(val) | BIN(FREF(sim,gate,fin,j))); break;
+                        case NOR: val = !(BIN(val) | BIN(FREF(sim,gate,fin,j))); break;
+                        case XOR: val = (BIN(val) ^ BIN(FREF(sim,gate,fin,j))); break;
+                        case XNOR: val = !(BIN(val) ^ BIN(FREF(sim,gate,fin,j))); break;
                     }
                     j++;
                 }
         }
-		
-        sim[g] = stable[(int)sim[g]][val];
+//		std::cerr << gate.name << " sim[" << g<< "] " << sim[g] << " val " << val << " stable: " << stable[sim[g]][val];
+		sim[g] = stable[sim[g]][val];
+//		std::cerr << " sim["<<g<<"]: " << sim[g] << std::endl;
     }
 
 }
-#define FREF(AR, GATE, FIN, REF) ((AR[GATE.FIN.at(REF).second]))
-#define FADDR(GATE,FIN,REF) (GATE.FIN.at(REF).second)
-#define NOTMARKED(MARK, HIST, GATE) ((MARK[GATE] > HIST[GATE]))
+
 void cpuMark(const Circuit& ckt, int* sim, int* mark) {
     int resultCache, fin, cache, rowCache;
     int tmp = 1, pass = 0, fin1 = 0, fin2 = 0, val, f,prev;
@@ -194,9 +185,11 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark) {
         } else { prev = resultCache; }
         switch(gate.typ) {
             case FROM:
-				val = (resultCache > 0) && (rowCache > 1);
-				f = val || (FREF(sim,gate,fin,0) > 0);
-                resultCache = f;
+				val = ((resultCache > 0) && (rowCache > 1));
+				std::cerr << "FROM: " << g << " " << val << std::endl;
+				f = val || (FREF(mark,gate,fin,0) > 0);
+				FREF(mark,gate,fin,0) |= f;
+                resultCache = val;
                 break;
             case BUFF:
             case NOT:
@@ -234,6 +227,7 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark) {
 							fin = cache && fin && prev;
 						}
 					}
+					std::cerr << "Gate " << std::endl;
                     FREF(mark,gate,fin,fin1) = fin;
 				}
 				resultCache= val && tmp && (pass < gate.nfi) && prev;
