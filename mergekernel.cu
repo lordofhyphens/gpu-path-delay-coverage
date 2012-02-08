@@ -8,7 +8,12 @@ void HandleMergeError( cudaError_t err, const char *file, int line ) {
     }
 }
 #define HANDLE_ERROR( err ) (HandleMergeError( err, __FILE__, __LINE__ ))
-#define LESS(A, B) ( sdata[A]*(sdata[A]<sdata[B])*(sdata[A] > 0) + sdata[A]*(sdata[B] == 0) + sdata[B]*(sdata[B]<sdata[A])*(sdata[B] > 0) + (sdata[B])*(sdata[A] == 0) )
+
+#define MIN(A,B,AR) ( \
+		(AR[A] > 0)*(AR[A] < AR[B])*AR[A] + \
+		(AR[B] > 0)*(AR[B] < AR[A])*AR[B] + \
+		AR[A]*(AR[B]==0) + \
+		AR[B]*(AR[A]==0) )
 
 __global__ void kernReduce(char* input, size_t height, size_t pitch, int goffset,int* meta, int mpitch) {
 	int tid = threadIdx.x;
@@ -30,22 +35,23 @@ __global__ void kernReduce(char* input, size_t height, size_t pitch, int goffset
 
 	// this is loop unrolling
     // do reduction in shared mem, comparisons against MERGE_SIZE are done at compile time.
-    if (MERGE_SIZE >= 1024) { if (tid < 512) { sdata[tid] = LESS(tid, tid+512); } __syncthreads(); }
-    if (MERGE_SIZE >= 512) { if (tid < 256) { sdata[tid] = LESS(tid, tid+256); } __syncthreads(); }
-    if (MERGE_SIZE >= 256) { if (tid < 128) { sdata[tid] = LESS(tid, tid+128); } __syncthreads(); }
-    if (MERGE_SIZE >= 128) { if (tid <  64) { sdata[tid] = LESS(tid, tid+64); } __syncthreads(); }
+    if (MERGE_SIZE >= 1024) { if (tid < 512 && tid+512 < height) { sdata[tid] = MIN(tid, tid+512,sdata); } __syncthreads(); }
+    if (MERGE_SIZE >= 512) { if (tid < 256 && tid+256 < height) { sdata[tid] = MIN(tid, tid+256,sdata); } __syncthreads(); }
+    if (MERGE_SIZE >= 256) { if (tid < 128 && tid+128 < height) { sdata[tid] = MIN(tid, tid+128,sdata); } __syncthreads(); }
+    if (MERGE_SIZE >= 128) { if (tid <  64 && tid+64 < height) { sdata[tid] = MIN(tid, tid+64,sdata); } __syncthreads(); }
 	if (tid < 32) {
 		// Within a warp,  don't need __syncthreads();
-		if (MERGE_SIZE >=  64) { sdata[tid] = LESS(tid, tid + 32); }
-		if (MERGE_SIZE >=  32) { sdata[tid] = LESS(tid, tid + 16); }
-		if (MERGE_SIZE >=  16) { sdata[tid] = LESS(tid, tid +  8); }
-		if (MERGE_SIZE >=   8) { sdata[tid] = LESS(tid, tid +  4); }
-		if (MERGE_SIZE >=   4) { sdata[tid] = LESS(tid, tid +  2); }
-		if (MERGE_SIZE >=   2) { sdata[tid] = LESS(tid, tid +  1); }
+		if (MERGE_SIZE >=  64) { if (tid+64 < height) { sdata[tid] = MIN(tid, tid + 32,sdata); } }
+		if (MERGE_SIZE >=  32) { if (tid+32 < height) { sdata[tid] = MIN(tid, tid + 16,sdata); } }
+		if (MERGE_SIZE >=  16) { if (tid+16 < height) { sdata[tid] = MIN(tid, tid +  8,sdata); } }
+		if (MERGE_SIZE >=   8) { if (tid+8 < height) { sdata[tid] = MIN(tid, tid +  4,sdata); } }
+		if (MERGE_SIZE >=   4) { if (tid+4 < height) { sdata[tid] = MIN(tid, tid +  2,sdata); } }
+		if (MERGE_SIZE >=   2) { if (tid+2 < height) { sdata[tid] = MIN(tid, tid +  1,sdata); } }
 	}
+	
 	// at this point, we have the position of the lowest. Correct by 1 to compensate for above.
 
-//	if (tid ==0 ) { printf("Final Tid: %d, line %d, data+1 %d \n", tid, blockIdx.y, sdata[tid]); }
+	if (tid ==0 ) { printf("Final Tid: %d, line %d, data+1 %d \n", tid, blockIdx.y, sdata[tid] - 1); }
 	if (threadIdx.x == 0) { m[blockIdx.x] = sdata[0]-1; }
 	sdata[tid] = (sdata[0]-1)*(sdata[0]>0) + (sdata[0] == 0)*MERGE_SIZE*2;
 	__syncthreads();

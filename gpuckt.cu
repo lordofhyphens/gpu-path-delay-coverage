@@ -1,10 +1,10 @@
 #include "gpuckt.h"
 #include <cuda.h>
 
-int GPU_Circuit::max_offset() {
+int GPU_Circuit::max_offset() const {
 	return this->_max_offset;
 }
-GPUNODE* GPU_Circuit::gpu_graph() {
+GPUNODE* GPU_Circuit::gpu_graph() const {
 	return this->_gpu_graph;
 }
 GPU_Circuit::GPU_Circuit() {
@@ -63,6 +63,6 @@ void GPU_Circuit::copy() {
 	cudaMemcpy(this->_offset, offsets, sizeof(int)*off,cudaMemcpyHostToDevice);
 }
 
-int GPU_Circuit::id(std::string name) {
+int GPU_Circuit::id(std::string name) const {
 	return std::count_if(this->graph->begin(), find(this->graph->begin(),this->graph->end(),name), Yes<NODEC>);
 }

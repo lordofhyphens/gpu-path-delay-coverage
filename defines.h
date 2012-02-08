@@ -5,6 +5,10 @@
 #ifdef NDEBUG 
 	#define DPRINT(...) 
 #else
+	#include <cstdio>
+	#include <iomanip>
+	#include <iostream>
+	#include <fstream>
 	#define DPRINT(...) fprintf(stderr, __VA_ARGS__)
 #endif // DPRINT definition
 
@@ -26,7 +30,7 @@
 #define T1 3 // 0->1 transition, or "Transition to 1"
 
 #define NOT_IN(A) ( A >= T0 )
-#define AND_OUT(A,B) ( (B>=T0)*(A!=S0) + (B==S1)*(A==S1)*2 + (B==S1)*(A>=T0) )
+#define AND_OUT(A,B) ((B >= T0)*(A != S0) + (B==S1)*(A==S1)*2 + (B==S1)*(A>=T0))
 #define AND_IN(A,B) ((A==T0)*(B>S0)+(A==T1)*((B==S1)+(B==T1)))
 #define OR_IN(A,B) ( (A>=T0)*((B==S0)+(B==T0))+(A==T1)*(B==T1) )
 #define OR_OUT(A,B) ((A>=T0)*(B!=S1)+2*(B==S0)*(A==S0)+(A==S0)*(B>=T0)) 
@@ -43,7 +47,8 @@
 
 #define FREF(AR, GATE, FIN, REF) ((AR[GATE.FIN.at(REF).second]))
 #define FADDR(GATE,FIN,REF) (GATE.FIN.at(REF).second)
-#define NOTMARKED(MARK, HIST, GATE) ((MARK[GATE] > HIST[GATE]))
+#define NOTMARKED(MARK, HIST, GATE) ((MARK[GATE] > HIST[GATE]) && MARK[GATE])
+#define NMARKEDG(MARK,HIST,GID,PID) ((MARK > 0) && PID < HIST[GID] && HIST[GID] > 0)
 
 #define TID (((blockIdx.y * blockDim.y) + threadIdx.x))
 #define GID(OFFSET) (blockIdx.x + OFFSET)
@@ -60,5 +65,7 @@
 #define THREAD_SHIFT 768
 
 #define WARP_SIZE 32
+
+#define OUTJUST 3
 #include "utility.h"
 #endif // include guard.

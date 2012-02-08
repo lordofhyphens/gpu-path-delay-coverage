@@ -14,11 +14,11 @@ class GPU_Circuit : public Circuit {
 		int* _offset;
 		GPUNODE* _gpu_graph;
 		int _max_offset;
-		int id(std::string);
+		int id(std::string) const;
 	public:
-		int* offset() { return this->_offset;}
-		int max_offset();
-		GPUNODE* gpu_graph();
+		int* offset() const { return this->_offset;}
+		int max_offset() const;
+		GPUNODE* gpu_graph() const;
 		void copy();
 		~GPU_Circuit();
 		GPU_Circuit();

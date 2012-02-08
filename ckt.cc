@@ -148,7 +148,7 @@ void Circuit::levelize() {
 		}
 	}
 }
-void Circuit::print() {
+void Circuit::print() const {
 	std::vector<NODEC>* g = this->graph;
 	std::cout << "Circuit: " << this->name << std::endl;
 	std::cout << "Name\tType\tPO?\tLevel\tNFI\tNFO\tFinlist\t\tFin | Fot" << std::endl;

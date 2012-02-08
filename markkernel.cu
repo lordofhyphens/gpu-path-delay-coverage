@@ -31,8 +31,8 @@ void loadPropLUTs() {
 	// Creating a set of static arrays that represent our LUTs
 		// Addressing for the propagations:
 	// 2 4x4 groups such that 
-	int and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,1,1};
-	int and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,1,1};
+	int and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,0,1};
+	int and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,0,1};
 	int or2_output_prop[16] = {2,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
 	int or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
 	int xor2_input_prop[16] = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
@@ -112,22 +112,24 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 	int gid = (blockIdx.x) + start;
 	char rowCache, resultCache;
 	char cache, fin = 1;
-	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type, g;
+	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type;
 	char *rowResults;
 	char *row;
 	if (tid < height) {
 //		printf("%s - Line: %d, gate: %d\n",__FILE__, __LINE__,gid);
 		cache = 0;
-		row = (char*)((char*)input + gid*pitch);
-		rowResults = (char*)((char*)results + gid*pitch);
+		row = ADDR2D(char,input,pitch,tid,gid);
+		//(char*)((char*)input + gid*pitch);
+		rowResults = ADDR2D(char,results,pitch,tid,gid);
 		tmp = 1;
 		nfi = node[gid].nfi;
 		type = node[gid].type;
 		goffset = node[gid].offset;
-		rowCache = row[tid];
-		resultCache = rowResults[tid];
+		rowCache = *row;
+		resultCache = *rowResults;
 		__syncthreads();
 		// switching based on value causes divergence, switch based on node type.
+		// rowCache is from the simulation results. 0-1, stable, 2-3, transition
 		val = (rowCache > 1);
 		if (node[gid].po > 0) {
 			resultCache = val;
@@ -135,20 +137,20 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 		} else {
 			prev = resultCache;
 		}
+		if (node[gid].nfo > 1) {
+			prev = 0;
+			resultCache = 0;
+			for (int i = 0; i < node[gid].nfo; i++) {
+				resultCache |= REF2D(char,results,pitch,tid,FIN(fans,goffset+node[gid].nfi,i));
+			}
+			prev = resultCache;
+		}
 		switch(type) {
-			case FROM:
-				// For FROM, only set the "input" line if it hasn't already
-				// been set (otherwise it'll overwrite the decision of
-				// another system somewhere else.
-				val = (resultCache > 0 && (rowCache > 1));
-				g = val || (REF2D(char,results,pitch,tid,FIN(fans,goffset,0)) > 0);
-				REF2D(char,results,pitch,tid,FIN(fans,goffset,0)) |= g;
-				resultCache = val;
-				break;
+			case FROM: break;
 			case BUFF:
 			case NOT:
 				val = tex2D(inptPropLUT, rowCache,resultCache) && prev;
-				((char*)row+(fans[goffset]*pitch))[tid] = val;
+				REF2D(char,results,pitch,tid,FIN(fans,goffset,0)) = val;
 				resultCache = val;
 				break;
 				// For the standard gates, setting three values -- both the
@@ -166,26 +168,23 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 				// checks for path existance through the first input, so we
 				// call it twice with the inputs reversed to check both
 				// paths.
-
 			case NAND:
 			case AND:
-				for (fin1 = 1; fin1 <= nfi; fin1++) {
+				for (fin1 = 0; fin1 < nfi; fin1++) {
 					fin = 1;
-					for (fin2 = 1; fin2 <= nfi; fin2++) {
+					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
 						cache = tex2D(and2OutputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
-						if (nfi > 2) {
+						if (nfi > 1) {
 							cache = tex2D(and2InputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
 							fin = cache && fin && prev;
 						}
 					}
 					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
-					((char*)results+(fans[goffset+fin1]*pitch))[tid] = fin;
 				}
-
-				resultCache= val && tmp && (pass < nfi) && prev;
+	//			resultCache= val && tmp && (pass < nfi) && prev;
 				break;
 			case OR:
 			case NOR:
@@ -197,15 +196,15 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
 
-						if (nfi > 2) {
+						if (nfi > 1) {
 							cache = tex2D(or2InputPropLUT, REF2D(char,input,pitch,FIN(fans,goffset,fin1),tid), REF2D(char,input,pitch,FIN(fans,goffset,fin2),tid));
 							fin = cache && fin && prev;
 						}
 
 					}
-					((char*)results+(fans[goffset+fin1]*pitch))[tid] = fin;
+					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
 				}
-				resultCache= val && tmp && (pass <= nfi) && prev;
+//				resultCache= val && tmp && (pass <= nfi) && prev;
 				break;
 			case XOR:
 			case XNOR:
@@ -216,23 +215,20 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 						cache = tex2D(xor2OutputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
-						if (nfi > 2) {
+						if (nfi > 1) {
 							cache = tex2D(xor2InputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
 							fin = cache && fin && prev;
 						}
 					}
-					((char*)results+(fans[goffset+fin1]*pitch))[tid] = fin;
+					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
 				}
-				resultCache = val && tmp && (pass <= nfi) && prev;
+//				resultCache = val && tmp && (pass <= nfi) && prev;
 				break;
-			default:
-				// if there is a transition that will propagate, set = to some positive #?
-				break;
+			default: break;
 		}
 		// stick the contents of resultCache into the results array
 
-//		printf("%s - Line: %d, gate: %d\n",__FILE__, __LINE__,gid);
-		rowResults[tid] = resultCache;
+		*rowResults = resultCache;
 	}
 }
 
@@ -250,6 +246,7 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 	for (int i = ckt.levels(); i >= 0; i--) {
 		dim3 numBlocks(ckt.levelsize(i),blockcount_y);
 		startGate -= ckt.levelsize(i);
+		DPRINT("Level %d, starting gate: %d width: %lu height %lu\n",i,startGate, results.width(),results.height());
 		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu(),results.gpu(), ckt.gpu_graph(), ckt.offset(), results.width(), results.height(), startGate, results.pitch());
 		cudaDeviceSynchronize();
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
@@ -264,53 +261,35 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 }
 
 
-void debugMarkOutput(ARRAY2D<char> results) {
+void debugMarkOutput(ARRAY2D<char> results, std::string outfile) {
 #ifndef NDEBUG
-	// Routine to copy contents of our results array into host memory and print
-	// it row-by-row.
-	char *lvalues, *row;
-	DPRINT("Post-mark results\n");
-	DPRINT("Vector:   \t");
+	char *lvalues;
+	std::ofstream ofile(outfile.c_str());
+	ofile << results.width << "," << results.height << std::endl;
+	ofile << "Line:   \t";
 	for (unsigned int i = 0; i < results.height; i++) {
-		DPRINT("%2d ", i);
+		ofile << std::setw(OUTJUST) << i << " ";
 	}
-	DPRINT("\n");
+	ofile << std::endl;
+	lvalues = (char*)malloc(results.height*results.pitch);
+	cudaMemcpy2D(lvalues,results.pitch,results.data,results.pitch,results.width,results.height,cudaMemcpyDeviceToHost);
 	for (unsigned int r = 0;r < results.width; r++) {
-		lvalues = (char*)malloc(results.height*sizeof(char));
-		row = ((char*)results.data + r*results.pitch); // get the current row?
-		cudaMemcpy(lvalues,row,results.height*sizeof(char),cudaMemcpyDeviceToHost);
-		
-		DPRINT("%s\t%d:\t","Line",r);
+		ofile << "Vector " << r << ":\t";
 		for (unsigned int i = 0; i < results.height; i++) {
-			DPRINT("%2d ", lvalues[i]);//== 0 ? 'N':'S'  );
+			char z = REF2D(char, lvalues, results.pitch, r, i);
+			switch(z) {
+				case 0:
+					ofile  << std::setw(OUTJUST+1) << "N "; break;
+				case 1:
+					ofile  << std::setw(OUTJUST+1) << "Y "; break;
+				default:
+					ofile << std::setw(OUTJUST) << (int)z << " "; break;
+			}
 		}
-		DPRINT("\n");
-		free(lvalues);
+		ofile << std::endl;
 	}
-#endif 
+	free(lvalues);
+	ofile.close();
+#endif
 }
-void debugUnionOutput(ARRAY2D<int> results) {
-#ifndef NDEBUG
-	// Routine to copy contents of our results array into host memory and print
-	// it row-by-row.
-	int *lvalues, *row;
-	DPRINT("Post-union results\n");
-	DPRINT("Line:   \t");
-	for (unsigned int i = 0; i < results.width; i++) {
-		DPRINT("%2d ", i);
-	}
-	DPRINT("\n");
-	for (unsigned int r = 0;r < results.height; r++) {
-		lvalues = (int*)malloc(results.bwidth());
-		row = (int*)((char*)results.data + r*results.pitch); // get the current row?
-		cudaMemcpy(lvalues,row,results.bwidth(),cudaMemcpyDeviceToHost);
-		
-		DPRINT("%s %d:\t", "Vector",r);
-		for (unsigned int i = 0; i < results.width; i++) {
-			DPRINT("%2c ", lvalues[i] == 0 ? 'N':'S'  );
-		}
-		DPRINT("\n");
-		free(lvalues);
-	}
-#endif 
-}
+

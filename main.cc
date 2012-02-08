@@ -6,6 +6,7 @@
 #include "simkernel.h"
 #include "markkernel.h"
 #include "mergekernel.h"
+#include "coverkernel.h"
 #include "serial.h"
 #include <utility>
 #include <iostream>
@@ -21,7 +22,7 @@ int main(int argc, char ** argv) {
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
 	std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
-	ckt.print();
+//	ckt.print();
 	std::cerr << "Copying circuit to GPU...";
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	ckt.copy(); // convert and copy circuit to GPU
@@ -54,6 +55,8 @@ int main(int argc, char ** argv) {
 		sim = gpuRunSimulation(*sim_results, *vec, ckt, 1);
 		gpu += sim;
 		std::cerr << "Pass 1: " << sim << " ms" << std::endl;
+		debugSimulationOutput(vec->ar2d(), "siminputs.log");
+		debugSimulationOutput(sim_results->ar2d(), "simdebug-p1.log");
 		
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		gpu_shift(*vec);
@@ -64,26 +67,34 @@ int main(int argc, char ** argv) {
 		sim = gpuRunSimulation(*sim_results, *vec, ckt, 2);
 		gpu += sim;
 		std::cerr << "Pass 2: " << sim << " ms" << std::endl;
+		debugSimulationOutput(sim_results->ar2d(), "simdebug-p2.log");
+		debugSimulationOutput(vec->ar2d(), "siminputs-shifted.log");
 		// don't need the input vectors anymore, so remove.
 		delete vec;
 		GPU_Data *mark_results = new GPU_Data(vecdim.first, ckt.size());
 		mark = gpuMarkPaths(*mark_results, *sim_results, ckt);
 		gpu += mark;
 		std::cerr << "  Mark: " << mark << " ms" << std::endl;
-//		std::cerr << sim_results->debug();
+		std::cerr << sim_results->debug();
+		debugMarkOutput(mark_results->ar2d(), "markdebug.log");
 		delete sim_results;
 		ARRAY2D<int> merge_ids = gpuAllocateBlockResults(ckt.size());
-//		std::cerr << mark_results->debug();
+		std::cerr << mark_results->debug();
 		merge = gpuMergeHistory(*mark_results, merge_ids);  
 		gpu += merge;
 		std::cerr << " Merge: " << merge << " ms" << std::endl;
+		int *coverage = new int;
+		cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
+		debugCoverOutput(ARRAY2D<int>(coverage,mark_results->height(), mark_results->width(),mark_results->width()*sizeof(int)));
+		std::cerr << " Cover: " << cover << " ms" << std::endl;
 		delete mark_results;
-
+		std::cerr << "GPU Coverage: " << *coverage << std::endl;
 		gpu += cover;
 
 		std::cerr << "   GPU: " << elapsed << " ms" <<std::endl;
 		std::cerr << "Speedup:" << serial_time/gpu << "X" <<std::endl;
 		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << serial_time <<","<< gpu << "," <<  serial_time/gpu <<std::endl;
+		delete coverage;
 	}
 	return 0;
 }

@@ -1,5 +1,6 @@
 #include <cuda.h>
 #include "gpudata.h"
+#include "defines.h"
 
 GPU_Data::GPU_Data() {
 	this->_gpu = new ARRAY2D<char>();
@@ -93,23 +94,12 @@ std::string GPU_Data::debug() {
 
 __global__ void kernShift(char* array, char* tmpar, int pitch, int cycle, int width) {
 	char tmp;
-	int first = width-(cycle*threadIdx.x);
-	if (first >= 0)
-		tmp = REF2D(char,array,pitch, first, blockIdx.x);
-	if (threadIdx.x == 0) {
-		tmp = tmpar[blockIdx.x];
+	tmp = REF2D(char,array,pitch, 0, blockIdx.x);
+	for (int i = 0; i < width-1; i++) {
+		REF2D(char,array,pitch, i, blockIdx.x) = REF2D(char,array,pitch, i+1, blockIdx.x);
 	}
-	__syncthreads();
-	if (threadIdx.x == THREAD_SHIFT-1) {
-		tmpar[blockIdx.x] = tmp;
-	} else {
-		if (first > 0) {
-			REF2D(char,array,pitch, first-1, blockIdx.x) = tmp;
-		} else if (first == 0) {
-			REF2D(char,array,pitch, width, blockIdx.x) = tmp;
-		}
-	}
-	__syncthreads();
+	REF2D(char,array,pitch, width-1, blockIdx.x) = tmp;
+
 }
 
 void gpu_shift(GPU_Data& pack) {
@@ -117,7 +107,8 @@ void gpu_shift(GPU_Data& pack) {
 	char* tmpspace;
 	cudaMalloc(&tmpspace, sizeof(char)*pack.height());
 	for (int i = 0; i < per; i++) {
-		kernShift<<<pack.height(), THREAD_SHIFT>>>(pack.gpu(), tmpspace, pack.pitch(),i,pack.width());
+		DPRINT("Shifting batch %d\n",i);
+		kernShift<<<pack.height(),1>>>(pack.gpu(), tmpspace, pack.pitch(),i,pack.width());
 		cudaDeviceSynchronize();
 		assert(cudaGetLastError() == cudaSuccess);
 	}

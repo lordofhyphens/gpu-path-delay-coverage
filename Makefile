@@ -6,7 +6,7 @@ logfile=log.txt
 main=main.cc
 tgenobj=Utility.o BlifParse.o Graph.o
 src=ckt.cc cpudata.cc node.cc vectors.cc utility.cc serial.cc
-gsrc=gutility.cu gpuckt.cu gpudata.cu simkernel.cu markkernel.cu mergekernel.cu # coverkernel.cu
+gsrc=gutility.cu gpuckt.cu gpudata.cu simkernel.cu markkernel.cu mergekernel.cu coverkernel.cu
 obj=$(src:.cc=.o) $(main:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)
 gobj=$(gobj_cu:.c=.o)

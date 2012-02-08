@@ -31,6 +31,7 @@ class GPU_Data : public CPU_Data {
 		GPU_Data(size_t rows, size_t columns);
 		~GPU_Data();
 		std::string debug();
+		ARRAY2D<char> ar2d() const { return *(this->_gpu); }
 };
 
 void gpu_shift(GPU_Data& pack);

@@ -70,7 +70,7 @@ class Circuit {
 		}
 		~Circuit();
 		void read_bench(char* benchfile);
-		void print();
+		void print() const;
 		NODEC& at(int node) const { return this->graph->at(node);}
 		inline int levels() const { return this->_levels;}
 		int levelsize(int) const;

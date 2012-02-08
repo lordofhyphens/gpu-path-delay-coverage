@@ -6,5 +6,5 @@
 #include "gpudata.h"
 
 float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt);
-void debugMarkOutput(ARRAY2D<char> results);
+void debugMarkOutput(ARRAY2D<char> results, std::string outfile = "markdebug.log");
 #endif

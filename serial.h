@@ -8,6 +8,9 @@
 #include <ctime>
 #include <time.h>
 #include <unistd.h>
-
+#include <iostream>
+#include <ostream>
+#include <iomanip>
+#include <fstream>
 float serial(Circuit& ckt, CPU_Data& input);
 #endif
