@@ -18,40 +18,42 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
 	int g = blockIdx.x+start_offset;
 	int resultCache = 0;
 	int histCache = 0;
+	char cache;
 	GPUNODE gate = ckt[g];
 	if (pid < pattern_count) {
-		int *h = ADDR2D(int,cover,cover_pitch, tid, g), *c = ADDR2D(int,hist_cover,hcover_pitch,tid,g);
-//		printf("%s - Line: %d, gate: %d\n",__FILE__, __LINE__,g);
-		
-        if (gate.po == 1) {
+		cache = REF2D(char,mark,mark_pitch,tid, g); // cache the current node's marked status.
+		// shorthand references to current coverage and history count.
+		int *c, *h;
+		c = ADDR2D(int, cover     , cover_pitch , tid, g);
+		h = ADDR2D(int, hist_cover, hcover_pitch, tid, g);
+
+		if (gate.po == 1) {
 			*c = 0;
-            *h = (REF2D(char,mark,mark_pitch, tid, g) > 0);
+            *h = (cache > 0); // set history = 1 if this line is marked.
         }
-		if (ckt[g].nfo > 1) {
-			for (int i = 0; i < ckt[g].nfo; i++) {
-				resultCache += REF2D(char,cover,cover_pitch,tid,FIN(offsets,ckt[g].offset+ckt[g].nfi,i));
-				histCache += REF2D(char,hist_cover,hcover_pitch,tid,FIN(offsets,ckt[g].offset+ckt[g].nfi,i));
+
+		if (gate.nfo > 1) {
+			for (int i = 0; i < gate.nfo; i++) {
+				int fot = FIN(offsets,gate.offset+gate.nfi,i); // reference to current fan-out
+				resultCache += REF2D(int,cover,cover_pitch,tid,fot); // add this fanout's path count to this node.
+				histCache += REF2D(int,hist_cover,hcover_pitch,tid,fot); // add this fanout's history path count to this node.
 			}
-//			printf("%s:%d - results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, resultCache);
-			REF2D(int, cover, cover_pitch, tid, g) = resultCache;
-			REF2D(int, hist_cover, hcover_pitch, tid, g) = histCache;
+			*c = resultCache;
+			*h = histCache;
 		}
-		if (ckt[g].type == INPT) {
-			*c = *c + (*h * (NMARKEDG(REF2D(char,mark,mark_pitch,tid,g),history,g,pid)));
-			*h = *h * !(NMARKEDG(REF2D(char,mark,mark_pitch,tid,g),history,g,pid));
-        } else if (gate.type != FROM) {
-			*c = *c + (*h * (NMARKEDG(REF2D(char,mark,mark_pitch,tid,g),history,g,pid)));
-			*h = *h * (!NMARKEDG(REF2D(char,mark,mark_pitch,tid,g),history,g,pid));
+		if (gate.type != FROM) {
+			printf("%s:%d - Before: PID: %d G %d (%d),(%d), Hist %d\n",__FILE__,__LINE__,pid, g, *c, *h, history[g]);
+			*c = (*c + *h)*(cache > 0)*(history[g] >= pid);
+			*h *= ((cache > 0)*(history[g] >= pid) == 0);
+			printf("%s:%d - After: PID: %d G %d (%d),(%d), Hist %d\n",__FILE__,__LINE__,pid, g, *c, *h, history[g]);
+
             for (int i = 0; i < gate.nfi; i++) {
-				int *fin = ADDR2D(int,cover,cover_pitch,tid,FIN(offsets,gate.offset,i));
-				int *fin_h = ADDR2D(int,hist_cover,hcover_pitch,tid,FIN(offsets,gate.offset,i));
-                *fin = *c;
-                *fin_h = *h;
-            }
-        }
-		if (tid == 0)
-			printf("%s:%d - history[%d] = %d, pid = %d\n", __FILE__,__LINE__,g, history[g], pid);
-//		printf("%s:%d - results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, REF2D(int,cover,cover_pitch,tid,g));
+				int fin = FIN(offsets,gate.offset,i);
+				REF2D(int,cover,cover_pitch,tid,fin) = *c; //REF2D(int,cover,cover_pitch,tid,g);
+				REF2D(int,hist_cover,hcover_pitch,tid,fin) = *h; //REF2D(int,hist_cover,hcover_pitch,tid,g);
+			}
+        } 
+//		printf("%s:%d - results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, *c);
 //		printf("%s:%d - h_results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, REF2D(int,hist_cover,hcover_pitch,tid,g));
 	}
 }
@@ -60,12 +62,12 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
 float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges, int* coverage) {
 	int* results, *g_results, *gh_results, *h_results;
 	int startGate=ckt.size();
-	cudaHostAlloc(&results,sizeof(int)*mark.width()*mark.height(), cudaHostAllocMapped);
+	cudaHostAlloc(&results,sizeof(int)*mark.width()*mark.height(), cudaHostAllocMapped); // using pinned memory because we're laaaazy.
 	cudaHostAlloc(&h_results,sizeof(int)*mark.width()*mark.height(), cudaHostAllocMapped);
 	cudaHostGetDevicePointer(&g_results, results, 0);
 	cudaHostGetDevicePointer(&gh_results, h_results, 0);
-	ARRAY2D<int> h = ARRAY2D<int>(results, mark.height(), mark.width(), sizeof(int)*mark.width());
-	ARRAY2D<int> hc = ARRAY2D<int>(h_results, mark.height(), mark.width(), sizeof(int)*mark.width());
+	ARRAY2D<int> h = ARRAY2D<int>(results, mark.height(), mark.width(), sizeof(int)*mark.width()); // on CPU 
+	ARRAY2D<int> hc = ARRAY2D<int>(h_results, mark.height(), mark.width(), sizeof(int)*mark.width()); // on CPU
 
 
 	int blockcount_y = (int)(mark.block_width()/COVER_BLOCK) + (mark.block_width()%COVER_BLOCK > 0);
@@ -87,8 +89,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 	for (unsigned int j = 0; j < h.width;j++) {
 		for (int i = 0; i < ckt.size(); i++) {
 			if (ckt.at(i).typ == INPT) {
-				*coverage = *coverage + REF2D(int,h_results, hc.pitch, j, i);
-	//			std::clog << "cover[" << j << "][" << i << "]: " << REF2D(int,h_results, sizeof(int)*mark.width(), j, i) << std::endl;
+				*coverage = *coverage + REF2D(int,results, h.pitch, j, i);
+				std::clog << "cover[" << j << "][" << i << "]: " << REF2D(int,results, h.pitch, j, i) << std::endl;
 			}
 		}
 	}

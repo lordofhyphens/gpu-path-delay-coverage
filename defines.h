@@ -46,9 +46,9 @@
 #define FIN(AR, OFFSET, ID) ( AR[OFFSET+ID] ) 
 
 #define FREF(AR, GATE, FIN, REF) ((AR[GATE.FIN.at(REF).second]))
-#define FADDR(GATE,FIN,REF) (GATE.FIN.at(REF).second)
-#define NOTMARKED(MARK, HIST, GATE) ((MARK[GATE] > HIST[GATE]) && MARK[GATE])
-#define NMARKEDG(MARK,HIST,GID,PID) ((MARK > 0) && PID < HIST[GID] && HIST[GID] > 0)
+#define FADDR(AR,GATE,FIN,REF) (AR+GATE.FIN.at(REF).second)
+#define NOTMARKED(MARK, HIST, GATE) ((MARK[GATE] > 0 && HIST[GATE] < 1))
+#define NMARKEDG(MARK,HIST,G,PID) ((MARK > 0)*(PID < HIST[G])*(HIST[G] >= 0))
 
 #define TID (((blockIdx.y * blockDim.y) + threadIdx.x))
 #define GID(OFFSET) (blockIdx.x + OFFSET)

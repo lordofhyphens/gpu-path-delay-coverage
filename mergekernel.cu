@@ -51,7 +51,7 @@ __global__ void kernReduce(char* input, size_t height, size_t pitch, int goffset
 	
 	// at this point, we have the position of the lowest. Correct by 1 to compensate for above.
 
-	if (tid ==0 ) { printf("Final Tid: %d, line %d, data+1 %d \n", tid, blockIdx.y, sdata[tid] - 1); }
+//	if (tid ==0 ) { printf("Final Tid: %d, line %d, data+1 %d \n", tid, blockIdx.y, sdata[tid] - 1); }
 	if (threadIdx.x == 0) { m[blockIdx.x] = sdata[0]-1; }
 	sdata[tid] = (sdata[0]-1)*(sdata[0]>0) + (sdata[0] == 0)*MERGE_SIZE*2;
 	__syncthreads();

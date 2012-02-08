@@ -51,7 +51,9 @@ float serial(Circuit& ckt, CPU_Data& input) {
 		DPRINT("%3d ", i);
 	}
 	std::clog << std::endl;
-
+	for (int i = 0; i < ckt.size(); i++) {
+		merge[i] = 0;
+	}
     for (unsigned int pattern = 0; pattern < input.width(); pattern++) {
         simulate = new int[ckt.size()];
         mark = new int[ckt.size()];
@@ -301,28 +303,28 @@ void cpuCover(const Circuit& ckt, int* mark, int* hist, int* hist_cover, int* co
     // cover is the coverage ints we're working with for this pass.
     // mark is the fresh marks
     // hist is the history of the mark status of all lines.
-    int val = 0;
     for (int g = ckt.size()-1; g >= 0; g--) {
         const NODEC& gate = ckt.at(g);
         if (gate.po == true) {
             cover[g] = 0;
             hist_cover[g] = (mark[g] > 0);
         }
-        if (gate.typ == FROM) {
-            val = (hist_cover[g]+cover[g])*(NOTMARKED(mark,hist,g));
-            FREF(cover,gate,fin,0) = FREF(cover,gate,fin,0) + val;
-			FREF(hist_cover,gate,fin,0) = FREF(hist_cover,gate,fin,0) + (NOTMARKED(mark,hist,g) ? 0 : hist_cover[g]);
-        } else if (gate.typ == INPT) {
-            *covered = *covered + cover[g];
-//			std::clog << "Covered: " << *covered << std::endl;
-        } else {
+		if (gate.nfo > 1) {
+			for (int i = 0; i < gate.nfo; i++) {
+				cover[g] += FREF(cover,gate,fot,i);
+				hist_cover[g] += FREF(hist_cover,gate,fot,i);
+			}
+		}
+		if (gate.typ != FROM) {
 			cover[g] = (NOTMARKED(mark,hist,g))*(cover[g]+hist_cover[g]);
 			hist_cover[g] = (NOTMARKED(mark,hist,g) ? 0 : hist_cover[g]);
             for (int i = 0; i < gate.nfi; i++) {
-                FREF(hist_cover,gate,fin,i) = hist_cover[g];
-                FREF(cover,gate,fin,i) = cover[g];
+				FREF(cover,gate,fin,i) = cover[g];
+				FREF(hist_cover,gate,fin,i) = hist_cover[g];
             }
-        }
+        } 
+		if (gate.typ == INPT)
+            *covered = *covered + cover[g];
 		//hist[g] |= mark[g];
 	}
 }
