@@ -89,7 +89,7 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int> mergeids) {
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
 	DPRINT("Blocks: (%lu, %lu), %d\n", block_x, block_y, MERGE_SIZE);
-	kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(), input.height(), input.pitch(), 0, temparray, pitch);
+	kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu().data, input.height(), input.gpu().pitch, 0, temparray, pitch);
 	cudaDeviceSynchronize();
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	dim3 blocksmin(1, block_y);

@@ -45,12 +45,13 @@ float serial(Circuit& ckt, CPU_Data& input) {
 	int* coverage = new int;
     *coverage = 0;
 	
-	std::cerr << "CPU results:" << std::endl;
+/*	std::cerr << "CPU results:" << std::endl;
 	std::clog << "Line:   \t";
 	for (int i = 0; i < ckt.size(); i++) { 
 		DPRINT("%3d ", i);
 	}
 	std::clog << std::endl;
+*/
 	for (int i = 0; i < ckt.size(); i++) {
 		merge[i] = 0;
 	}
@@ -68,16 +69,16 @@ float serial(Circuit& ckt, CPU_Data& input) {
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
         // simulate pattern 1
         //std::cerr << "Serial Simulate P1" << std::endl;
-        cpuSimulateP1(ckt, input.cpu(), simulate, input.pitch(),pattern);
+        cpuSimulateP1(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern);
 		//std::cerr << "Simulate: ";
 		//debugPrintSim(ckt, simulate,pattern, 2);
         // simulate pattern 2
         //std::cerr << "Serial Simulate P2" << std::endl;
 		if (pattern == (input.width()-1))  {
-			cpuSimulateP2(ckt, input.cpu(), simulate, input.pitch(),0);
+			cpuSimulateP2(ckt, input.cpu().data, simulate, input.cpu().pitch,0);
 		}
 		else {
-			cpuSimulateP2(ckt, input.cpu(), simulate, input.pitch(),pattern+1);
+			cpuSimulateP2(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern+1);
 		}
 		//std::cerr << "Simulate: ";
 		//debugPrintSim(ckt, simulate,pattern, 2);
@@ -89,7 +90,7 @@ float serial(Circuit& ckt, CPU_Data& input) {
         // calculate coverage against all previous runs
         cpuCover(ckt, mark, merge, hist_cover, cover,coverage);
 		//std::cerr << "   Cover: ";
-		debugPrintSim(ckt, cover,pattern, 4);
+		//debugPrintSim(ckt, cover,pattern, 4);
         // merge mark to history
         //std::cerr << "Merge" << std::endl;
         cpuMerge(ckt, mark, merge);

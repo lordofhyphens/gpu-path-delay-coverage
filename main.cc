@@ -36,14 +36,14 @@ int main(int argc, char ** argv) {
 		GPU_Data *vec = new GPU_Data(vecdim.first,vecdim.second);
 		std::cerr << "Reading vector file....";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-		read_vectors(*vec, argv[i], vec->pitch());
+		read_vectors(*vec, argv[i], vec->block_width());
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 		float serial_time = serial(ckt, *vec);
 		std::cerr << "Performing serial work." << std::endl;
 		std::cerr << "Serial: " << serial_time << " ms" << std::endl;
-
+		std::cerr << vec->debug();
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size()); // initializing results array for simulation
@@ -55,7 +55,7 @@ int main(int argc, char ** argv) {
 		sim = gpuRunSimulation(*sim_results, *vec, ckt, 1);
 		gpu += sim;
 		std::cerr << "Pass 1: " << sim << " ms" << std::endl;
-		debugSimulationOutput(vec->ar2d(), "siminputs.log");
+		debugDataOutput(vec->gpu(), "siminputs.log");
 		debugSimulationOutput(sim_results->ar2d(), "simdebug-p1.log");
 		
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -68,7 +68,7 @@ int main(int argc, char ** argv) {
 		gpu += sim;
 		std::cerr << "Pass 2: " << sim << " ms" << std::endl;
 		debugSimulationOutput(sim_results->ar2d(), "simdebug-p2.log");
-		debugSimulationOutput(vec->ar2d(), "siminputs-shifted.log");
+		debugDataOutput(vec->gpu(), "siminputs-shifted.log");
 		// don't need the input vectors anymore, so remove.
 		delete vec;
 		GPU_Data *mark_results = new GPU_Data(vecdim.first, ckt.size());

@@ -159,9 +159,9 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, in
 		for (int i = 0; i <= ckt.levels(); i++) {
 			dim3 numBlocks(ckt.levelsize(i),blockcount_y);
 			if (pass > 1) {
-				kernSimulateP2<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu(),inputs.pitch(),chunk*results.block_width(), results.gpu(chunk), results.pitch(), inputs.block_width(), ckt.offset(), startGate);
+				kernSimulateP2<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu().data,inputs.gpu().pitch,chunk*results.block_width(), results.gpu(chunk).data, results.gpu().pitch, inputs.block_width(), ckt.offset(), startGate);
 			} else {
-				kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu(),inputs.pitch(),chunk*results.block_width(), results.gpu(chunk), results.pitch(), inputs.block_width(), ckt.offset(), startGate);
+				kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu().data,inputs.gpu().pitch,chunk*results.block_width(), results.gpu(chunk).data, results.gpu().pitch, inputs.block_width(), ckt.offset(), startGate);
 			}
 			startGate += ckt.levelsize(i);
 			cudaDeviceSynchronize();

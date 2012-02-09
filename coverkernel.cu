@@ -42,10 +42,10 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
 			*h = histCache;
 		}
 		if (gate.type != FROM) {
-			printf("%s:%d - Before: PID: %d G %d (%d),(%d), Hist %d\n",__FILE__,__LINE__,pid, g, *c, *h, history[g]);
+//			printf("%s:%d - Before: PID: %d G %d (%d),(%d), Hist %d\n",__FILE__,__LINE__,pid, g, *c, *h, history[g]);
 			*c = (*c + *h)*(cache > 0)*(history[g] >= pid);
 			*h *= ((cache > 0)*(history[g] >= pid) == 0);
-			printf("%s:%d - After: PID: %d G %d (%d),(%d), Hist %d\n",__FILE__,__LINE__,pid, g, *c, *h, history[g]);
+//			printf("%s:%d - After: PID: %d G %d (%d),(%d), Hist %d\n",__FILE__,__LINE__,pid, g, *c, *h, history[g]);
 
             for (int i = 0; i < gate.nfi; i++) {
 				int fin = FIN(offsets,gate.offset,i);
@@ -80,7 +80,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 		for (int i = ckt.levels(); i >= 0; i--) {
 			dim3 numBlocks(ckt.levelsize(i),blockcount_y);
 			startGate -= ckt.levelsize(i);
-			kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(),mark.gpu(chunk),mark.pitch(),merges.data,g_results,h.pitch, gh_results,hc.pitch,startGate, chunk*mark.block_width(),mark.width(),ckt.offset());
+			kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(),mark.gpu(chunk).data,mark.gpu(chunk).pitch,merges.data,g_results,h.pitch, gh_results,hc.pitch,startGate, chunk*mark.block_width(),mark.width(),ckt.offset());
 			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
@@ -90,7 +90,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 		for (int i = 0; i < ckt.size(); i++) {
 			if (ckt.at(i).typ == INPT) {
 				*coverage = *coverage + REF2D(int,results, h.pitch, j, i);
-				std::clog << "cover[" << j << "][" << i << "]: " << REF2D(int,results, h.pitch, j, i) << std::endl;
+//				std::clog << "cover[" << j << "][" << i << "]: " << REF2D(int,results, h.pitch, j, i) << std::endl;
 			}
 		}
 	}

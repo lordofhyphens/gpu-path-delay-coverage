@@ -22,8 +22,8 @@ class GPU_Data : public CPU_Data {
 		ARRAY2D<char>* _gpu; // fixed size GPU memory space.
 		int copy(int);
 	public: 
-		char* gpu(int ref); // this will throw an out_of_range exception if ref > size; Also changes current.
-		char* gpu() { return gpu(this->_current);}
+		ARRAY2D<char> gpu(int ref); // this will throw an out_of_range exception if ref > size; Also changes current.
+		ARRAY2D<char> gpu() { return gpu(this->_current);}
 		int refresh(); // ensures that the GPU memory space is equivalent to cpu-current.
 		size_t block_width() { return this->_block_size;}
 		int initialize(size_t, size_t);
@@ -35,4 +35,5 @@ class GPU_Data : public CPU_Data {
 };
 
 void gpu_shift(GPU_Data& pack);
+void debugDataOutput(ARRAY2D<char> results, std::string outfile);
 #endif //GPUDATA_H

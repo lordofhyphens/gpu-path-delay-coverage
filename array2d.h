@@ -13,6 +13,7 @@ struct ARRAY2D {
 	ARRAY2D(t *, int, int, int);
 	ARRAY2D(size_t, size_t, size_t);
 	ARRAY2D(const ARRAY2D<t>&);
+	ARRAY2D(size_t height, size_t width);
 	void initialize(t*, size_t, size_t, size_t);
 	size_t size();
 	size_t bwidth();
@@ -29,6 +30,13 @@ ARRAY2D<t>::ARRAY2D(size_t height, size_t width, size_t pitch) {
 	assert(in != NULL);
 	this->initialize(in, height, width, pitch);
 }
+template <class t>
+ARRAY2D<t>::ARRAY2D(size_t height, size_t width) {
+	t* in = (t*)malloc(sizeof(t)*width*height);
+	assert(in != NULL);
+	this->initialize(in, height, width, sizeof(t)*width);
+}
+
 template <class t>
 ARRAY2D<t>::ARRAY2D(const ARRAY2D<t>& other) {
 	this->data = other.data;

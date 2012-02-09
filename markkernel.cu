@@ -107,7 +107,7 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
 
-__global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, int* fans, size_t width, size_t height, int start, int pitch) {
+__global__ void kernMarkPathSegments(char *input, int inpitch, char* results, GPUNODE* node, int* fans, size_t width, size_t height, int start, int pitch) {
 	int tid = (blockIdx.y * blockDim.y) + threadIdx.x, nfi, goffset,val,prev;
 	int gid = (blockIdx.x) + start;
 	char rowCache, resultCache;
@@ -118,7 +118,7 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 	if (tid < height) {
 //		printf("%s - Line: %d, gate: %d\n",__FILE__, __LINE__,gid);
 		cache = 0;
-		row = ADDR2D(char,input,pitch,tid,gid);
+		row = ADDR2D(char,input,inpitch,tid,gid);
 		//(char*)((char*)input + gid*pitch);
 		rowResults = ADDR2D(char,results,pitch,tid,gid);
 		tmp = 1;
@@ -174,11 +174,11 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 					fin = 1;
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						cache = tex2D(and2OutputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
+						cache = tex2D(and2OutputPropLUT, REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2)));
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
 						if (nfi > 1) {
-							cache = tex2D(and2InputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
+							cache = tex2D(and2InputPropLUT, REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2)));
 							fin = cache && fin && prev;
 						}
 					}
@@ -192,12 +192,12 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 					fin = 1;
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						cache = tex2D(or2OutputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
+						cache = tex2D(or2OutputPropLUT, REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2)));
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
 
 						if (nfi > 1) {
-							cache = tex2D(or2InputPropLUT, REF2D(char,input,pitch,FIN(fans,goffset,fin1),tid), REF2D(char,input,pitch,FIN(fans,goffset,fin2),tid));
+							cache = tex2D(or2InputPropLUT, REF2D(char,input,inpitch,FIN(fans,goffset,fin1),tid), REF2D(char,input,inpitch,FIN(fans,goffset,fin2),tid));
 							fin = cache && fin && prev;
 						}
 
@@ -212,11 +212,11 @@ __global__ void kernMarkPathSegments(char *input, char* results, GPUNODE* node, 
 					fin = 1;
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						cache = tex2D(xor2OutputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
+						cache = tex2D(xor2OutputPropLUT, REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2)));
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
 						if (nfi > 1) {
-							cache = tex2D(xor2InputPropLUT, REF2D(char,input,pitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,pitch,tid,FIN(fans,goffset,fin2)));
+							cache = tex2D(xor2InputPropLUT, REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2)));
 							fin = cache && fin && prev;
 						}
 					}
@@ -246,8 +246,7 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 	for (int i = ckt.levels(); i >= 0; i--) {
 		dim3 numBlocks(ckt.levelsize(i),blockcount_y);
 		startGate -= ckt.levelsize(i);
-		DPRINT("Level %d, starting gate: %d width: %lu height %lu\n",i,startGate, results.width(),results.height());
-		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu(),results.gpu(), ckt.gpu_graph(), ckt.offset(), results.width(), results.height(), startGate, results.pitch());
+		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu().data,input.gpu().pitch,results.gpu().data, ckt.gpu_graph(), ckt.offset(), results.width(), results.height(), startGate, results.gpu().pitch);
 		cudaDeviceSynchronize();
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}

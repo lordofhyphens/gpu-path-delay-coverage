@@ -14,9 +14,9 @@ GPU_Data::~GPU_Data() {
 	if (this->_gpu->data != NULL)
 		cudaFree(this->_gpu->data);
 }
-char* GPU_Data::gpu(int ref) {
+ARRAY2D<char> GPU_Data::gpu(int ref) {
 	if (ref == this->_current) {
-		return this->_gpu->data;
+		return *(this->_gpu);
 	}
 	int tmp = this->_current;
 	int err; 
@@ -25,11 +25,11 @@ char* GPU_Data::gpu(int ref) {
 	} catch (std::out_of_range& oor) { 
 		// handling the problem by returning NULL and ensuring that _current is not changed.
 		this->_current = tmp;
-		return NULL;
+		return ARRAY2D<char>(NULL,0,0,0);
 	}
 	if (err != ERR_NONE)
-		return NULL;
-	return this->_gpu->data;
+		return ARRAY2D<char>(NULL,0,0,0);
+	return *(this->_gpu);
 }
 
 // total size in columns, rows. 
@@ -46,15 +46,14 @@ int GPU_Data::initialize(size_t in_columns, size_t in_rows) {
 	// Allocate on the GPU.
 	delete this->_gpu;
 	if (undersized == true) {
-		this->_gpu = new ARRAY2D<char>(NULL, in_rows, in_columns, free_cols);
+		this->_gpu = new ARRAY2D<char>(NULL, in_rows, in_columns, sizeof(char)*in_columns);
 	} else { 
-		this->_gpu = new ARRAY2D<char>(NULL, in_rows, free_cols, free_cols);
+		this->_gpu = new ARRAY2D<char>(NULL, in_rows, free_cols, sizeof(char)*free_cols);
 	}
-	cudaMallocPitch(&(this->_gpu->data), &(this->_gpu->pitch), this->_gpu->bwidth(), in_rows);
-	this->_pitch = this->_gpu->pitch;
+	cudaMallocPitch(&(this->_gpu->data), &(this->_gpu->pitch), sizeof(char)*this->_gpu->width, in_rows);
 	int chunks = (in_columns / free_cols) + ((in_columns % free_cols) > 0);
 	for (int i = 0; i < chunks;i++) {
-		this->_data->push_back(ARRAY2D<char>(in_rows, free_cols, this->_pitch));
+		this->_data->push_back(ARRAY2D<char>(in_rows, free_cols));
 	}
 	this->_current = 0;
 	this->_block_size = this->_gpu->width;
@@ -67,9 +66,11 @@ int GPU_Data::initialize(size_t in_columns, size_t in_rows) {
 int GPU_Data::copy(int ref) {
 	int error;
 	ARRAY2D<char>* cpu = &(this->_data->at(this->_current));
-	cudaMemcpy2D(cpu->data, this->_pitch, this->_gpu->data, this->_pitch, cpu->bwidth(), cpu->height, cudaMemcpyDeviceToHost);
+	ARRAY2D<char>* gpu = this->_gpu;
+	cudaMemcpy2D(cpu->data, gpu->pitch, gpu->data, cpu->pitch, cpu->width * sizeof(char), cpu->height, cudaMemcpyDeviceToHost);
 	error = cudaGetLastError();
-	cudaMemcpy2D(this->_gpu->data, this->_pitch, cpu->data, this->_pitch, cpu->bwidth(), cpu->height, cudaMemcpyHostToDevice);
+	cpu = &(this->_data->at(ref));
+	cudaMemcpy2D(gpu->data, gpu->pitch, cpu->data, cpu->pitch, cpu->width * sizeof(char), cpu->height, cudaMemcpyHostToDevice);
 	error = cudaGetLastError();
 	this->_current = ref;
 	if (error != cudaSuccess)
@@ -80,7 +81,8 @@ int GPU_Data::copy(int ref) {
 int GPU_Data::refresh() {
 	int error;
 	ARRAY2D<char>* cpu = &(this->_data->at(this->_current));
-	cudaMemcpy2D(this->_gpu->data, this->_pitch, cpu->data, this->_pitch, cpu->bwidth(), cpu->height, cudaMemcpyHostToDevice);
+	ARRAY2D<char>* gpu = this->_gpu;
+	cudaMemcpy2D(gpu->data, gpu->pitch, cpu->data, cpu->pitch, cpu->width*sizeof(char), cpu->height, cudaMemcpyHostToDevice);
 	error = cudaGetLastError();
 	if (error != cudaSuccess)
 		return ERR_NONE;
@@ -88,7 +90,7 @@ int GPU_Data::refresh() {
 }
 std::string GPU_Data::debug() {
 	std::stringstream st; 
-	st << "GPU DATA,width="<<this->width()<<",height="<< this->height()<< ",pitch="<<this->pitch()<<",blocksize="<< this->_block_size << ",chunks="<<this->_data->size()<<",current="<<this->_current << std::endl;
+	st << "GPU DATA,width="<<this->width()<<",height="<< this->height()<< ",pitch="<<this->gpu().pitch<<",blocksize="<< this->_block_size << ",chunks="<<this->_data->size()<<",current="<<this->_current << std::endl;
 	return st.str();
 }
 
@@ -108,10 +110,28 @@ void gpu_shift(GPU_Data& pack) {
 	cudaMalloc(&tmpspace, sizeof(char)*pack.height());
 	for (int i = 0; i < per; i++) {
 		DPRINT("Shifting batch %d\n",i);
-		kernShift<<<pack.height(),1>>>(pack.gpu(), tmpspace, pack.pitch(),i,pack.width());
+		kernShift<<<pack.height(),1>>>(pack.gpu().data, tmpspace, pack.gpu().pitch,i,pack.width());
 		cudaDeviceSynchronize();
 		assert(cudaGetLastError() == cudaSuccess);
 	}
 }
 
+void debugDataOutput(ARRAY2D<char> results, std::string outfile = "simdata.log") {
+#ifndef NDEBUG
+	char *lvalues;
+	std::ofstream ofile(outfile.c_str());
+
+	lvalues = (char*)malloc(results.height*results.pitch);
+	cudaMemcpy2D(lvalues,results.pitch,results.data,results.pitch,results.width,results.height,cudaMemcpyDeviceToHost);
+	for (unsigned int r = 0;r < results.width; r++) {
+		for (unsigned int i = 0; i < results.height; i++) {
+			char z = REF2D(char, lvalues, results.pitch, r, i);
+			ofile << (int)z;
+		}
+		ofile << std::endl;
+	}
+	free(lvalues);
+	ofile.close();
+#endif
+}
 
