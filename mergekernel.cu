@@ -41,12 +41,12 @@ __global__ void kernReduce(char* input, size_t height, size_t pitch, int goffset
     if (MERGE_SIZE >= 128) { if (tid <  64 && tid+64 < height) { sdata[tid] = MIN(tid, tid+64,sdata); } __syncthreads(); }
 	if (tid < 32) {
 		// Within a warp,  don't need __syncthreads();
-		if (MERGE_SIZE >=  64) { if (tid+64 < height) { sdata[tid] = MIN(tid, tid + 32,sdata); } }
-		if (MERGE_SIZE >=  32) { if (tid+32 < height) { sdata[tid] = MIN(tid, tid + 16,sdata); } }
-		if (MERGE_SIZE >=  16) { if (tid+16 < height) { sdata[tid] = MIN(tid, tid +  8,sdata); } }
-		if (MERGE_SIZE >=   8) { if (tid+8 < height) { sdata[tid] = MIN(tid, tid +  4,sdata); } }
-		if (MERGE_SIZE >=   4) { if (tid+4 < height) { sdata[tid] = MIN(tid, tid +  2,sdata); } }
-		if (MERGE_SIZE >=   2) { if (tid+2 < height) { sdata[tid] = MIN(tid, tid +  1,sdata); } }
+		if (MERGE_SIZE >=  64) { if (tid+32 < height) { sdata[tid] = MIN(tid, tid + 32,sdata); } }
+		if (MERGE_SIZE >=  32) { if (tid+16 < height) { sdata[tid] = MIN(tid, tid + 16,sdata); } }
+		if (MERGE_SIZE >=  16) { if (tid+8 < height) { sdata[tid] = MIN(tid, tid +  8,sdata); } }
+		if (MERGE_SIZE >=   8) { if (tid+4 < height) { sdata[tid] = MIN(tid, tid +  4,sdata); } }
+		if (MERGE_SIZE >=   4) { if (tid+2 < height) { sdata[tid] = MIN(tid, tid +  2,sdata); } }
+		if (MERGE_SIZE >=   2) { if (tid+1 < height) { sdata[tid] = MIN(tid, tid +  1,sdata); } }
 	}
 	
 	// at this point, we have the position of the lowest. Correct by 1 to compensate for above.
