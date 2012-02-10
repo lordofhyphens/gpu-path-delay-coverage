@@ -72,29 +72,45 @@ float serial(Circuit& ckt, CPU_Data& input) {
         // simulate pattern 1
         //std::cerr << "Serial Simulate P1" << std::endl;
         cpuSimulateP1(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern);
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+        elapsed = floattime(diff(start, stop));
+        total += elapsed;
 		//std::cerr << "Simulate: ";
 		debugPrintSim(ckt, simulate,pattern, 2, s1file);
         // simulate pattern 2
         //std::cerr << "Serial Simulate P2" << std::endl;
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		if (pattern == (input.width()-1))  {
 			cpuSimulateP2(ckt, input.cpu().data, simulate, input.cpu().pitch,0);
 		}
 		else {
 			cpuSimulateP2(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern+1);
 		}
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+        elapsed = floattime(diff(start, stop));
+        total += elapsed;
 		//std::cerr << "Simulate: ";
 		debugPrintSim(ckt, simulate,pattern, 2, s2file);
         // mark
         //std::cerr << "Mark" << std::endl;
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
         cpuMark(ckt, simulate, mark);
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+        elapsed = floattime(diff(start, stop));
+        total += elapsed;
 		//std::cerr << "    Mark: ";
 		debugPrintSim(ckt, mark,pattern, 3, mfile);
         // calculate coverage against all previous runs
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
         cpuCover(ckt, mark, merge, hist_cover, cover,coverage);
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+        elapsed = floattime(diff(start, stop));
+        total += elapsed;
 		//std::cerr << "   Cover: ";
 		//debugPrintSim(ckt, cover,pattern, 4, cfile);
         // merge mark to history
         //std::cerr << "Merge" << std::endl;
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
         cpuMerge(ckt, mark, merge);
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
         elapsed = floattime(diff(start, stop));
