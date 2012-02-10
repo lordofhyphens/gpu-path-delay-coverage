@@ -129,6 +129,30 @@ float serial(Circuit& ckt, CPU_Data& input) {
 	cfile.close();
     return total;
 }
+int gateeval (int f1, int f2, int type) {
+	int nand2[16] = {1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0};
+	int and2[16]  = {0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1};
+	int nor2[16]  = {1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0};
+	int or2[16]   = {0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1};
+	int xnor2[16] = {1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1};
+	int xor2[16]  = {0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0};
+	int val = 0xff;
+	switch(type) {
+		case AND: 
+			val = REF2D(int, and2, sizeof(int)*4, f1, f2); break;
+		case NAND:
+			val = REF2D(int, nand2, sizeof(int)*4, f1, f2); break;
+		case OR:
+			val = REF2D(int, or2, sizeof(int)*4, f1, f2); break;
+		case NOR: 
+			val = REF2D(int, nor2, sizeof(int)*4, f1, f2); break;
+		case XOR: 
+			val = REF2D(int, xor2, sizeof(int)*4, f1, f2); break;
+		case XNOR:
+			val = REF2D(int, xnor2, sizeof(int)*4, f1, f2); break;
+	}
+	return val;
+}
 
 void cpuSimulateP1(const Circuit& ckt, char* pi, int* sim, size_t pi_pitch, size_t pattern) {
     for (int g = 0; g < ckt.size(); g++) {
@@ -147,27 +171,8 @@ void cpuSimulateP1(const Circuit& ckt, char* pi, int* sim, size_t pi_pitch, size
                 }
                 int j = 1;
                 while (j < gate.nfi) {
-                    switch(gate.typ) {
-                        case AND: 
-                            val = (val & FREF(sim,gate,fin,j));
-                            break;
-                        case NAND:
-                            val = !(val & FREF(sim,gate,fin,j));
-                            break;
-                        case OR:
-                            val = (val | FREF(sim,gate,fin,j));
-                            break;
-                        case NOR: 
-                            val = !(val | FREF(sim,gate,fin,j));
-                            break;
-                        case XOR: 
-                            val = (val ^ FREF(sim,gate,fin,j));
-                            break;
-                        case XNOR:
-                            val = !(val ^ FREF(sim,gate,fin,j));
-                            break;
-                    }
-                    j++;
+					val = gateeval(val,FREF(sim,gate,fin,j),gate.typ);
+					j++;
                 }
         }
         sim[g] = val;
@@ -188,30 +193,51 @@ void cpuSimulateP2(const Circuit& ckt, char* pi, int* sim,size_t pi_pitch, size_
                     val = (BIN(FREF(sim,gate,fin,0)) != 1);
                 }
                 int j = 1;
-                while (j < gate.nfi) {
-                    switch(gate.typ) {
-                        case AND: val = (BIN(val) & BIN(FREF(sim,gate,fin,j))); break;
-                        case NAND: val = !(BIN(val) & BIN(FREF(sim,gate,fin,j))); break;
-                        case OR: val = (BIN(val) | BIN(FREF(sim,gate,fin,j))); break;
-                        case NOR: val = !(BIN(val) | BIN(FREF(sim,gate,fin,j))); break;
-                        case XOR: val = (BIN(val) ^ BIN(FREF(sim,gate,fin,j))); break;
-                        case XNOR: val = !(BIN(val) ^ BIN(FREF(sim,gate,fin,j))); break;
-                    }
-                    j++;
+              while (j < gate.nfi) {
+					val = gateeval(val,FREF(sim,gate,fin,j),gate.typ);
+					j++;
                 }
+ 
         }
 		sim[g] = stable[sim[g]][val];
     }
 
 }
-
-void cpuMark(const Circuit& ckt, int* sim, int* mark) {
-	int and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,0,1};
+int cpuMarkEval_in(int f1, int f2, int type) {
 	int and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,0,1};
-	int or2_output_prop[16] = {2,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
 	int or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
 	int xor2_input_prop[16] = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	switch(type){
+		case AND:
+		case NAND:
+			return REF2D(int,and2_input_prop,sizeof(int)*4,f1,f2);
+		case NOR:
+		case OR:
+			return REF2D(int,or2_input_prop,sizeof(int)*4,f1,f2);
+		case XOR:
+		case XNOR:
+			return REF2D(int,xor2_input_prop,sizeof(int)*4,f1,f2);
+	}
+	return 0xff;
+}
+int cpuMarkEval_out(int f1, int f2, int type) {
+	int and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,0,1};
+	int or2_output_prop[16] = {2,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
 	int xor2_output_prop[16]= {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	switch(type){
+		case AND:
+		case NAND:
+			return REF2D(int,and2_output_prop,sizeof(int)*4,f1,f2);
+		case NOR:
+		case OR:
+			return REF2D(int,or2_output_prop,sizeof(int)*4,f1,f2);
+		case XOR:
+		case XNOR:
+			return REF2D(int,xor2_output_prop,sizeof(int)*4,f1,f2);
+	}
+	return 0xff;
+}
+void cpuMark(const Circuit& ckt, int* sim, int* mark) {
 
     int resultCache, fin, cache, rowCache;
     int tmp = 1, pass = 0, fin1 = 0, fin2 = 0, val, prev;
@@ -228,7 +254,7 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark) {
 			prev = 0;
 			resultCache = 0;
 			for (int i = 0; i < gate.nfo; i++) {
-				resultCache |= FREF(mark,gate,fot,i);
+				resultCache = (resultCache ==1) || (FREF(mark,gate,fot,i) > 0);
 			}
 			prev = resultCache;
 		}
@@ -255,64 +281,26 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark) {
 				// checks for path existance through the first input, so we
 				// call it twice with the inputs reversed to check both
 				// paths.
-
+			case OR:
+			case NOR:
+			case XOR:
+			case XNOR:
 			case NAND:
 			case AND:
 				for (fin1 = 0; fin1 < gate.nfi; fin1++) {
 					fin = 1;
 					for (fin2 = 0; fin2 < gate.nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						cache = REF2D(int,and2_output_prop,sizeof(int)*4,FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2));
+						cache = cpuMarkEval_out(FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2),gate.typ);
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
 						if (gate.nfi > 1) {
-							cache = REF2D(int,and2_input_prop,sizeof(int)*4,FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2));
-							fin = cache && fin && prev;
-						}
-					}
-//					std::cerr << "mark[" << FADDR(gate,fin,fin1) <<  "] = "<< fin<< std::endl;
-                    FREF(mark,gate,fin,fin1) = fin;
-				}
-//				resultCache= val && tmp && (pass <= gate.nfi) && prev;
-//				std::clog << "mark[" << g << "]: " << resultCache << std::endl;
-				break;
-			case OR:
-			case NOR:
-				for (fin1 = 0; fin1 < gate.nfi; fin1++) {
-					fin = 1;
-					for (fin2 = 0; fin2 < gate.nfi; fin2++) {
-						if (fin1 == fin2) continue;
-						cache = REF2D(int,or2_output_prop,sizeof(int)*4,FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2));
-						pass += (cache > 1);
-						tmp = tmp && (cache > 0);
-
-						if (gate.nfi >= 2) {
-							cache = REF2D(int,or2_input_prop,sizeof(int)*4,FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2));
-							fin = cache && fin && prev;
-						}
-
-					}
-                    FREF(mark,gate,fin,fin1) = fin;
-				}
-//				resultCache = val && tmp && (pass <= gate.nfi) && prev;
-				break;
-			case XOR:
-			case XNOR:
-				for (fin1 = 0; fin1 < gate.nfi; fin1++) {
-					fin = 1;
-					for (fin2 = 0; fin2 < gate.nfi; fin2++) {
-						if (fin1 == fin2) continue;
-						cache = REF2D(int,xor2_output_prop,sizeof(int)*4,FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2));
-						pass += (cache > 1);
-						tmp = tmp && (cache > 0);
-						if (gate.nfi >= 2) {
-							cache = REF2D(int,xor2_input_prop,sizeof(int)*4,FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2));
+							cache = cpuMarkEval_in(FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2),gate.typ);
 							fin = cache && fin && prev;
 						}
 					}
                     FREF(mark,gate,fin,fin1) = fin;
 				}
-//				resultCache = val && tmp && (pass <= gate.nfi) && prev;
 				break;
 			default:
 				// if there is a transition that will propagate, set = to some positive #?

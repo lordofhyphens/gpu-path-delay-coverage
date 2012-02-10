@@ -106,8 +106,36 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(AndOutChainLUT,cuAndOutChain,channelDesc));
 	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
+__device__ char markeval_out (char f1, char f2, int type) {
+	switch(type) {
+		case AND:
+		case NAND:
+			return tex2D(and2OutputPropLUT, f1 , f2);
+		case OR:
+		case NOR:
+			return tex2D(or2OutputPropLUT, f1 , f2);
+		case XOR:
+		case XNOR:
+			return tex2D(xor2OutputPropLUT, f1 , f2);
+	}
+	return 0xff;
+}
+__device__ char markeval_in (char f1, char f2, int type) {
+	switch(type) {
+		case AND:
+		case NAND:
+			return tex2D(and2InputPropLUT, f1 , f2);
+		case OR:
+		case NOR:
+			return tex2D(or2InputPropLUT, f1 , f2);
+		case XOR:
+		case XNOR:
+			return tex2D(xor2InputPropLUT, f1 , f2);
+	}
+	return 0xff;
+}
 
-__global__ void kernMarkPathSegments(char *input, size_t inpitch, char* results, size_t pitch, size_t patterns, GPUNODE* node, int* fans, int start) {
+__global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, size_t pitch, size_t patterns, GPUNODE* node, int* fans, int start) {
 	int tid = (blockIdx.y * MARK_BLOCK) + threadIdx.x, nfi, goffset,val,prev;
 	int gid = (blockIdx.x) + start;
 	char rowCache, resultCache;
@@ -118,18 +146,17 @@ __global__ void kernMarkPathSegments(char *input, size_t inpitch, char* results,
 	if (tid < patterns) {
 //		printf("%s - Line: %d, gate: %d\n",__FILE__, __LINE__,gid);
 		cache = 0;
-		row = ADDR2D(char,input,inpitch,tid,gid);
-		rowResults = ADDR2D(char,results,pitch,tid,gid);
+		rowCache = REF2D(char,sim,sim_pitch,tid,gid);
+		resultCache = REF2D(char,mark,pitch,tid,gid);
 		tmp = 1;
 		nfi = node[gid].nfi;
 		type = node[gid].type;
 		goffset = node[gid].offset;
-		rowCache = *row;
-		resultCache = *rowResults;
 		__syncthreads();
 		// switching based on value causes divergence, switch based on node type.
-		// rowCache is from the simulation results. 0-1, stable, 2-3, transition
+		// rowCache is from the simulation mark. 0-1, stable, 2-3, transition
 		val = (rowCache > 1);
+
 		if (node[gid].po > 0) {
 			resultCache = val;
 			prev = val;
@@ -140,7 +167,7 @@ __global__ void kernMarkPathSegments(char *input, size_t inpitch, char* results,
 			prev = 0;
 			resultCache = 0;
 			for (int i = 0; i < node[gid].nfo; i++) {
-				resultCache = (resultCache == 1) || REF2D(char,results,pitch,tid,FIN(fans,goffset+node[gid].nfi,i));
+				resultCache = (resultCache == 1) || (REF2D(char,mark,pitch,tid,FIN(fans,goffset+node[gid].nfi,i)) > 0);
 			}
 			prev = resultCache;
 		}
@@ -148,12 +175,12 @@ __global__ void kernMarkPathSegments(char *input, size_t inpitch, char* results,
 			case FROM: break;
 			case BUFF:
 			case NOT:
-				val = tex2D(inptPropLUT, rowCache,resultCache) && prev;
-				REF2D(char,results,pitch,tid,FIN(fans,goffset,0)) = val;
+				val = NOT_IN(rowCache) && prev;
+				REF2D(char,mark,pitch,tid,FIN(fans,goffset,0)) = val;
 				resultCache = val;
 				break;
 				// For the standard gates, setting three values -- both the
-				// input lines and the output line.  rowCache[threadIdx.x][i]-1 is the
+				// sim lines and the output line.  rowCache[threadIdx.x][i]-1 is the
 				// transition on the output, offset to make the texture
 				// calculations correct because there are 4 possible values
 				// rowCache[threadIdx.x][i] can take: 0, 1, 2, 3.  0, 1 are the same, as are
@@ -163,73 +190,36 @@ __global__ void kernMarkPathSegments(char *input, size_t inpitch, char* results,
 				// 1 becomes 0
 				// 2 becomes 1
 				// 3 becomes 2 (which clamps to 1)
-				// There's only 2 LUTs for each gate type. The input LUT
-				// checks for path existance through the first input, so we
-				// call it twice with the inputs reversed to check both
+				// There's only 2 LUTs for each gate type. The sim LUT
+				// checks for path existance through the first sim, so we
+				// call it twice with the sims reversed to check both
 				// paths.
+			case OR:
+			case NOR:
+			case XOR:
+			case XNOR:
 			case NAND:
 			case AND:
 				for (fin1 = 0; fin1 < nfi; fin1++) {
 					fin = 1;
-					char f1 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						char f2 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
-						cache = tex2D(and2OutputPropLUT, f1 , f2);
+						cache = markeval_out(REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin1)),REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin2)), type);
 						pass += (cache > 1);
 						tmp = tmp && (cache > 0);
 						if (nfi > 1) {
-							cache = tex2D(and2InputPropLUT, f1,f2);
+							cache = markeval_in(REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin1)),REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin2)), type);
 							fin = cache && fin && prev;
 						}
 					}
-					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
-				}
-				break;
-			case OR:
-			case NOR:
-				for (fin1 = 0; fin1 < nfi; fin1++) {
-					fin = 1;
-					char f1 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
-					for (fin2 = 0; fin2 < nfi; fin2++) {
-						if (fin1 == fin2) continue;
-						char f2 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
-						cache = tex2D(or2OutputPropLUT, f1,f2);
-						pass += (cache > 1);
-						tmp = tmp && (cache > 0);
-						if (nfi > 1) {
-							cache = tex2D(or2InputPropLUT, f1,f2);
-							fin = cache && fin && prev;
-						}
-
-					}
-					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
-				}
-				break;
-			case XOR:
-			case XNOR:
-				for (fin1 = 0; fin1 < nfi; fin1++) {
-					fin = 1;
-					char f1 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
-					for (fin2 = 0; fin2 < nfi; fin2++) {
-						if (fin1 == fin2) continue;
-						char f2 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
-						cache = tex2D(xor2OutputPropLUT, f1,f2);
-						pass += (cache > 1);
-						tmp = tmp && (cache > 0);
-						if (nfi > 1) {
-							cache = tex2D(xor2InputPropLUT, f1, f2);
-							fin = cache && fin && prev;
-						}
-					}
-					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
+					REF2D(char,mark,pitch,tid,FIN(fans,goffset,fin1)) = fin;
 				}
 				break;
 			default: break;
 		}
-		// stick the contents of resultCache into the results array
+		// stick the contents of resultCache into the mark array
 
-		*rowResults = resultCache;
+		REF2D(char,mark,pitch,tid,gid) = resultCache;
 	}
 }
 
@@ -270,7 +260,7 @@ void debugMarkOutput(ARRAY2D<char> results, std::string outfile) {
 //	for (unsigned int i = 0; i < results.height; i++) {
 //		ofile << std::setw(OUTJUST) << i << " ";
 //	}
-	ofile << std::endl;
+//	ofile << std::endl;
 	lvalues = (char*)malloc(results.height*results.pitch);
 	cudaMemcpy2D(lvalues,results.pitch,results.data,results.pitch,results.width,results.height,cudaMemcpyDeviceToHost);
 	for (unsigned int r = 0;r < results.width; r++) {

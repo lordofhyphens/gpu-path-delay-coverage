@@ -46,7 +46,6 @@ int main(int argc, char ** argv) {
 		float serial_time = serial(ckt, *vec);
 		std::cerr << "Performing serial work." << std::endl;
 		std::cerr << "Serial: " << serial_time << " ms" << std::endl;
-		std::cerr << vec->debug();
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size()); // initializing results array for simulation
@@ -58,7 +57,7 @@ int main(int argc, char ** argv) {
 		sim = gpuRunSimulation(*sim_results, *vec, ckt, 1);
 		gpu += sim;
 		std::cerr << "Pass 1: " << sim << " ms" << std::endl;
-		//debugDataOutput(vec->gpu(), "siminputs.log");
+		debugDataOutput(vec->gpu(), "siminputs.log");
 		debugSimulationOutput(sim_results->ar2d(), "gpusim-p1.log");
 // Don't need this routine if I just shift tids by 1 in the second sim pass.
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -71,7 +70,7 @@ int main(int argc, char ** argv) {
 		gpu += sim;
 		std::cerr << "Pass 2: " << sim << " ms" << std::endl;
 		debugSimulationOutput(sim_results->ar2d(), "gpusim-p2.log");
-		//debugDataOutput(vec->gpu(), "siminputs-shifted.log");
+		debugDataOutput(vec->gpu(), "siminputs-shifted.log");
 		// don't need the input vectors anymore, so remove.
 		delete vec;
 		GPU_Data *mark_results = new GPU_Data(vecdim.first, ckt.size());
