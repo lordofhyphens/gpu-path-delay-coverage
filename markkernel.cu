@@ -107,21 +107,19 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
 
-__global__ void kernMarkPathSegments(char *input, int inpitch, char* results, GPUNODE* node, int* fans, size_t width, size_t height, int start, int pitch) {
-	int tid = (blockIdx.y * blockDim.y) + threadIdx.x, nfi, goffset,val,prev;
+__global__ void kernMarkPathSegments(char *input, size_t inpitch, char* results, size_t pitch, size_t patterns, GPUNODE* node, int* fans, int start) {
+	int tid = (blockIdx.y * MARK_BLOCK) + threadIdx.x, nfi, goffset,val,prev;
 	int gid = (blockIdx.x) + start;
 	char rowCache, resultCache;
 	char cache, fin = 1;
-	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type;
+	int pass = 0, fin1 = 0, fin2 = 0,type;
 	char *rowResults;
 	char *row;
-	if (tid < height) {
+	if (tid < patterns) {
 //		printf("%s - Line: %d, gate: %d\n",__FILE__, __LINE__,gid);
 		cache = 0;
 		row = ADDR2D(char,input,inpitch,tid,gid);
-		//(char*)((char*)input + gid*pitch);
 		rowResults = ADDR2D(char,results,pitch,tid,gid);
-		tmp = 1;
 		nfi = node[gid].nfi;
 		type = node[gid].type;
 		goffset = node[gid].offset;
@@ -141,7 +139,7 @@ __global__ void kernMarkPathSegments(char *input, int inpitch, char* results, GP
 			prev = 0;
 			resultCache = 0;
 			for (int i = 0; i < node[gid].nfo; i++) {
-				resultCache |= REF2D(char,results,pitch,tid,FIN(fans,goffset+node[gid].nfi,i));
+				resultCache = (resultCache == 1) || REF2D(char,results,pitch,tid,FIN(fans,goffset+node[gid].nfi,i));
 			}
 			prev = resultCache;
 		}
@@ -172,57 +170,56 @@ __global__ void kernMarkPathSegments(char *input, int inpitch, char* results, GP
 			case AND:
 				for (fin1 = 0; fin1 < nfi; fin1++) {
 					fin = 1;
+					char *f1 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						cache = tex2D(and2OutputPropLUT, REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2)));
+						char *f2 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
+						cache = tex2D(and2OutputPropLUT, *f1 , *f2);
 						pass += (cache > 1);
-						tmp = tmp && (cache > 0);
 						if (nfi > 1) {
-							cache = tex2D(and2InputPropLUT, REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2)));
+							cache = tex2D(and2InputPropLUT, *f1 , *f2);
 							fin = cache && fin && prev;
 						}
 					}
-					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
+					*f1 = fin;
 				}
-	//			resultCache= val && tmp && (pass < nfi) && prev;
 				break;
 			case OR:
 			case NOR:
 				for (fin1 = 0; fin1 < nfi; fin1++) {
 					fin = 1;
+					char *f1 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						cache = tex2D(or2OutputPropLUT, REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2)));
+						char *f2 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
+						cache = tex2D(or2OutputPropLUT, *f1, *f2);
 						pass += (cache > 1);
-						tmp = tmp && (cache > 0);
-
 						if (nfi > 1) {
-							cache = tex2D(or2InputPropLUT, REF2D(char,input,inpitch,FIN(fans,goffset,fin1),tid), REF2D(char,input,inpitch,FIN(fans,goffset,fin2),tid));
+							cache = tex2D(or2InputPropLUT, *f1, *f2);
 							fin = cache && fin && prev;
 						}
 
 					}
-					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
+					*f1 = fin;
 				}
-//				resultCache= val && tmp && (pass <= nfi) && prev;
 				break;
 			case XOR:
 			case XNOR:
 				for (fin1 = 0; fin1 < nfi; fin1++) {
 					fin = 1;
+					char *f1 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						cache = tex2D(xor2OutputPropLUT, REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2)));
+						char *f2 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
+						cache = tex2D(xor2OutputPropLUT, *f1, *f2);
 						pass += (cache > 1);
-						tmp = tmp && (cache > 0);
 						if (nfi > 1) {
-							cache = tex2D(xor2InputPropLUT, REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1)), REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2)));
+							cache = tex2D(xor2InputPropLUT, *f1, *f2);
 							fin = cache && fin && prev;
 						}
 					}
-					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
+					*f1 = fin;
 				}
-//				resultCache = val && tmp && (pass <= nfi) && prev;
 				break;
 			default: break;
 		}
@@ -236,7 +233,7 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting before we hit this point.
 	loadPropLUTs();
 	int startGate=ckt.size();
-	int blockcount_y = (int)(results.block_width()/MARK_BLOCK) + (results.block_width()%MARK_BLOCK > 0);
+	int blockcount_y = (int)(results.gpu().width/MARK_BLOCK) + ((results.gpu().width% MARK_BLOCK) > 0);
 
 #ifndef NTIMING
 	float elapsed;
@@ -245,8 +242,9 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 #endif // NTIMING
 	for (int i = ckt.levels(); i >= 0; i--) {
 		dim3 numBlocks(ckt.levelsize(i),blockcount_y);
+//		DPRINT("%lu patterns, (%d,%d) blocks.\n", results.gpu().width,ckt.levelsize(i), blockcount_y);
 		startGate -= ckt.levelsize(i);
-		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu().data,input.gpu().pitch,results.gpu().data, ckt.gpu_graph(), ckt.offset(), results.width(), results.height(), startGate, results.gpu().pitch);
+		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu().data,input.gpu().pitch,results.gpu().data, results.gpu().pitch, results.gpu().width,ckt.gpu_graph(), ckt.offset(),  startGate);
 		cudaDeviceSynchronize();
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}
@@ -264,11 +262,10 @@ void debugMarkOutput(ARRAY2D<char> results, std::string outfile) {
 #ifndef NDEBUG
 	char *lvalues;
 	std::ofstream ofile(outfile.c_str());
-	ofile << results.width << "," << results.height << std::endl;
-	ofile << "Line:   \t";
-	for (unsigned int i = 0; i < results.height; i++) {
-		ofile << std::setw(OUTJUST) << i << " ";
-	}
+//	ofile << "Line:   \t";
+//	for (unsigned int i = 0; i < results.height; i++) {
+//		ofile << std::setw(OUTJUST) << i << " ";
+//	}
 	ofile << std::endl;
 	lvalues = (char*)malloc(results.height*results.pitch);
 	cudaMemcpy2D(lvalues,results.pitch,results.data,results.pitch,results.width,results.height,cudaMemcpyDeviceToHost);

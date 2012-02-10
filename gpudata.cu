@@ -47,6 +47,7 @@ int GPU_Data::initialize(size_t in_columns, size_t in_rows) {
 	delete this->_gpu;
 	if (undersized == true) {
 		this->_gpu = new ARRAY2D<char>(NULL, in_rows, in_columns, sizeof(char)*in_columns);
+		free_cols = in_columns;
 	} else { 
 		this->_gpu = new ARRAY2D<char>(NULL, in_rows, free_cols, sizeof(char)*free_cols);
 	}
@@ -94,26 +95,26 @@ std::string GPU_Data::debug() {
 	return st.str();
 }
 
-__global__ void kernShift(char* array, char* tmpar, int pitch, int cycle, int width) {
+__global__ void kernShift(char* array, char* tmpar, int pitch, int width, int height) {
 	char tmp;
-	tmp = REF2D(char,array,pitch, 0, blockIdx.x);
-	for (int i = 0; i < width-1; i++) {
-		REF2D(char,array,pitch, i, blockIdx.x) = REF2D(char,array,pitch, i+1, blockIdx.x);
+	int tid = (blockIdx.x *THREAD_SHIFT) + threadIdx.x;
+	
+	if (threadIdx.x < height) {
+		tmp = REF2D(char,array,pitch, 0, tid);
+		for (int i = 0; i < width-1; i++) {
+			REF2D(char,array,pitch, i, tid) = REF2D(char,array,pitch, i+1, tid);
+		}
+		REF2D(char,array,pitch, width-1, tid) = tmp;
 	}
-	REF2D(char,array,pitch, width-1, blockIdx.x) = tmp;
-
 }
 
 void gpu_shift(GPU_Data& pack) {
-	int per = (pack.width() / THREAD_SHIFT) + (pack.width() % THREAD_SHIFT > 0);
+	int per = (pack.gpu().height / THREAD_SHIFT) + ((pack.gpu().height % THREAD_SHIFT) > 0);
 	char* tmpspace;
-	cudaMalloc(&tmpspace, sizeof(char)*pack.height());
-	for (int i = 0; i < per; i++) {
-		DPRINT("Shifting batch %d\n",i);
-		kernShift<<<pack.height(),1>>>(pack.gpu().data, tmpspace, pack.gpu().pitch,i,pack.width());
-		cudaDeviceSynchronize();
-		assert(cudaGetLastError() == cudaSuccess);
-	}
+	cudaMalloc(&tmpspace, sizeof(char)*pack.gpu().height);
+	kernShift<<<per,THREAD_SHIFT>>>(pack.gpu().data, tmpspace, pack.gpu().pitch,pack.gpu().width,pack.gpu().height);
+	cudaDeviceSynchronize();
+	assert(cudaGetLastError() == cudaSuccess);
 }
 
 void debugDataOutput(ARRAY2D<char> results, std::string outfile = "simdata.log") {

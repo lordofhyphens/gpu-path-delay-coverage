@@ -6,9 +6,7 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark);
 void cpuCover(const Circuit& ckt, int* mark, int* hist, int* cover, int* hist_cover, int* covered);
 inline void cpuMerge(const Circuit& ckt, int* in, int* hist) { for (int i = 0; i < ckt.size(); i++) { hist[i] = hist[i] | in[i];} }
 
-void debugPrintSim(const Circuit& ckt, int* in, int pattern, int type) {
-	std::ostream& ofile = std::clog;
-//	std::ofstream ofile("serialdebug.log",ios_base::app);
+void debugPrintSim(const Circuit& ckt, int* in, int pattern, int type, std::ostream& ofile) {
 	ofile << "Vector " << pattern << ":\t";
 	for (int i = 0; i < ckt.size(); i++) {
 		switch (type) {
@@ -35,6 +33,10 @@ void debugPrintSim(const Circuit& ckt, int* in, int pattern, int type) {
 }
 
 float serial(Circuit& ckt, CPU_Data& input) {
+	std::ofstream s1file("serialsim-p1.log", std::ios::out);
+	std::ofstream s2file("serialsim-p2.log", std::ios::out);
+	std::ofstream mfile("serialmark.log", std::ios::out);
+	std::ofstream cfile("serialcover.log", std::ios::out);
     float total = 0.0, elapsed;
     timespec start, stop;
     int* simulate;
@@ -71,7 +73,7 @@ float serial(Circuit& ckt, CPU_Data& input) {
         //std::cerr << "Serial Simulate P1" << std::endl;
         cpuSimulateP1(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern);
 		//std::cerr << "Simulate: ";
-		//debugPrintSim(ckt, simulate,pattern, 2);
+		//debugPrintSim(ckt, simulate,pattern, 2, s1file);
         // simulate pattern 2
         //std::cerr << "Serial Simulate P2" << std::endl;
 		if (pattern == (input.width()-1))  {
@@ -81,16 +83,16 @@ float serial(Circuit& ckt, CPU_Data& input) {
 			cpuSimulateP2(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern+1);
 		}
 		//std::cerr << "Simulate: ";
-		//debugPrintSim(ckt, simulate,pattern, 2);
+		//debugPrintSim(ckt, simulate,pattern, 2, s2file);
         // mark
         //std::cerr << "Mark" << std::endl;
         cpuMark(ckt, simulate, mark);
 		//std::cerr << "    Mark: ";
-		//debugPrintSim(ckt, mark,pattern, 3);
+		//debugPrintSim(ckt, mark,pattern, 3, mfile);
         // calculate coverage against all previous runs
         cpuCover(ckt, mark, merge, hist_cover, cover,coverage);
 		//std::cerr << "   Cover: ";
-		//debugPrintSim(ckt, cover,pattern, 4);
+		//debugPrintSim(ckt, cover,pattern, 4, cfile);
         // merge mark to history
         //std::cerr << "Merge" << std::endl;
         cpuMerge(ckt, mark, merge);
@@ -105,6 +107,10 @@ float serial(Circuit& ckt, CPU_Data& input) {
     }
     DPRINT("Serial Coverage: %d\n", *coverage);
     delete coverage;
+	s1file.close();
+	s2file.close();
+	mfile.close();
+	cfile.close();
     return total;
 }
 

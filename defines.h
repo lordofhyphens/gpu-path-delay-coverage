@@ -59,10 +59,10 @@
 #define BIN(V) ( (V==T1 || V==S1) )
 //thread-per-block sizes, per kernel.
 #define SIM_BLOCK 768
-#define MARK_BLOCK 128
+#define MARK_BLOCK 512
 #define MERGE_SIZE 512
 #define COVER_BLOCK 256
-#define THREAD_SHIFT 768
+#define THREAD_SHIFT 1024
 
 #define WARP_SIZE 32
 

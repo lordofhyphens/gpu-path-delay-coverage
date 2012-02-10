@@ -13,7 +13,7 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
     // cover is the coverage ints we're working with for this pass.
     // mark is the fresh marks
     // hist is the history of the mark status of all lines.
-	int tid = (blockIdx.y * blockDim.y) + threadIdx.x;
+	int tid = (blockIdx.y * COVER_BLOCK) + threadIdx.x;
 	int pid = tid + start_pattern; 
 	int g = blockIdx.x+start_offset;
 	int resultCache = 0;
@@ -53,9 +53,10 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
 				REF2D(int,hist_cover,hcover_pitch,tid,fin) = *h; //REF2D(int,hist_cover,hcover_pitch,tid,g);
 			}
         } 
-//		if (tid == 0) { printf("%s:%d - history[%d] = %d\n",  __FILE__, __LINE__,g,history[g]);}
-//		printf("%s:%d - results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, *c);
-//		printf("%s:%d - h_results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, REF2D(int,hist_cover,hcover_pitch,tid,g));
+		//if (tid == 0) { printf("%s:%d - history[%d] = %d\n",  __FILE__, __LINE__,g,history[g]);}
+
+		//printf("%s:%d - h_results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, REF2D(int,hist_cover,hcover_pitch,tid,g));
+		//printf("%s:%d - results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, *c);
 	}
 }
 
@@ -81,7 +82,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 		for (int i = ckt.levels(); i >= 0; i--) {
 			dim3 numBlocks(ckt.levelsize(i),blockcount_y);
 			startGate -= ckt.levelsize(i);
-			kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(),mark.gpu(chunk).data,mark.gpu(chunk).pitch,merges.data,g_results,h.pitch, gh_results,hc.pitch,startGate, chunk*mark.block_width(),mark.width(),ckt.offset());
+			kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(),mark.gpu(chunk).data,mark.gpu(chunk).pitch,merges.data,g_results,h.pitch, gh_results,hc.pitch,startGate, chunk*mark.block_width(),mark.gpu().width,ckt.offset());
 			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
@@ -91,7 +92,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 		for (int i = 0; i < ckt.size(); i++) {
 			if (ckt.at(i).typ == INPT) {
 				*coverage = *coverage + REF2D(int,results, h.pitch, j, i);
-//				std::clog << "cover[" << j << "][" << i << "]: " << REF2D(int,results, h.pitch, j, i) << std::endl;
+				//if (REF2D(int,results, h.pitch, j, i) > 0) 
+				//	std::clog << "cover[" << j << "][" << i << "]: " << REF2D(int,results, h.pitch, j, i) << std::endl;
 			}
 		}
 	}
@@ -120,7 +122,7 @@ void debugCoverOutput(ARRAY2D<int> results, std::string outfile) {
 		ofile << "Vector " << r << ":\t";
 		for (unsigned int i = 0; i < results.height; i++) {
 			int z = REF2D(int, results.data, results.pitch, r, i);
-//			ofile << std::setw(OUTJUST) << (int)z << " "; break;
+			ofile << std::setw(OUTJUST) << (int)z << " "; break;
 		}
 		ofile << std::endl;
 	}

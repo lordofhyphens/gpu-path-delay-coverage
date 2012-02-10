@@ -77,7 +77,7 @@ __global__ void kernSetMin(int* g_odata, size_t pitch,int* intermediate, int len
 }
 // scan through input until the first 1 is found, save the identifier and memset all indicies above that.
 float gpuMergeHistory(GPU_Data& input, ARRAY2D<int> mergeids) {
-	size_t block_x = (input.width() / MERGE_SIZE) + (input.width() % MERGE_SIZE) > 1;
+	size_t block_x = (input.width() / MERGE_SIZE) + ((input.width() % MERGE_SIZE) > 1);
 	size_t block_y = input.height();
 	int* temparray;
 	size_t pitch;
@@ -88,8 +88,8 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int> mergeids) {
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-	DPRINT("Blocks: (%lu, %lu), %d\n", block_x, block_y, MERGE_SIZE);
-	kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu().data, input.height(), input.gpu().pitch, 0, temparray, pitch);
+//	DPRINT("Blocks: %lu (%lu, %lu), %d\n", input.width(), block_x, block_y, MERGE_SIZE);
+	kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu().data, input.gpu().width, input.gpu().pitch, 0, temparray, pitch);
 	cudaDeviceSynchronize();
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	dim3 blocksmin(1, block_y);
