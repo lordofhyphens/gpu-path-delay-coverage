@@ -73,7 +73,7 @@ float serial(Circuit& ckt, CPU_Data& input) {
         //std::cerr << "Serial Simulate P1" << std::endl;
         cpuSimulateP1(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern);
 		//std::cerr << "Simulate: ";
-		//debugPrintSim(ckt, simulate,pattern, 2, s1file);
+		debugPrintSim(ckt, simulate,pattern, 2, s1file);
         // simulate pattern 2
         //std::cerr << "Serial Simulate P2" << std::endl;
 		if (pattern == (input.width()-1))  {
@@ -83,12 +83,12 @@ float serial(Circuit& ckt, CPU_Data& input) {
 			cpuSimulateP2(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern+1);
 		}
 		//std::cerr << "Simulate: ";
-		//debugPrintSim(ckt, simulate,pattern, 2, s2file);
+		debugPrintSim(ckt, simulate,pattern, 2, s2file);
         // mark
         //std::cerr << "Mark" << std::endl;
         cpuMark(ckt, simulate, mark);
 		//std::cerr << "    Mark: ";
-		//debugPrintSim(ckt, mark,pattern, 3, mfile);
+		debugPrintSim(ckt, mark,pattern, 3, mfile);
         // calculate coverage against all previous runs
         cpuCover(ckt, mark, merge, hist_cover, cover,coverage);
 		//std::cerr << "   Cover: ";

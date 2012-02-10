@@ -26,7 +26,7 @@ __device__ char simLUT(int type, char val, char r) {
 		case AND: return tex2D(and2LUT, val, r);
 		case NAND: return tex2D(nand2LUT, val, r);
 		default:
-			return 0;
+			return -1;
 	}
 }
 __global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, size_t pi_offset, char* output_data, size_t pitch,size_t pattern_count, int* fanout_index, int start_offset) {
@@ -53,7 +53,6 @@ __global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 					j = 1;
 					while (j < nfi) {
 						__syncthreads();
-						//r = ((char*)output_data+(fanout_index[goffset+j]*pitch))[tid];
 						r = REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,j));  
 						val = simLUT(type,val,r);
 						j++;
@@ -71,7 +70,7 @@ __global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 
 	if (tid < pattern_count) {
 		row = ((char*)output_data + gid*pitch)+tid; // get the line row for the current gate
-		tid = tid + 1; if (tid > pattern_count) { tid = 0; }
+//		tid = tid + 1; if (tid >= pattern_count) { tid = 0; }
 		goffset = graph[gid].offset;
 		nfi = graph[gid].nfi;
 		type = graph[gid].type;

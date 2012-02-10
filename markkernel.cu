@@ -112,7 +112,7 @@ __global__ void kernMarkPathSegments(char *input, size_t inpitch, char* results,
 	int gid = (blockIdx.x) + start;
 	char rowCache, resultCache;
 	char cache, fin = 1;
-	int pass = 0, fin1 = 0, fin2 = 0,type;
+	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type;
 	char *rowResults;
 	char *row;
 	if (tid < patterns) {
@@ -120,6 +120,7 @@ __global__ void kernMarkPathSegments(char *input, size_t inpitch, char* results,
 		cache = 0;
 		row = ADDR2D(char,input,inpitch,tid,gid);
 		rowResults = ADDR2D(char,results,pitch,tid,gid);
+		tmp = 1;
 		nfi = node[gid].nfi;
 		type = node[gid].type;
 		goffset = node[gid].offset;
@@ -170,55 +171,58 @@ __global__ void kernMarkPathSegments(char *input, size_t inpitch, char* results,
 			case AND:
 				for (fin1 = 0; fin1 < nfi; fin1++) {
 					fin = 1;
-					char *f1 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
+					char f1 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						char *f2 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
-						cache = tex2D(and2OutputPropLUT, *f1 , *f2);
+						char f2 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
+						cache = tex2D(and2OutputPropLUT, f1 , f2);
 						pass += (cache > 1);
+						tmp = tmp && (cache > 0);
 						if (nfi > 1) {
-							cache = tex2D(and2InputPropLUT, *f1 , *f2);
+							cache = tex2D(and2InputPropLUT, f1,f2);
 							fin = cache && fin && prev;
 						}
 					}
-					*f1 = fin;
+					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
 				}
 				break;
 			case OR:
 			case NOR:
 				for (fin1 = 0; fin1 < nfi; fin1++) {
 					fin = 1;
-					char *f1 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
+					char f1 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						char *f2 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
-						cache = tex2D(or2OutputPropLUT, *f1, *f2);
+						char f2 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
+						cache = tex2D(or2OutputPropLUT, f1,f2);
 						pass += (cache > 1);
+						tmp = tmp && (cache > 0);
 						if (nfi > 1) {
-							cache = tex2D(or2InputPropLUT, *f1, *f2);
+							cache = tex2D(or2InputPropLUT, f1,f2);
 							fin = cache && fin && prev;
 						}
 
 					}
-					*f1 = fin;
+					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
 				}
 				break;
 			case XOR:
 			case XNOR:
 				for (fin1 = 0; fin1 < nfi; fin1++) {
 					fin = 1;
-					char *f1 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
+					char f1 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin1));
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 == fin2) continue;
-						char *f2 = ADDR2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
-						cache = tex2D(xor2OutputPropLUT, *f1, *f2);
+						char f2 = REF2D(char,input,inpitch,tid,FIN(fans,goffset,fin2));
+						cache = tex2D(xor2OutputPropLUT, f1,f2);
 						pass += (cache > 1);
+						tmp = tmp && (cache > 0);
 						if (nfi > 1) {
-							cache = tex2D(xor2InputPropLUT, *f1, *f2);
+							cache = tex2D(xor2InputPropLUT, f1, f2);
 							fin = cache && fin && prev;
 						}
 					}
-					*f1 = fin;
+					REF2D(char,results,pitch,tid,FIN(fans,goffset,fin1)) = fin;
 				}
 				break;
 			default: break;
