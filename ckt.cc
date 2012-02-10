@@ -170,6 +170,8 @@ void Circuit::annotate() {
 		for (std::vector<std::pair<std::string, int> >::iterator i = iter->fot.begin(); i < iter->fot.end(); i++) {
 			i->second = count_if(g->begin(), find(g->begin(),g->end(),i->first), Yes);
 		}
+		iter->nfi = iter->fin.size();
+		iter->nfo = iter->fot.size();
 	}
 }
 int countInLevel(std::vector<NODEC>& v, int level)  {

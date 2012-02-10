@@ -93,7 +93,7 @@ int main(int argc, char ** argv) {
 		std::cerr << "GPU Coverage: " << *coverage << std::endl;
 		gpu += cover;
 
-		std::cerr << "   GPU: " << elapsed << " ms" <<std::endl;
+		std::cerr << "   GPU: " << gpu << " ms" <<std::endl;
 		std::cerr << "Speedup:" << serial_time/gpu << "X" <<std::endl;
 		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << serial_time <<","<< gpu << "," <<  serial_time/gpu <<std::endl;
 		delete coverage;

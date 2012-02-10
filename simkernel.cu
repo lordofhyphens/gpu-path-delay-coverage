@@ -26,7 +26,7 @@ __device__ char simLUT(int type, char val, char r) {
 		case AND: return tex2D(and2LUT, val, r);
 		case NAND: return tex2D(nand2LUT, val, r);
 		default:
-			return -1;
+			return 0;
 	}
 }
 __global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, size_t pi_offset, char* output_data, size_t pitch,size_t pattern_count, int* fanout_index, int start_offset) {
@@ -53,6 +53,7 @@ __global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 					j = 1;
 					while (j < nfi) {
 						__syncthreads();
+						//r = ((char*)output_data+(fanout_index[goffset+j]*pitch))[tid];
 						r = REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,j));  
 						val = simLUT(type,val,r);
 						j++;
@@ -70,7 +71,6 @@ __global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 
 	if (tid < pattern_count) {
 		row = ((char*)output_data + gid*pitch)+tid; // get the line row for the current gate
-//		tid = tid + 1; if (tid >= pattern_count) { tid = 0; }
 		goffset = graph[gid].offset;
 		nfi = graph[gid].nfi;
 		type = graph[gid].type;
@@ -78,18 +78,18 @@ __global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 
 		rowcache = ((char*)output_data+(fanout_index[goffset]*pitch))[tid];
 		switch (type) {
-			case INPT: val = REF2D(char, pi_data, pi_pitch, (tid+pi_offset), gid); break;
+			case INPT: val = BIN(REF2D(char, pi_data, pi_pitch, (tid+pi_offset), gid)); break;
 			case FROM: val = BIN(REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,0))); break;
 			default: 
 					// we're guaranteed at least one fanin per 
 					// gate if not on an input.
 					__syncthreads();
-					if (type != NOT) { val = rowcache; } else { val = !(BIN(rowcache)); }
+					if (type != NOT) { val = BIN(rowcache); } else { val = !(BIN(rowcache)); }
 					j = 1;
 					while (j < nfi) {
 						__syncthreads();
 						r = REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,j));
-						val = simLUT(type,val,r);
+						val = simLUT(type,val,BIN(r));
 						j++;
 					}
 		}
@@ -183,12 +183,6 @@ void debugSimulationOutput(ARRAY2D<char> results, std::string outfile = "simdebu
 #ifndef NDEBUG
 	char *lvalues;
 	std::ofstream ofile(outfile.c_str());
-		ofile << "Line:   \t";
-	for (unsigned int i = 0; i < results.height; i++) {
-		ofile << std::setw(OUTJUST) << i << " ";
-	}
-	ofile << std::endl;
-
 	lvalues = (char*)malloc(results.height*results.pitch);
 	cudaMemcpy2D(lvalues,results.pitch,results.data,results.pitch,results.width,results.height,cudaMemcpyDeviceToHost);
 	for (unsigned int r = 0;r < results.width; r++) {

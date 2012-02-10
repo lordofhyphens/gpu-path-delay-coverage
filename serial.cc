@@ -26,7 +26,8 @@ void debugPrintSim(const Circuit& ckt, int* in, int pattern, int type, std::ostr
 			case 3: 
 				ofile << std::setw(OUTJUST) << (in[i] > 0 ? 'Y' : 'N') << " "; break;
 			default:
-				ofile << std::setw(OUTJUST) << (int)in[i] << " "; break;
+				if (ckt.at(i).typ == INPT)
+					ofile << std::setw(OUTJUST) << (int)in[i] << " "; break;
 		}
 	}
 	ofile << std::endl;
@@ -89,7 +90,6 @@ float serial(Circuit& ckt, CPU_Data& input) {
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
         elapsed = floattime(diff(start, stop));
         total += elapsed;
-		//std::cerr << "Simulate: ";
 		debugPrintSim(ckt, simulate,pattern, 2, s2file);
         // mark
         //std::cerr << "Mark" << std::endl;
@@ -107,7 +107,7 @@ float serial(Circuit& ckt, CPU_Data& input) {
         elapsed = floattime(diff(start, stop));
         total += elapsed;
 		//std::cerr << "   Cover: ";
-		//debugPrintSim(ckt, cover,pattern, 4, cfile);
+		debugPrintSim(ckt, cover,pattern, 4, cfile);
         // merge mark to history
         //std::cerr << "Merge" << std::endl;
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -169,9 +169,9 @@ void cpuSimulateP1(const Circuit& ckt, char* pi, int* sim, size_t pi_pitch, size
                 } else {
                     val = (FREF(sim,gate,fin,0) != 1);
                 }
-                int j = 1;
-                while (j < gate.nfi) {
-					val = gateeval(val,FREF(sim,gate,fin,j),gate.typ);
+                unsigned int j = 1;
+                while (j < gate.fin.size()) {
+					val = gateeval(val,sim[gate.fin.at(j).second],gate.typ);
 					j++;
                 }
         }
@@ -192,8 +192,8 @@ void cpuSimulateP2(const Circuit& ckt, char* pi, int* sim,size_t pi_pitch, size_
                 } else {
                     val = (BIN(FREF(sim,gate,fin,0)) != 1);
                 }
-                int j = 1;
-              while (j < gate.nfi) {
+              unsigned int j = 1;
+              while (j < gate.fin.size()) {
 					val = gateeval(val,FREF(sim,gate,fin,j),gate.typ);
 					j++;
                 }
@@ -258,6 +258,7 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark) {
 			}
 			prev = resultCache;
 		}
+		mark[g] = resultCache;
         switch(gate.typ) {
             case FROM: break;
             case BUFF:
@@ -307,7 +308,6 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark) {
 				break;
 		}
 		// stick the contents of resultCache into the results array
-		mark[g] = resultCache;
 	}
 }
 void cpuCover(const Circuit& ckt, int* mark, int* hist, int* hist_cover, int* cover, int* covered) {

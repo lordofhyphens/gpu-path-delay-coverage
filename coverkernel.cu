@@ -53,7 +53,7 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
 				REF2D(int,hist_cover,hcover_pitch,tid,fin) = *h; //REF2D(int,hist_cover,hcover_pitch,tid,g);
 			}
         } 
-		//if (tid == 0) { printf("%s:%d - history[%d] = %d\n",  __FILE__, __LINE__,g,history[g]);}
+	//	if (tid == 0) { printf("%s:%d - history[%d] = %d\n",  __FILE__, __LINE__,g,history[g]);}
 
 		//printf("%s:%d - h_results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, REF2D(int,hist_cover,hcover_pitch,tid,g));
 		//printf("%s:%d - results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, *c);
@@ -92,8 +92,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 		for (int i = 0; i < ckt.size(); i++) {
 			if (ckt.at(i).typ == INPT) {
 				*coverage = *coverage + REF2D(int,results, h.pitch, j, i);
-				//if (REF2D(int,results, h.pitch, j, i) > 0) 
-				//	std::clog << "cover[" << j << "][" << i << "]: " << REF2D(int,results, h.pitch, j, i) << std::endl;
+			//	if (REF2D(int,results, h.pitch, j, i) > 0) 
+			//		std::clog << "cover[" << j << "][" << i << "]: " << REF2D(int,results, h.pitch, j, i) << std::endl;
 			}
 		}
 	}

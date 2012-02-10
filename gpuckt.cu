@@ -37,8 +37,8 @@ void GPU_Circuit::copy() {
 	offsets = (int*)malloc(sizeof(int)*maxoff); 
 	for (unsigned int i = 0; i < g->size(); i++) {
 		ggraph[i].type = graph->at(i).typ;
-		ggraph[i].nfi = graph->at(i).nfi;
-		ggraph[i].nfo = graph->at(i).nfo;
+		ggraph[i].nfi = graph->at(i).fin.size();
+		ggraph[i].nfo = graph->at(i).fot.size();
 		ggraph[i].po = graph->at(i).po;
 		ggraph[i].level = graph->at(i).level;
 		if (graph->at(i).typ == 0) {

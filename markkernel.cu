@@ -107,30 +107,43 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
 __device__ char markeval_out (char f1, char f2, int type) {
+	char and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,0,1};
+	char or2_output_prop[16] = {2,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
+	char xor2_output_prop[16]= {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+
 	switch(type) {
 		case AND:
 		case NAND:
-			return tex2D(and2OutputPropLUT, f1 , f2);
+			return REF2D(char,and2_output_prop,sizeof(char)*4,f1,f2);
+			//return tex2D(and2OutputPropLUT, f1 , f2);
 		case OR:
 		case NOR:
-			return tex2D(or2OutputPropLUT, f1 , f2);
+			return REF2D(char,or2_output_prop,sizeof(char)*4,f1,f2);
+			//return tex2D(or2OutputPropLUT, f1 , f2);
 		case XOR:
 		case XNOR:
-			return tex2D(xor2OutputPropLUT, f1 , f2);
+			return REF2D(char,xor2_output_prop,sizeof(char)*4,f1,f2);
+			//return tex2D(xor2OutputPropLUT, f1 , f2);
 	}
 	return 0xff;
 }
 __device__ char markeval_in (char f1, char f2, int type) {
+	char and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,0,1};
+	char or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	char xor2_input_prop[16] = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
 	switch(type) {
 		case AND:
 		case NAND:
-			return tex2D(and2InputPropLUT, f1 , f2);
+			return REF2D(char,and2_input_prop,sizeof(char)*4,f1,f2);
+			//return tex2D(and2InputPropLUT, f1 , f2);
 		case OR:
 		case NOR:
-			return tex2D(or2InputPropLUT, f1 , f2);
+			return REF2D(char,or2_input_prop,sizeof(char)*4,f1,f2);
+			//return tex2D(or2InputPropLUT, f1 , f2);
 		case XOR:
 		case XNOR:
-			return tex2D(xor2InputPropLUT, f1 , f2);
+			return REF2D(char,xor2_input_prop,sizeof(char)*4,f1,f2);
+			//return tex2D(xor2InputPropLUT, f1 , f2);
 	}
 	return 0xff;
 }
@@ -141,8 +154,6 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 	char rowCache, resultCache;
 	char cache, fin = 1;
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type;
-	char *rowResults;
-	char *row;
 	if (tid < patterns) {
 //		printf("%s - Line: %d, gate: %d\n",__FILE__, __LINE__,gid);
 		cache = 0;
@@ -167,17 +178,18 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 			prev = 0;
 			resultCache = 0;
 			for (int i = 0; i < node[gid].nfo; i++) {
-				resultCache = (resultCache == 1) || (REF2D(char,mark,pitch,tid,FIN(fans,goffset+node[gid].nfi,i)) > 0);
+				resultCache = (resultCache == 1) || (REF2D(char,mark,pitch,tid,FIN(fans,goffset,i+node[gid].nfi)) > 0);
 			}
 			prev = resultCache;
 		}
+		REF2D(char,mark,pitch,tid,gid) = resultCache;
 		switch(type) {
 			case FROM: break;
 			case BUFF:
 			case NOT:
 				val = NOT_IN(rowCache) && prev;
 				REF2D(char,mark,pitch,tid,FIN(fans,goffset,0)) = val;
-				resultCache = val;
+//				resultCache = val;
 				break;
 				// For the standard gates, setting three values -- both the
 				// sim lines and the output line.  rowCache[threadIdx.x][i]-1 is the
@@ -219,7 +231,6 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 		}
 		// stick the contents of resultCache into the mark array
 
-		REF2D(char,mark,pitch,tid,gid) = resultCache;
 	}
 }
 

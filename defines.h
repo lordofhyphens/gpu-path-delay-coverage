@@ -39,6 +39,7 @@
 
 
 // utility macros to makke addressing a little easier.
+// byte-based offsets, pitch is the width of the linear array in bytes.
 #define REF2D(TYPE,ARRAY,PITCH,X,Y) ( (((TYPE*)((char*)ARRAY + Y*PITCH))[X] ))
 #define ADDR2D(TYPE,ARRAY,PITCH,X,Y) ( (((TYPE*)((char*)ARRAY + Y*PITCH))+X ))
 //Usage: REF2D(int,o_count,p_count,pid,gid)
