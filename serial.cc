@@ -24,7 +24,11 @@ void debugPrintSim(const Circuit& ckt, int* in, int pattern, int type, std::ostr
 						ofile << std::setw(OUTJUST) << (int)in[i] << " "; break;
 				} break;
 			case 3: 
-				ofile << std::setw(OUTJUST) << (in[i] > 0 ? 'Y' : 'N') << " "; break;
+				switch (in[i]) {
+					case 0: ofile << std::setw(OUTJUST) << "N" << " "; break;
+					case 1: ofile << std::setw(OUTJUST) << "Y" << " "; break;
+					default: ofile << std::setw(OUTJUST) << (int)in[i] << " "; break;
+				}
 			default:
 				if (ckt.at(i).typ == INPT)
 					ofile << std::setw(OUTJUST) << (int)in[i] << " "; break;
@@ -258,7 +262,6 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark) {
 			}
 			prev = resultCache;
 		}
-		mark[g] = resultCache;
         switch(gate.typ) {
             case FROM: break;
             case BUFF:
@@ -291,13 +294,14 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark) {
 				for (fin1 = 0; fin1 < gate.nfi; fin1++) {
 					fin = 1;
 					for (fin2 = 0; fin2 < gate.nfi; fin2++) {
-						if (fin1 == fin2) continue;
-						cache = cpuMarkEval_out(FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2),gate.typ);
-						pass += (cache > 1);
-						tmp = tmp && (cache > 0);
-						if (gate.nfi > 1) {
-							cache = cpuMarkEval_in(FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2),gate.typ);
-							fin = cache && fin && prev;
+						if (fin1 != fin2) {
+							cache = cpuMarkEval_out(FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2),gate.typ);
+							pass += (cache > 1);
+							tmp = tmp && (cache > 0);
+							if (gate.nfi > 1) {
+								cache = cpuMarkEval_in(FREF(sim,gate,fin,fin1), FREF(sim,gate,fin,fin2),gate.typ);
+								fin = cache && fin && prev;
+							}
 						}
 					}
                     FREF(mark,gate,fin,fin1) = fin;
@@ -308,6 +312,7 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark) {
 				break;
 		}
 		// stick the contents of resultCache into the results array
+		mark[g] = resultCache;
 	}
 }
 void cpuCover(const Circuit& ckt, int* mark, int* hist, int* hist_cover, int* cover, int* covered) {

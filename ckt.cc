@@ -109,6 +109,10 @@ void Circuit::read_bench(char* benchfile) {
 		g->push_back(*iter);
 	}
 	remove_if(g->begin(),g->end(),isUnknown);
+	std::sort(g->begin(), g->end(),nameSort);
+	std::vector<NODEC>::iterator it = unique(g->begin(),g->end(),isDuplicate);
+	g->resize(it - g->begin());
+
 	this->levelize();
 	std::sort(g->begin(), g->end());
 	annotate();
@@ -145,6 +149,8 @@ void Circuit::levelize() {
 					}
 				}
 			}
+			iter->nfi = iter->fin.size();
+			iter->nfo = iter->fot.size();
 		}
 	}
 }
@@ -170,8 +176,6 @@ void Circuit::annotate() {
 		for (std::vector<std::pair<std::string, int> >::iterator i = iter->fot.begin(); i < iter->fot.end(); i++) {
 			i->second = count_if(g->begin(), find(g->begin(),g->end(),i->first), Yes);
 		}
-		iter->nfi = iter->fin.size();
-		iter->nfo = iter->fot.size();
 	}
 }
 int countInLevel(std::vector<NODEC>& v, int level)  {
@@ -187,4 +191,10 @@ bool isUnknown(const NODEC& node) {
 }
 bool isInLevel(const NODEC& node, int N) {
 	return node.level == N;
+}
+bool isDuplicate(const NODEC& a, const NODEC& b) {
+	return (a.name == b.name && a.typ == b.typ);
+}
+bool nameSort(const NODEC& a, const NODEC& b) {
+	return (a.name < b.name);
 }

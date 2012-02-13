@@ -115,15 +115,12 @@ __device__ char markeval_out (char f1, char f2, int type) {
 		case AND:
 		case NAND:
 			return REF2D(char,and2_output_prop,sizeof(char)*4,f1,f2);
-			//return tex2D(and2OutputPropLUT, f1 , f2);
 		case OR:
 		case NOR:
 			return REF2D(char,or2_output_prop,sizeof(char)*4,f1,f2);
-			//return tex2D(or2OutputPropLUT, f1 , f2);
 		case XOR:
 		case XNOR:
 			return REF2D(char,xor2_output_prop,sizeof(char)*4,f1,f2);
-			//return tex2D(xor2OutputPropLUT, f1 , f2);
 	}
 	return 0xff;
 }
@@ -135,27 +132,26 @@ __device__ char markeval_in (char f1, char f2, int type) {
 		case AND:
 		case NAND:
 			return REF2D(char,and2_input_prop,sizeof(char)*4,f1,f2);
-			//return tex2D(and2InputPropLUT, f1 , f2);
 		case OR:
 		case NOR:
 			return REF2D(char,or2_input_prop,sizeof(char)*4,f1,f2);
-			//return tex2D(or2InputPropLUT, f1 , f2);
 		case XOR:
 		case XNOR:
 			return REF2D(char,xor2_input_prop,sizeof(char)*4,f1,f2);
-			//return tex2D(xor2InputPropLUT, f1 , f2);
 	}
 	return 0xff;
 }
 
 __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, size_t pitch, size_t patterns, GPUNODE* node, int* fans, int start) {
-	int tid = (blockIdx.y * MARK_BLOCK) + threadIdx.x, nfi, goffset,val,prev;
+	int tid = (blockIdx.y * blockDim.x) + threadIdx.x, nfi, goffset,val,prev;
 	int gid = (blockIdx.x) + start;
 	char rowCache, resultCache;
 	char cache, fin = 1;
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type;
 	if (tid < patterns) {
-//		printf("%s - Line: %d, gate: %d\n",__FILE__, __LINE__,gid);
+//		if (tid == 0) {
+//			printf("Processing gate %d, started at %d\n", gid, start);
+//		}
 		cache = 0;
 		rowCache = REF2D(char,sim,sim_pitch,tid,gid);
 		resultCache = REF2D(char,mark,pitch,tid,gid);
@@ -182,14 +178,13 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 			}
 			prev = resultCache;
 		}
-		REF2D(char,mark,pitch,tid,gid) = resultCache;
 		switch(type) {
 			case FROM: break;
 			case BUFF:
 			case NOT:
 				val = NOT_IN(rowCache) && prev;
 				REF2D(char,mark,pitch,tid,FIN(fans,goffset,0)) = val;
-//				resultCache = val;
+				resultCache = val;
 				break;
 				// For the standard gates, setting three values -- both the
 				// sim lines and the output line.  rowCache[threadIdx.x][i]-1 is the
@@ -212,16 +207,17 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 			case XNOR:
 			case NAND:
 			case AND:
-				for (fin1 = 0; fin1 < nfi; fin1++) {
+				for (fin1 = 0; fin1 < node[gid].nfi; fin1++) {
 					fin = 1;
 					for (fin2 = 0; fin2 < nfi; fin2++) {
-						if (fin1 == fin2) continue;
-						cache = markeval_out(REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin1)),REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin2)), type);
-						pass += (cache > 1);
-						tmp = tmp && (cache > 0);
-						if (nfi > 1) {
-							cache = markeval_in(REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin1)),REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin2)), type);
-							fin = cache && fin && prev;
+						if (fin1 != fin2) {
+							cache = markeval_out(REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin1)),REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin2)), type);
+							pass += (cache > 1);
+							tmp = tmp && (cache > 0);
+							if (nfi > 1) {
+								cache = markeval_in(REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin1)),REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin2)), type);
+								fin = cache && fin && prev;
+							}
 						}
 					}
 					REF2D(char,mark,pitch,tid,FIN(fans,goffset,fin1)) = fin;
@@ -230,6 +226,8 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 			default: break;
 		}
 		// stick the contents of resultCache into the mark array
+		REF2D(char,mark,pitch,tid,gid) = resultCache;
+
 
 	}
 }
@@ -237,9 +235,8 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting before we hit this point.
 	loadPropLUTs();
-	int startGate=ckt.size();
+	int startGate=ckt.size()-1;
 	int blockcount_y = (int)(results.gpu().width/MARK_BLOCK) + ((results.gpu().width% MARK_BLOCK) > 0);
-
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
@@ -247,9 +244,8 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 #endif // NTIMING
 	for (int i = ckt.levels(); i >= 0; i--) {
 		dim3 numBlocks(ckt.levelsize(i),blockcount_y);
-//		DPRINT("%lu patterns, (%d,%d) blocks.\n", results.gpu().width,ckt.levelsize(i), blockcount_y);
-		startGate -= ckt.levelsize(i);
-		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu().data,input.gpu().pitch,results.gpu().data, results.gpu().pitch, results.gpu().width,ckt.gpu_graph(), ckt.offset(),  startGate);
+		startGate -= (ckt.levelsize(i));
+		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu().data,input.gpu().pitch,results.gpu().data, results.gpu().pitch, results.gpu().width,ckt.gpu_graph(), ckt.offset(),  startGate+1);
 		cudaDeviceSynchronize();
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}
@@ -280,9 +276,9 @@ void debugMarkOutput(ARRAY2D<char> results, std::string outfile) {
 			char z = REF2D(char, lvalues, results.pitch, r, i);
 			switch(z) {
 				case 0:
-					ofile  << std::setw(OUTJUST+1) << "N "; break;
+					ofile  << std::setw(OUTJUST) << "N" << " "; break;
 				case 1:
-					ofile  << std::setw(OUTJUST+1) << "Y "; break;
+					ofile  << std::setw(OUTJUST) << "Y" << " "; break;
 				default:
 					ofile << std::setw(OUTJUST) << (int)z << " "; break;
 			}

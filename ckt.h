@@ -38,6 +38,7 @@ struct NODEC {
 	std::string finlist;
 	std::vector<std::pair<std::string, int > > fin;
 	std::vector<std::pair<std::string, int > > fot;
+	NODEC() { name = "", typ = 0, nfi = 0, nfo = 0, po = false, finlist="";}
 	NODEC(std::string);
 	NODEC(std::string, int type);
 	NODEC(std::string id, std::string type, int nfi, std::string finlist);
@@ -85,6 +86,8 @@ bool isInLevel(const NODEC& node, int N);
 
 int countInLevel(std::vector<NODEC>& v, int level);
 bool isUnknown(const NODEC& node) ;
+bool isDuplicate(const NODEC& a, const NODEC& b);
+bool nameSort(const NODEC& a, const NODEC& b);
 
 struct StringFinder
 {

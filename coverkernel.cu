@@ -63,7 +63,7 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
 
 float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges, int* coverage) {
 	int* results, *g_results, *gh_results, *h_results;
-	int startGate=ckt.size();
+	int startGate=ckt.size()-1;
 	cudaHostAlloc(&results,sizeof(int)*mark.width()*mark.height(), cudaHostAllocMapped); // using pinned memory because we're laaaazy.
 	cudaHostAlloc(&h_results,sizeof(int)*mark.width()*mark.height(), cudaHostAllocMapped);
 	cudaHostGetDevicePointer(&g_results, results, 0);
@@ -81,8 +81,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 	for (unsigned int chunk = 0; chunk < mark.size(); chunk++) {
 		for (int i = ckt.levels(); i >= 0; i--) {
 			dim3 numBlocks(ckt.levelsize(i),blockcount_y);
-			startGate -= ckt.levelsize(i);
-			kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(),mark.gpu(chunk).data,mark.gpu(chunk).pitch,merges.data,g_results,h.pitch, gh_results,hc.pitch,startGate, chunk*mark.block_width(),mark.gpu().width,ckt.offset());
+			startGate -= (ckt.levelsize(i));
+			kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(),mark.gpu(chunk).data,mark.gpu(chunk).pitch,merges.data,g_results,h.pitch, gh_results,hc.pitch,startGate+1, chunk*mark.block_width(),mark.gpu().width,ckt.offset());
 			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
