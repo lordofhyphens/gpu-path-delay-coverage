@@ -1,0 +1,4 @@
+#!/bin/sh
+
+./benchsort.py $1 $2.bench
+./bench2isc.py $2.bench $2.isc

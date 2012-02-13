@@ -1,4 +1,8 @@
 *.swp
+*.png
+*.swo
+data/*
+*.vec
 swig_*
 *_wrap.*
 a.out
