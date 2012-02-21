@@ -1,11 +1,11 @@
 CC=g++-4.4
 CTAG_FLAGS=--langmap=C++:+.cu --append=yes
 GPUCC=/opt/net/apps/cuda/bin/nvcc
-header=array2d.h simkernel.h markkernel.h coverkernel.h serial.h defines.h mergekernel.h ckt.h gpuckt.h gpudata.h vectors.h utility.h cpudata.h
+header=array2d.h simkernel.h markkernel.h coverkernel.h serial.h defines.h mergekernel.h ckt.h gpuckt.h gpudata.h vectors.h utility.h cpudata.h subckt.h
 logfile=log.txt
 main=main.cc
 tgenobj=Utility.o BlifParse.o Graph.o
-src=ckt.cc cpudata.cc node.cc vectors.cc utility.cc serial.cc
+src=ckt.cc cpudata.cc node.cc vectors.cc utility.cc serial.cc subckt.cc
 gsrc=gutility.cu gpuckt.cu gpudata.cu simkernel.cu markkernel.cu mergekernel.cu coverkernel.cu
 obj=$(src:.cc=.o) $(main:.cc=.o)
 gobj_cu=$(gsrc:.cu=.o)

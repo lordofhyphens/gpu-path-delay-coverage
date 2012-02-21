@@ -258,6 +258,9 @@ int countInLevel(std::vector<NODEC>& v, int level)  {
 	}
 	return cnt;
 }
+bool Circuit::nodelevel(unsigned int n, unsigned int m) const {
+	return graph->at(n).level < graph->at(m).level;
+}
 bool isUnknown(const NODEC& node) {
 	return node.typ == UNKN;
 }

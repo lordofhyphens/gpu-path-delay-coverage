@@ -69,6 +69,7 @@ class Circuit {
 				this->read_bench(benchfile);
 		}
 		~Circuit();
+		bool nodelevel(unsigned int n, unsigned int m) const;
 		void read_bench(const char* benchfile);
 		void print() const;
 		NODEC& at(int node) const { return this->graph->at(node);}

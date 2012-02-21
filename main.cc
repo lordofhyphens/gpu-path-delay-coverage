@@ -8,6 +8,7 @@
 #include "mergekernel.h"
 #include "coverkernel.h"
 #include "serial.h"
+#include "subckt.h"
 #include <utility>
 #include <iostream>
 #include <fstream>
@@ -38,6 +39,25 @@ int main(int argc, char ** argv) {
 	elapsed = floattime(diff(start, stop));
 	std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 	std::clog << "Circuit size is: " << ckt.size() << "Levels: " << ckt.levels() << std::endl;
+	std::vector<SubCkt> sub_pis;
+	std::vector<SubCkt> sub_pos;
+	std::vector<SubCkt> sec_order;
+	std::clog << "Generating subcircuits...";
+	for (int i = 0; i < ckt.size(); i++) {
+		if (ckt.at(i).typ == INPT) {
+			sub_pis.push_back(SubCkt(ckt, i));
+		}
+		if (ckt.at(i).po == true) {
+			sub_pos.push_back(SubCkt(ckt, i));
+		}
+	}
+	std::clog << "... complete. Generating second-order subcircuits..."; 
+	for (unsigned int i = 0; i < sub_pis.size(); i++) {
+		for (unsigned int j = 0; j < sub_pos.size(); j++) {
+			sec_order.push_back(sub_pis.at(i) / sub_pos.at(j));
+		}
+	}
+	std::clog << "...complete." << std::endl;
 	unsigned long int *scoverage;
 	for (int i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
 		long unsigned int *coverage = new long unsigned int; 
@@ -56,7 +76,7 @@ int main(int argc, char ** argv) {
 		scoverage = new unsigned long int;
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 		std::clog << "Maximum patterns per pass: " << simul_patterns << std::endl;
-		float serial_time = 0;//serial(ckt, *vec, scoverage);
+		float serial_time = serial(ckt, *vec, scoverage);
 		std::cerr << "Performing serial work." << std::endl;
 		std::cerr << "Serial: " << serial_time << " ms" << std::endl;
 		std::cerr << "Initializing gpu memory for results...";
