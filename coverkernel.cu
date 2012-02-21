@@ -42,10 +42,8 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
 			*h = histCache;
 		}
 		if (gate.type != FROM) {
-//			printf("%s:%d - Before: PID: %d G %d (%d),(%d), Hist %d\n",__FILE__,__LINE__,pid, g, *c, *h, history[g]);
 			*c = (*c + *h)*(cache > 0)*(history[g] >= pid);
 			*h *= ((cache > 0)*(history[g] >= pid) == 0);
-//			printf("%s:%d - After: PID: %d G %d (%d),(%d), Hist %d\n",__FILE__,__LINE__,pid, g, *c, *h, history[g]);
 
             for (int i = 0; i < gate.nfi; i++) {
 				int fin = FIN(offsets,gate.offset,i);
@@ -53,56 +51,71 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
 				REF2D(int,hist_cover,hcover_pitch,tid,fin) = *h; //REF2D(int,hist_cover,hcover_pitch,tid,g);
 			}
         } 
-	//	if (tid == 0) { printf("%s:%d - history[%d] = %d\n",  __FILE__, __LINE__,g,history[g]);}
-
-		//printf("%s:%d - h_results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, REF2D(int,hist_cover,hcover_pitch,tid,g));
-		//printf("%s:%d - results[%d][%d] = %d\n", __FILE__, __LINE__, tid, g, *c);
 	}
 }
 
 
-float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges, int* coverage) {
-	int* results, *g_results, *gh_results, *h_results;
+float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges, long unsigned int* coverage) {
+	int* results, *g_results, *gh_results;
+	long* finalcoverage;
+	*coverage = 0;
 	int startGate=ckt.size()-1;
-	cudaHostAlloc(&results,sizeof(int)*mark.width()*mark.height(), cudaHostAllocMapped); // using pinned memory because we're laaaazy.
-	cudaHostAlloc(&h_results,sizeof(int)*mark.width()*mark.height(), cudaHostAllocMapped);
-	cudaHostGetDevicePointer(&g_results, results, 0);
-	cudaHostGetDevicePointer(&gh_results, h_results, 0);
+	size_t pitch, h_pitch;
+	int startPattern = 0;
+	cudaMalloc(&finalcoverage, sizeof(long));
+	cudaMallocPitch(&g_results,&pitch, sizeof(int)*mark.block_width(),mark.height()); // using pinned memory because we're laaaazy.
+	cudaMallocPitch(&gh_results,&h_pitch,sizeof(int)*mark.block_width(),mark.height());
+	results = (int*)malloc(mark.block_width()*sizeof(int)*mark.height());
+//	h_results = (int*)malloc(mark.block_width()*sizeof(int)*mark.height());
+
 	ARRAY2D<int> h = ARRAY2D<int>(results, mark.height(), mark.width(), sizeof(int)*mark.width()); // on CPU 
-	ARRAY2D<int> hc = ARRAY2D<int>(h_results, mark.height(), mark.width(), sizeof(int)*mark.width()); // on CPU
+	ARRAY2D<int> hc = ARRAY2D<int>(NULL, mark.height(), mark.width(), sizeof(int)*mark.width()); // on CPU
 
 
-	int blockcount_y = (int)(mark.block_width()/COVER_BLOCK) + (mark.block_width()%COVER_BLOCK > 0);
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif
 	for (unsigned int chunk = 0; chunk < mark.size(); chunk++) {
+		int blockcount_y = (int)(mark.gpu(chunk).width/COVER_BLOCK) + (mark.gpu(chunk).width%COVER_BLOCK > 0);
+		DPRINT("Patterns to process in block %u: %lu\n", chunk, mark.gpu(chunk).width);
 		for (int i = ckt.levels(); i >= 0; i--) {
-			dim3 numBlocks(ckt.levelsize(i),blockcount_y);
-			startGate -= (ckt.levelsize(i));
-			kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(),mark.gpu(chunk).data,mark.gpu(chunk).pitch,merges.data,g_results,h.pitch, gh_results,hc.pitch,startGate+1, chunk*mark.block_width(),mark.gpu().width,ckt.offset());
+			int levelsize = ckt.levelsize(i);
+			do { 
+				int simblocks = min(MAX_BLOCKS, levelsize);
+				dim3 numBlocks(simblocks,blockcount_y);
+				startGate -= simblocks;
+				kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(), mark.gpu(chunk).data, mark.gpu(chunk).pitch,
+						merges.data, g_results,pitch, gh_results, h_pitch, startGate+1, 
+						chunk*mark.block_width(), startPattern, ckt.offset());
+				if (levelsize > MAX_BLOCKS) {
+					levelsize -= simblocks;
+				} else {
+					levelsize = 0;
+				}
+			} while (levelsize > 0);
 			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
-	}
-	*coverage = 0;
-	for (unsigned int j = 0; j < h.width;j++) {
-		for (int i = 0; i < ckt.size(); i++) {
-			if (ckt.at(i).typ == INPT) {
-				*coverage = *coverage + REF2D(int,results, h.pitch, j, i);
-			//	if (REF2D(int,results, h.pitch, j, i) > 0) 
-			//		std::clog << "cover[" << j << "][" << i << "]: " << REF2D(int,results, h.pitch, j, i) << std::endl;
+		cudaMemcpy2D(results,h.pitch,g_results,pitch,sizeof(int)*mark.block_width(),mark.height(),cudaMemcpyDeviceToHost);
+		for (unsigned int j = 0; j < h.width;j++) {
+			for (int i = 0; i < ckt.size(); i++) {
+				if (ckt.at(i).typ == INPT) {
+					*coverage = *coverage + REF2D(int,results, h.pitch, j, i);
+				}
 			}
 		}
+		startPattern += mark.gpu(chunk).width;
 	}
-#ifndef NTIMING
+	free(results);
+	cudaFree(g_results);
+	cudaFree(gh_results);
+	cudaFree(finalcoverage);
+	#ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
 #endif
-	cudaFreeHost(results);
-	cudaFreeHost(h_results);
 #ifndef NTIMING
 	return elapsed;
 #else 

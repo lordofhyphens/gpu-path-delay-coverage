@@ -142,16 +142,14 @@ __device__ char markeval_in (char f1, char f2, int type) {
 	return 0xff;
 }
 
-__global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, size_t pitch, size_t patterns, GPUNODE* node, int* fans, int start) {
+__global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, size_t pitch, size_t patterns, GPUNODE* node, int* fans, int start, int startPattern) {
 	int tid = (blockIdx.y * blockDim.x) + threadIdx.x, nfi, goffset,val,prev;
 	int gid = (blockIdx.x) + start;
+	int pid = tid+startPattern;
 	char rowCache, resultCache;
 	char cache, fin = 1;
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type;
-	if (tid < patterns) {
-//		if (tid == 0) {
-//			printf("Processing gate %d, started at %d\n", gid, start);
-//		}
+	if (pid < patterns) {
 		cache = 0;
 		rowCache = REF2D(char,sim,sim_pitch,tid,gid);
 		resultCache = REF2D(char,mark,pitch,tid,gid);
@@ -235,19 +233,35 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting before we hit this point.
 	loadPropLUTs();
-	int startGate=ckt.size()-1;
-	int blockcount_y = (int)(results.gpu().width/MARK_BLOCK) + ((results.gpu().width% MARK_BLOCK) > 0);
+	int startGate;
+	int blockcount_y;
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-	for (int i = ckt.levels(); i >= 0; i--) {
-		dim3 numBlocks(ckt.levelsize(i),blockcount_y);
-		startGate -= (ckt.levelsize(i));
-		kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu().data,input.gpu().pitch,results.gpu().data, results.gpu().pitch, results.gpu().width,ckt.gpu_graph(), ckt.offset(),  startGate+1);
-		cudaDeviceSynchronize();
-		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
+	int startPattern = 0;
+	for (unsigned int chunk = 0; chunk < input.size(); chunk++) {
+		blockcount_y = (int)(results.gpu(chunk).width/MARK_BLOCK) + ((results.gpu(chunk).width% MARK_BLOCK) > 0);
+		startGate=ckt.size()-1;
+		DPRINT("Patterns to process in block %u: %lu\n", chunk, results.gpu(chunk).width);
+		for (int i = ckt.levels(); i >= 0; i--) {
+			int levelsize = ckt.levelsize(i);
+			do { 
+				int simblocks = min(MAX_BLOCKS, levelsize);
+				dim3 numBlocks(simblocks,blockcount_y);
+				startGate -= simblocks;
+				kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu(chunk).data, input.gpu(chunk).pitch, results.gpu(chunk).data, results.gpu(chunk).pitch, results.gpu(chunk).width,ckt.gpu_graph(), ckt.offset(),  startGate+1, startPattern);
+				if (levelsize > MAX_BLOCKS) {
+					levelsize -= MAX_BLOCKS;
+				} else {
+					levelsize = 0;
+				}
+			} while (levelsize > 0);
+			cudaDeviceSynchronize();
+			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
+		}
+		startPattern += input.gpu(chunk).width;
 	}
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);

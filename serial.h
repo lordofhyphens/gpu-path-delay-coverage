@@ -12,5 +12,5 @@
 #include <ostream>
 #include <iomanip>
 #include <fstream>
-float serial(Circuit& ckt, CPU_Data& input);
+float serial(Circuit& ckt, CPU_Data& input, long unsigned int*);
 #endif

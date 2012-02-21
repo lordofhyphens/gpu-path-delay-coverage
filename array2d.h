@@ -32,7 +32,7 @@ ARRAY2D<t>::ARRAY2D(size_t height, size_t width, size_t pitch) {
 }
 template <class t>
 ARRAY2D<t>::ARRAY2D(size_t height, size_t width) {
-	t* in = (t*)malloc(sizeof(t)*width*height);
+	t* in = new t[width*height];
 	assert(in != NULL);
 	this->initialize(in, height, width, sizeof(t)*width);
 }

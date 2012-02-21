@@ -26,9 +26,10 @@ class GPU_Data : public CPU_Data {
 		ARRAY2D<char> gpu() { return gpu(this->_current);}
 		int refresh(); // ensures that the GPU memory space is equivalent to cpu-current.
 		size_t block_width() { return this->_block_size;}
-		int initialize(size_t, size_t);
+		int initialize(size_t, size_t, int);
 		GPU_Data();
 		GPU_Data(size_t rows, size_t columns);
+		GPU_Data(size_t rows, size_t columns, int blockwidth);
 		~GPU_Data();
 		std::string debug();
 		ARRAY2D<char> ar2d() const { return *(this->_gpu); }

@@ -1,5 +1,4 @@
 #include "ckt.h"
-
 typedef std::vector<NODEC>::iterator nodeiter;
 Circuit::Circuit() {
 	this->graph = new std::vector<NODEC>();
@@ -8,13 +7,74 @@ Circuit::Circuit() {
 Circuit::~Circuit() {
 	delete this->graph;
 }
-void Circuit::save(char* memfile) {
+// Saves in the following format:
+// pos:name:type:po:level:nfi:fin1:...:finn:nfo:fot1:...:fotn \n
+void Circuit::save(const char* memfile) {
 	std::ofstream ofile(memfile);
-	
+	unsigned long j = 0;
+	for (nodeiter i = this->graph->begin(); i < this->graph->end(); i++) {
+		ofile << j << " " << i->name << " " << (int)i->typ << " " << i->po << " " << i->level << " " << i->fin.size() << " ";
+		for (std::vector<std::pair<std::string, int > >::iterator fin = i->fin.begin(); fin < i->fin.end(); fin++) {
+			ofile << fin->first << "," << fin->second << " ";
+		}
+		ofile << i->fot.size();
+		for (std::vector<std::pair<std::string, int > >::iterator fot = i->fot.begin(); fot < i->fot.end(); fot++) {
+			ofile << " " << fot->first << "," << fot->second;
+		}
+		ofile << std::endl;
+		j++;
+	}
+	ofile.close();
 }
-void Circuit::load(char* memfile) {
+// pos name type po level nfi fin1 ... finn nfo fot1 ... fotn\n
+void Circuit::load(const char* memfile) {
+	std::ifstream ifile(memfile);
+	int type;
+	std::string strbuf;
+	std::string name;
+	while (!ifile.eof()) {
+		NODEC node; 
+		std::getline (ifile,strbuf);
+		if (strbuf.size() < 5) {
+			continue;
+		}
+		std::stringstream buf(strbuf);
+		buf.ignore(300, ' ');
+		buf >> node.name >> type >> node.po >> node.level >> node.nfi;
+		node.typ = type;
+		for (int i = 0; i < node.nfi; i++) {
+			std::string temp;
+			int id;
+			size_t p;
+			buf >> temp;
+			p = temp.find(",");
+			node.finlist.append(temp.substr(0,p));
+			if (i < node.nfi-1)
+				node.finlist.append(",");
+
+			std::stringstream fnum(temp.substr(p+1));
+			from_string<int>(id, temp.substr(p+1), std::dec);
+			node.fin.push_back(std::make_pair(temp.substr(0,p),id));
+		}
+		buf >> node.nfo;
+		for (int i = 0; i < node.nfo; i++) {
+			std::string temp;
+			int id;
+			size_t p;
+			buf >> temp;
+			p = temp.find(",");
+			std::stringstream fnum(temp.substr(p+1));
+			from_string<int>(id, temp.substr(p+1), std::dec);
+			node.fot.push_back(std::make_pair(temp.substr(0,p),id));
+		}
+		this->graph->push_back(node);
+	}
+	this->_levels = 1;
+	for (std::vector<NODEC>::iterator a = this->graph->begin(); a < this->graph->end(); a++) {
+		this->_levels = std::max(this->_levels, a->level);
+	}
 }
-void Circuit::read_bench(char* benchfile) {
+void Circuit::read_bench(const char* benchfile) {
 	std::ifstream tfile(benchfile);
 	this->name = benchfile;
 	this->name.erase(std::remove_if(this->name.begin(), this->name.end(),isspace),this->name.end());
@@ -60,6 +120,7 @@ void Circuit::read_bench(char* benchfile) {
 			continue;
 		}
 	}
+	std::clog << "Finished reading " << g->size() << " lines from file." <<std::endl;
 	for (nodeiter iter = g->begin(); iter < g->end(); iter++) {
 		if (iter->finlist == "")
 			continue;
@@ -108,13 +169,23 @@ void Circuit::read_bench(char* benchfile) {
 	for (nodeiter iter = temp_batch.begin(); iter < temp_batch.end(); iter++) {
 		g->push_back(*iter);
 	}
+	std::clog << "Removing empty nodes." <<std::endl;
 	remove_if(g->begin(),g->end(),isUnknown);
+
+	std::clog << "Sorting circuit." << std::endl;
 	std::sort(g->begin(), g->end(),nameSort);
+	std::clog << "Removing duplicate nodes." << std::endl;
 	std::vector<NODEC>::iterator it = unique(g->begin(),g->end(),isDuplicate);
 	g->resize(it - g->begin());
+	
+	std::clog << "Annotating circuit." << std::endl;
+	annotate();
 
+	std::clog << "Levelizing circuit." << std::endl;
 	this->levelize();
+	std::clog << "Sorting circuit." << std::endl;
 	std::sort(g->begin(), g->end());
+	std::clog << "Annotating circuit." << std::endl;
 	annotate();
 }
 bool isPlaced(const NODEC& node) {
@@ -137,20 +208,21 @@ void Circuit::levelize() {
 					bool allplaced = true;
 					int level = 0;
 					for (unsigned int i = 0; i < iter->fin.size(); i++) {
-						allplaced = allplaced && find(g->begin(), g->end(), iter->fin[i].first)->placed;
-						if (level < find(g->begin(), g->end(), iter->fin[i].first)->level) 
-							level = find(g->begin(), g->end(), iter->fin[i].first)->level;
+						allplaced = allplaced && g->at(iter->fin[i].second).placed;
+						if (level < g->at(iter->fin[i].second).level)
+							level = g->at(iter->fin[i].second).level;
 					}
 					if (allplaced == true) { 
 						iter->level = ++level;
 						iter->placed = true;
 						if (level+1 > this->_levels)
 							this->_levels = level;
+						iter->nfi = iter->fin.size();
+						iter->nfo = iter->fot.size();
 					}
+
 				}
 			}
-			iter->nfi = iter->fin.size();
-			iter->nfo = iter->fot.size();
 		}
 	}
 }

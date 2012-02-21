@@ -3,7 +3,7 @@
 void cpuSimulateP1(const Circuit& ckt, char* pi, int* sim,size_t pi_pitch, size_t pattern);
 void cpuSimulateP2(const Circuit& ckt, char* pi, int* sim,size_t pi_pitch, size_t pattern);
 void cpuMark(const Circuit& ckt, int* sim, int* mark);
-void cpuCover(const Circuit& ckt, int* mark, int* hist, int* cover, int* hist_cover, int* covered);
+void cpuCover(const Circuit& ckt, int* mark, int* hist, int* cover, int* hist_cover, long unsigned int* covered);
 inline void cpuMerge(const Circuit& ckt, int* in, int* hist) { for (int i = 0; i < ckt.size(); i++) { hist[i] = hist[i] | in[i];} }
 
 void debugPrintSim(const Circuit& ckt, int* in, int pattern, int type, std::ostream& ofile) {
@@ -37,7 +37,7 @@ void debugPrintSim(const Circuit& ckt, int* in, int pattern, int type, std::ostr
 	ofile << std::endl;
 }
 
-float serial(Circuit& ckt, CPU_Data& input) {
+float serial(Circuit& ckt, CPU_Data& input, long unsigned int* covered) {
 	std::ofstream s1file("serialsim-p1.log", std::ios::out);
 	std::ofstream s2file("serialsim-p2.log", std::ios::out);
 	std::ofstream mfile("serialmark.log", std::ios::out);
@@ -49,7 +49,7 @@ float serial(Circuit& ckt, CPU_Data& input) {
     int* merge = new int[ckt.size()];
     int* cover = new int[ckt.size()];
     int* hist_cover;
-	int* coverage = new int;
+	long unsigned int* coverage = new long unsigned int;
     *coverage = 0;
 	
 /*	std::cerr << "CPU results:" << std::endl;
@@ -125,7 +125,8 @@ float serial(Circuit& ckt, CPU_Data& input) {
 		delete cover;
 		delete hist_cover;
     }
-    DPRINT("Serial Coverage: %d\n", *coverage);
+	*covered = *coverage;
+    DPRINT("Serial Coverage: %lu\n", *coverage);
     delete coverage;
 	s1file.close();
 	s2file.close();
@@ -315,7 +316,7 @@ void cpuMark(const Circuit& ckt, int* sim, int* mark) {
 		mark[g] = resultCache;
 	}
 }
-void cpuCover(const Circuit& ckt, int* mark, int* hist, int* hist_cover, int* cover, int* covered) {
+void cpuCover(const Circuit& ckt, int* mark, int* hist, int* hist_cover, int* cover, long unsigned int* covered) {
     // cover is the coverage ints we're working with for this pass.
     // mark is the fresh marks
     // hist is the history of the mark status of all lines.

@@ -1,10 +1,9 @@
 #include "cpudata.h"
-
+/*
 static void delete_data(const ARRAY2D<char>& item) {
-	if (item.data != NULL)
-		free(item.data);
+	delete item.data;
 }
-
+*/
 CPU_Data::CPU_Data() {
 	this->_data = new std::vector<ARRAY2D<char> >();
     this->_width = 0;
@@ -16,7 +15,7 @@ CPU_Data::CPU_Data(size_t rows, size_t columns) {
 }
 
 CPU_Data::~CPU_Data() {
-	std::for_each(this->_data->begin(), this->_data->end(), delete_data);
+//	std::for_each(this->_data->begin(), this->_data->end(), delete_data);
 }
 
 ARRAY2D<char> CPU_Data::cpu(int ref) {
@@ -40,8 +39,6 @@ std::string CPU_Data::print() {
 		st << std::endl;
 	}
 	return st.str();
-
-
 }
 std::string CPU_Data::debug() {
 	std::stringstream st; 

@@ -29,22 +29,23 @@ __device__ char simLUT(int type, char val, char r) {
 			return 0;
 	}
 }
-__global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, size_t pi_offset, char* output_data, size_t pitch,size_t pattern_count, int* fanout_index, int start_offset) {
+__global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, size_t pi_offset, char* output_data, size_t pitch, size_t pattern_count, int* fanout_index, int start_offset, int startPattern) {
 	int tid = (blockIdx.y * SIM_BLOCK) + threadIdx.x;
 	int gid = blockIdx.x+start_offset;
+	int pid = tid + startPattern;
 	char rowcache;
 	char *row, r, val;
 	int goffset, nfi, j,type;
-	if (tid < pattern_count)  {
+	if (pid < pattern_count)  {
 		row = ((char*)output_data + gid*pitch)+tid; // get the line row for the current gate
 		goffset = graph[gid].offset;
 		nfi = graph[gid].nfi;
 		type = graph[gid].type;
 		__syncthreads();
-		rowcache = REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,0));
+		rowcache = REF2D(char, output_data, pitch, tid, FIN(fanout_index, goffset, 0));
 		switch (type) {
-			case INPT: val = REF2D(char,pi_data,pi_pitch,tid+pi_offset,gid); break;
-			case FROM: val = REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,0)); break;
+			case INPT: val = REF2D(char, pi_data, pi_pitch, pid+pi_offset, gid); break;
+			case FROM: val = REF2D(char, output_data, pitch, tid, FIN(fanout_index, goffset, 0)); break;
 			default: 
 					// we're guaranteed at least one fanin per 
 					// gate if not on an input.
@@ -53,8 +54,7 @@ __global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 					j = 1;
 					while (j < nfi) {
 						__syncthreads();
-						//r = ((char*)output_data+(fanout_index[goffset+j]*pitch))[tid];
-						r = REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,j));  
+						r = REF2D(char, output_data, pitch, tid, FIN(fanout_index, goffset, j));  
 						val = simLUT(type,val,r);
 						j++;
 					}
@@ -62,14 +62,15 @@ __global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 		*row = val;
 	}
 }
-__global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, size_t pi_offset, char* output_data, size_t pitch,size_t pattern_count,  int* fanout_index, int start_offset) {
+__global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, size_t pi_offset, char* output_data, size_t pitch,size_t pattern_count,  int* fanout_index, int start_offset, int startPattern) {
 	int tid = (blockIdx.y * SIM_BLOCK) + threadIdx.x, prev=0;
 	int gid = blockIdx.x+start_offset;
+	int pid = tid + startPattern;
 	char rowcache;
 	char *row, r;
 	int goffset, nfi, val, j,type;
 
-	if (tid < pattern_count) {
+	if (pid < pattern_count) {
 		row = ((char*)output_data + gid*pitch)+tid; // get the line row for the current gate
 		goffset = graph[gid].offset;
 		nfi = graph[gid].nfi;
@@ -78,8 +79,8 @@ __global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 
 		rowcache = ((char*)output_data+(fanout_index[goffset]*pitch))[tid];
 		switch (type) {
-			case INPT: val = BIN(REF2D(char, pi_data, pi_pitch, (tid+pi_offset), gid)); break;
-			case FROM: val = BIN(REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,0))); break;
+			case INPT: val = BIN(REF2D(char, pi_data, pi_pitch, (pid+pi_offset), gid)); break;
+			case FROM: val = BIN(REF2D(char, output_data, pitch, tid, FIN(fanout_index, goffset, 0))); break;
 			default: 
 					// we're guaranteed at least one fanin per 
 					// gate if not on an input.
@@ -88,7 +89,7 @@ __global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 					j = 1;
 					while (j < nfi) {
 						__syncthreads();
-						r = REF2D(char,output_data,pitch,tid, FIN(fanout_index,goffset,j));
+						r = REF2D(char, output_data, pitch, tid, FIN(fanout_index,goffset,j));
 						val = simLUT(type,val,BIN(r));
 						j++;
 					}
@@ -145,7 +146,7 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, in
 	cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	loadSimLUTs(); // set up our lookup tables for simulation.
-	int startGate = 0;
+	int startGate;
 //	DPRINT("Results block width: %lu\n",results.block_width());
 	int blockcount_y = (int)(results.gpu().width/SIM_BLOCK) + ((results.gpu().width%SIM_BLOCK) > 0);
 #ifndef NTIMING
@@ -153,22 +154,36 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, in
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-//	DPRINT("%s - Chunks in data result: %lu\n",__FILE__,results.size());
-//	DPRINT("%s - Levels in circuit: %d\n", __FILE__, ckt.levels());
+	size_t startPattern = 0;
 	for (unsigned int chunk = 0; chunk < results.size(); chunk++) {
-	//	DPRINT("Patterns to process in block %u: %lu\n", chunk, inputs.gpu(chunk).width);
+		startGate = 0;
+		DPRINT("Patterns to process in block %u: %lu\n", chunk, results.gpu(chunk).width);
 		for (int i = 0; i <= ckt.levels(); i++) {
-			dim3 numBlocks(ckt.levelsize(i),blockcount_y);
-			if (pass > 1) {
-				kernSimulateP2<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu().data,inputs.gpu().pitch,chunk*results.gpu(chunk).width, results.gpu(chunk).data, results.gpu().pitch, inputs.block_width(), ckt.offset(), startGate);
-			} else {
-				kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(),inputs.gpu().data,inputs.gpu().pitch,chunk*results.gpu(chunk).width, results.gpu(chunk).data, results.gpu().pitch, inputs.block_width(), ckt.offset(), startGate);
-			}
-			startGate += ckt.levelsize(i);
+			int levelsize = ckt.levelsize(i);
+			do { 
+				int simblocks = min(MAX_BLOCKS, levelsize);
+				dim3 numBlocks(simblocks,blockcount_y);
+//				DPRINT("%s:%d - %d %d %d %d \n", __FILE__,__LINE__, i, simblocks, blockcount_y, levelsize);
+				if (pass > 1) {
+					kernSimulateP2<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(), inputs.gpu().data, inputs.gpu().pitch,
+							chunk*results.gpu(chunk).width, results.gpu(chunk).data, results.gpu().pitch, 
+							inputs.block_width(), ckt.offset(), startGate, startPattern);
+				} else {
+					kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(), inputs.gpu().data, inputs.gpu().pitch, 
+							chunk*results.gpu(chunk).width, results.gpu(chunk).data, results.gpu().pitch, 
+							inputs.block_width(), ckt.offset(), startGate, startPattern);
+				}
+				startGate += simblocks;
+				if (levelsize > MAX_BLOCKS) {
+					levelsize -= MAX_BLOCKS;
+				} else {
+					levelsize = 0;
+				}
+			} while (levelsize > 0); 
 			cudaDeviceSynchronize();
-//			DPRINT("Pass: %d, blocks for level %d: (%d, %d) %d \n",pass, i, ckt.levelsize(i), blockcount_y, SIM_BLOCK);
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
+		startPattern += results.gpu(chunk).width;
 	}
 	// We're done simulating at this point.
 #ifndef NTIMING

@@ -65,6 +65,7 @@
 #define COVER_BLOCK 256
 #define THREAD_SHIFT 1024
 
+#define MAX_BLOCKS 65535
 #define WARP_SIZE 32
 
 #define OUTJUST 3

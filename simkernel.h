@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <ctime>
 #include <string>
+#include <algorithm>
 float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, int pass);
 
 void debugSimulationOutput(ARRAY2D<char> results, std::string outfile);

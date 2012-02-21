@@ -39,6 +39,7 @@ int read_vectors(GPU_Data& pack, char* fvec, int chunksize) {
 			chunk++;
 		}
 	}
+	std::cerr << " All vectors have been read." << std::endl;
 	tfile.close();
 	pack.refresh();
 	return ERR_NONE;

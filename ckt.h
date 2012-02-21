@@ -27,8 +27,6 @@
 #define FROM 10				// STEM BRANCH
 #define DFF 11				// Dflipflop
 
-
-
 struct NODEC {
 	std::string name;
 	char typ;
@@ -51,6 +49,7 @@ struct NODEC {
 	private:
 		void initialize(std::string id, int type, int nfi, int nfo, bool po, std::string finlist);
 		void initialize(std::string id, std::string type, int nfi, int nfo, bool po, std::string finlist);
+		void load(std::string attr);
 };
 
 class Circuit {
@@ -63,21 +62,21 @@ class Circuit {
 		void annotate();
 	public:
 		Circuit();
-		Circuit(int type, char* benchfile) {
+		Circuit(int type, const char* benchfile) {
 			this->graph = new std::vector<NODEC>();
 			this->_levels = 1;
 			if (type == FBENCH)
 				this->read_bench(benchfile);
 		}
 		~Circuit();
-		void read_bench(char* benchfile);
+		void read_bench(const char* benchfile);
 		void print() const;
 		NODEC& at(int node) const { return this->graph->at(node);}
 		inline int levels() const { return this->_levels;}
 		int levelsize(int) const;
 		int size() const { return this->graph->size();}
-		void save(char*); // save a copy of the circuit in its current levelized form
-		void load(char* memfile); // load a circuit that has been levelized.
+		void save(const char*); // save a copy of the circuit in its current levelized form
+		void load(const char* memfile); // load a circuit that has been levelized.
 };
 
 std::ostream& operator<<(std::ostream& outstream, const NODEC& node);
@@ -97,5 +96,10 @@ struct StringFinder
 };
 
 
-
+template <class T>
+bool from_string(T& t, const std::string& s, std::ios_base& (*f)(std::ios_base&))
+{
+  std::istringstream iss(s);
+  return !(iss >> f >> t).fail();
+}
 #endif //CKT_H
