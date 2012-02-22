@@ -43,20 +43,20 @@ int main(int argc, char ** argv) {
 	std::vector<SubCkt> sub_pos;
 	std::vector<SubCkt> sec_order;
 	std::clog << "Generating subcircuits...";
-	for (int i = 0; i < ckt.size(); i++) {
-		if (ckt.at(i).typ == INPT) {
-			sub_pis.push_back(SubCkt(ckt, i));
-		}
-		if (ckt.at(i).po == true) {
-			sub_pos.push_back(SubCkt(ckt, i));
-		}
-	}
-	std::clog << "... complete. Generating second-order subcircuits..."; 
-	for (unsigned int i = 0; i < sub_pis.size(); i++) {
-		for (unsigned int j = 0; j < sub_pos.size(); j++) {
-			sec_order.push_back(sub_pis.at(i) / sub_pos.at(j));
-		}
-	}
+//	for (int i = 0; i < ckt.size(); i++) {
+//		if (ckt.at(i).typ == INPT) {
+//			sub_pis.push_back(SubCkt(ckt, i));
+//		}
+//		if (ckt.at(i).po == true) {
+//			sub_pos.push_back(SubCkt(ckt, i));
+//		}
+//	}
+//	std::clog << "... complete. Generating second-order subcircuits..."; 
+//	for (unsigned int i = 0; i < sub_pis.size(); i++) {
+//		for (unsigned int j = 0; j < sub_pos.size(); j++) {
+//			sec_order.push_back(sub_pis.at(i) / sub_pos.at(j));
+//		}
+//	}
 	std::clog << "...complete." << std::endl;
 	unsigned long int *scoverage;
 	for (int i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
@@ -121,8 +121,9 @@ int main(int argc, char ** argv) {
 		merge = gpuMergeHistory(*mark_results, merge_ids);  
 		gpu += merge;
 		std::cerr << " Merge: " << merge << " ms" << std::endl;
+		
 		cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
-//		debugCoverOutput(ARRAY2D<int>(coverage,mark_results->height(), mark_results->width(),mark_results->width()*sizeof(int)));
+//		cover = 0;
 		std::cerr << " Cover: " << cover << " ms" << std::endl;
 		delete mark_results;
 		std::cerr << "GPU Coverage: " << *coverage << std::endl;

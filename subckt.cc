@@ -13,9 +13,11 @@ SubCkt::SubCkt(const Circuit& ckt, unsigned int node) : _ckt(ckt) {
 std::string SubCkt::save() {
 	// dump the subckt to a space-separated file, followed by a newline.
 	std::stringstream ofile;
-	ofile << _ref_node << ":";
-	for (unsigned int i = 0; i < this->_subckt->size(); i++) {
-		ofile << _subckt->at(i) << " ";
+	if (_subckt->size() > 0) {
+		ofile << _ref_node << ":";
+		for (unsigned int i = 0; i < this->_subckt->size(); i++) {
+			ofile << _subckt->at(i) << " ";
+		}
 	}
 	return ofile.str();
 }

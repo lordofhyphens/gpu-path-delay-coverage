@@ -24,11 +24,11 @@ void debugPrintSim(const Circuit& ckt, int* in, int pattern, int type, std::ostr
 						ofile << std::setw(OUTJUST) << (int)in[i] << " "; break;
 				} break;
 			case 3: 
-				switch (in[i]) {
+				switch ((int)in[i]) {
 					case 0: ofile << std::setw(OUTJUST) << "N" << " "; break;
 					case 1: ofile << std::setw(OUTJUST) << "Y" << " "; break;
 					default: ofile << std::setw(OUTJUST) << (int)in[i] << " "; break;
-				}
+				} break;
 			default:
 				if (ckt.at(i).typ == INPT)
 					ofile << std::setw(OUTJUST) << (int)in[i] << " "; break;
@@ -81,7 +81,7 @@ float serial(Circuit& ckt, CPU_Data& input, long unsigned int* covered) {
         elapsed = floattime(diff(start, stop));
         total += elapsed;
 		//std::cerr << "Simulate: ";
-		debugPrintSim(ckt, simulate,pattern, 2, s1file);
+//		debugPrintSim(ckt, simulate,pattern, 2, s1file);
         // simulate pattern 2
         //std::cerr << "Serial Simulate P2" << std::endl;
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -94,7 +94,7 @@ float serial(Circuit& ckt, CPU_Data& input, long unsigned int* covered) {
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
         elapsed = floattime(diff(start, stop));
         total += elapsed;
-		debugPrintSim(ckt, simulate,pattern, 2, s2file);
+//		debugPrintSim(ckt, simulate,pattern, 2, s2file);
         // mark
         //std::cerr << "Mark" << std::endl;
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -103,7 +103,7 @@ float serial(Circuit& ckt, CPU_Data& input, long unsigned int* covered) {
         elapsed = floattime(diff(start, stop));
         total += elapsed;
 		//std::cerr << "    Mark: ";
-		debugPrintSim(ckt, mark,pattern, 3, mfile);
+//		debugPrintSim(ckt, mark,pattern, 3, mfile);
         // calculate coverage against all previous runs
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
         cpuCover(ckt, mark, merge, hist_cover, cover,coverage);
@@ -111,7 +111,7 @@ float serial(Circuit& ckt, CPU_Data& input, long unsigned int* covered) {
         elapsed = floattime(diff(start, stop));
         total += elapsed;
 		//std::cerr << "   Cover: ";
-		debugPrintSim(ckt, cover,pattern, 4, cfile);
+//		debugPrintSim(ckt, cover,pattern, 4, cfile);
         // merge mark to history
         //std::cerr << "Merge" << std::endl;
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);

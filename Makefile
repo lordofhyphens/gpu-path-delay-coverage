@@ -28,16 +28,13 @@ test: tags $(out)
 .PHONY: cpu
 cpu: CFLAGS = ${CPFLAGS} -DCPUCOMPILE
 cpu: tags $(out)
-%.o:
-	@${CC} -c ${CFLAGS} $< -o $(@)
-	
 ${out}: $(obj) ${gobj} 
 	@${GPUCC} ${NVCFLAGS} -o ${out} ${obj} ${gobj}
 ${out}-cpu: $(obj) 
 	${CC} -lrt -o ${out}-cpu ${obj} 
 ${obj}: ${src} ${header} ${main}
 	@${CC} -c ${CFLAGS} $(@:.o=.cc)
-${gobj}: ${gsrc}
+${gobj}: ${gsrc} ${header}
 	@${GPUCC} ${NVCFLAGS} -c $(@:.o=.cu)
 tags: ${src} ${gsrc} ${header}
 	ctags ${CTAG_FLAGS} $?
