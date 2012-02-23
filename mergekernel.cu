@@ -95,9 +95,9 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int> mergeids) {
 	for (unsigned int chunk = 0; chunk < input.size(); chunk++) {
 		size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		do {
-			DPRINT("%s:%d - Blocks: %lu (%lu, %lu), %d\n", __FILE__, __LINE__, input.width(), block_x, block_y, MERGE_SIZE);
+			DPRINT("%s:%d - Blocks: %lu/%lu (%lu, %lu), %d\n", __FILE__, __LINE__, input.gpu(chunk).width, input.width(), block_x, block_y, MERGE_SIZE);
 			dim3 blocks(block_x, block_y);
-			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, input.block_width(), input.gpu(chunk).pitch, 0, temparray, pitch, count);
+			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, 0, temparray, pitch, count);
 			cudaDeviceSynchronize();
 /*			cudaMemcpy2D(debugt, sizeof(int)*block_x, temparray, pitch, sizeof(int)*block_x, input.height(), cudaMemcpyDeviceToHost);
 			for (unsigned int j = 0; j < block_x/2; j++) {
