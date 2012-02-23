@@ -15,11 +15,11 @@ void HandleMergeError( cudaError_t err, const char *file, int line ) {
 		AR[A]*(AR[B]==0) + \
 		AR[B]*(AR[A]==0) )
 
-__global__ void kernReduce(char* input, size_t height, size_t pitch, int goffset,int* meta, int mpitch, int startGate) {
+__global__ void kernReduce(char* input, size_t height, size_t pitch, int* meta, int mpitch, int startGate) {
 	int tid = threadIdx.x;
 	int gid = blockIdx.y+startGate;
 	__shared__ int sdata[MERGE_SIZE];
-	char* row = input + pitch*(gid+goffset);
+	char* row = input + pitch*gid;
 	unsigned int i = blockIdx.x*(MERGE_SIZE*2) + threadIdx.x;
 	sdata[tid] = 0;
 	// need to put the lower of i and i+MERGE_SIZE for which g_idata[i] == 1
@@ -77,27 +77,29 @@ __global__ void kernSetMin(int* g_odata, size_t pitch,int* intermediate, int i_p
 }
 // scan through input until the first 1 is found, save the identifier and memset all indicies above that.
 float gpuMergeHistory(GPU_Data& input, ARRAY2D<int> mergeids) {
-	size_t block_x = (input.width() / MERGE_SIZE) + ((input.width() % MERGE_SIZE) > 0);
 	size_t remaining_blocks = input.height();
+	size_t maxblock = (input.width() / MERGE_SIZE) + ((input.width() % MERGE_SIZE) > 0);
 	int count = 0;
 	int* temparray;
 	size_t pitch;
-	cudaMallocPitch(&temparray, &pitch, sizeof(int)*block_x, remaining_blocks);
+	cudaMallocPitch(&temparray, &pitch, sizeof(int)*maxblock, remaining_blocks);
 	cudaMalloc(&mergeids.data, sizeof(int)*input.height());
 //	int* debug = (int*)malloc(sizeof(int)*input.height());
-	int* debugt = (int*)malloc(sizeof(int)*input.height()*block_x);
-	memset(debugt, 0, input.height()*block_x);
+//	int* debugt = (int*)malloc(sizeof(int)*input.height()*maxblock);
+//	memset(debugt, 0, input.height()*maxblock);
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
 	for (unsigned int chunk = 0; chunk < input.size(); chunk++) {
+		count = 0;
+		size_t block_x = (input.gpu(chunk).width / MERGE_SIZE) + ((input.gpu(chunk).width % MERGE_SIZE) > 0);
 		size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		do {
 			DPRINT("%s:%d - Blocks: %lu/%lu (%lu, %lu), %d\n", __FILE__, __LINE__, input.gpu(chunk).width, input.width(), block_x, block_y, MERGE_SIZE);
 			dim3 blocks(block_x, block_y);
-			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, 0, temparray, pitch, count);
+			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count);
 			cudaDeviceSynchronize();
 /*			cudaMemcpy2D(debugt, sizeof(int)*block_x, temparray, pitch, sizeof(int)*block_x, input.height(), cudaMemcpyDeviceToHost);
 			for (unsigned int j = 0; j < block_x/2; j++) {
@@ -106,7 +108,7 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int> mergeids) {
 				}
 				DPRINT("\n");
 			}
-*/
+ */
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			dim3 blocksmin(1, block_y);
 			kernSetMin<<<blocksmin, 1>>>(mergeids.data, mergeids.pitch, temparray,  pitch, block_x/2, count);

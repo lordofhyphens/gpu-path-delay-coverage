@@ -50,15 +50,20 @@ __global__ void kernSum(GPUNODE* ckt, int* input, size_t height, size_t pitch,in
 	}
 }
 
-
+__device__ inline int subCktFan(int* subckt, int subckt_size, int tgt) {
+	// scan through the subckt list looking for tgt
+	for (int i = 0; i < subckt_size; i++) { if (subckt[i] == tgt) { return i;} }
+	return -1;
+}
 #define HANDLE_ERROR( err ) (HandleCoverError( err, __FILE__, __LINE__ ))
 
-__global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int* history,  int* cover, size_t cover_pitch, int* hist_cover, size_t hcover_pitch,int start_offset, int pattern_count, int start_pattern, int* offsets) {
+__global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int* history,  int* cover, size_t cover_pitch, int* hist_cover, size_t hcover_pitch,int start_offset, int pattern_count, int start_pattern, int* offsets) { //, int* subckt, size_t subckt_size) {
     // cover is the coverage ints we're working with for this pass.
     // mark is the fresh marks
     // hist is the history of the mark status of all lines.
 	int tid = (blockIdx.y * COVER_BLOCK) + threadIdx.x;
 	int pid = tid + start_pattern; 
+//	int g = subckt[blockIdx.x+start_offset];
 	int g = blockIdx.x+start_offset;
 	int resultCache = 0;
 	int histCache = 0;
@@ -93,9 +98,12 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
 			h = h*(cache > 0)*(history[g] < pid);
 
             for (int i = 0; i < gate.nfi; i++) {
+//				int fin = subCktFan(subckt, subckt_size, FIN(offsets,gate.offset,i));
 				int fin = FIN(offsets,gate.offset,i);
-				REF2D(int,cover,cover_pitch,tid,fin) = c; //REF2D(int,cover,cover_pitch,tid,g);
-				REF2D(int,hist_cover,hcover_pitch,tid,fin) = h; //REF2D(int,hist_cover,hcover_pitch,tid,g);
+				if (fin >= 0) {
+					REF2D(int,cover,cover_pitch,tid,fin) = c; //REF2D(int,cover,cover_pitch,tid,g);
+					REF2D(int,hist_cover,hcover_pitch,tid,fin) = h; //REF2D(int,hist_cover,hcover_pitch,tid,g);
+				}
 			}
         }
 		REF2D(int, cover     , cover_pitch , tid, g) = c;
@@ -108,6 +116,7 @@ __global__ void kernCover(const GPUNODE* ckt, char* mark,size_t mark_pitch, int*
 
 
 float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges, long unsigned int* coverage) {
+	HANDLE_ERROR(cudaGetLastError()); // check to make sure there aren't any errors going into function.
 	int* results, *g_results, *gh_results;
 	int* temp_coverage, *g_coverage;
 	long* finalcoverage;
@@ -116,17 +125,24 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 	size_t pitch, h_pitch;
 	int startPattern = 0;
 	size_t summedPatterns = (mark.width() / (MERGE_SIZE*2)) + ((mark.width() % (MERGE_SIZE*2)) > 0);
-	int* debug; 
-	debug = (int*)malloc(sizeof(int)*mark.block_width()*mark.height());
+//	int* debug; 
+//	debug = (int*)malloc(sizeof(int)*mark.block_width()*mark.height());
 	cudaMalloc(&finalcoverage, sizeof(long));
+	HANDLE_ERROR(cudaGetLastError()); // checking last function
 	cudaMallocPitch(&g_results,&pitch, sizeof(int)*mark.block_width(),mark.height());
+	HANDLE_ERROR(cudaGetLastError()); // checking last function
 	cudaMallocPitch(&gh_results,&h_pitch,sizeof(int)*mark.block_width(),mark.height());
+	HANDLE_ERROR(cudaGetLastError()); // checking last function
 
 	cudaMemset(g_results, 0, mark.height()*pitch);
+	HANDLE_ERROR(cudaGetLastError()); // checking last function
 	cudaMemset(gh_results, 0, mark.height()*h_pitch);
+	HANDLE_ERROR(cudaGetLastError()); // checking last function
 	results = (int*)malloc(mark.block_width()*sizeof(int)*mark.height());
 	cudaHostAlloc(&temp_coverage, sizeof(int)*mark.height()*summedPatterns, cudaHostAllocWriteCombined | cudaHostAllocMapped);
+	HANDLE_ERROR(cudaGetLastError()); // checking last function
 	cudaHostGetDevicePointer(&g_coverage, temp_coverage, 0);
+	HANDLE_ERROR(cudaGetLastError()); // checking last function
 //	h_results = (int*)malloc(mark.block_width()*sizeof(int)*mark.height());
 
 	ARRAY2D<int> h = ARRAY2D<int>(results, mark.height(), mark.width(), sizeof(int)*mark.width()); // on CPU 
@@ -139,10 +155,12 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif
 	int pcount = 0;
+	//DPRINT("%s:%d - level count: %d\n", __FILE__,__LINE__, ckt.levels());
 	for (unsigned int chunk = 0; chunk < mark.size(); chunk++) {
 		pcount += mark.gpu(chunk).width;
+		startGate = ckt.size()-1;
 		int blockcount_y = (int)(mark.gpu(chunk).width/COVER_BLOCK) + (mark.gpu(chunk).width%COVER_BLOCK > 0);
-//		DPRINT("Patterns to process in block %u: %lu\n", chunk, mark.gpu(chunk).width);
+	//	DPRINT("Patterns to process in block %u: %lu\n", chunk, mark.gpu(chunk).width);
 		for (int i = ckt.levels(); i >= 0; i--) {
 			int levelsize = ckt.levelsize(i);
 			do { 
@@ -150,7 +168,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 				int simblocks = min(MAX_BLOCKS, levelsize);
 				dim3 numBlocks(simblocks,blockcount_y);
 				startGate -= simblocks;
-//				DPRINT("%s:%d - running cover\n", __FILE__,__LINE__);
+	//			DPRINT("%s:%d - running cover %d - %d\n", __FILE__,__LINE__, i, levelsize);
 				kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(), mark.gpu(chunk).data, mark.gpu(chunk).pitch,
 						merges.data, g_results,pitch, gh_results, h_pitch, startGate+1, 
 						pcount, startPattern, ckt.offset());
@@ -194,7 +212,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 //				DPRINT("%d ", REF2D(int, temp_coverage, sizeof(int)*summedPatterns, i, j));
 				*coverage = *coverage + REF2D(int, temp_coverage, sizeof(int)*summedPatterns, i, j);
 			}
-			DPRINT("\n");
+//			DPRINT("\n");
 		}
 		startPattern += mark.gpu(chunk).width;
 	}

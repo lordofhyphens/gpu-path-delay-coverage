@@ -106,9 +106,9 @@ int main(int argc, char ** argv) {
 //		debugSimulationOutput(sim_results->ar2d(), "gpusim-p2.log");
 //		debugDataOutput(vec->gpu(), "siminputs-shifted.log");
 		// don't need the input vectors anymore, so remove.
-		std::clog << __FILE__<<":" << __LINE__ << std::endl;
+//		std::clog << __FILE__<<":" << __LINE__ << std::endl;
 		delete vec;
-		std::clog << __FILE__<<":" << __LINE__ << std::endl;
+//		std::clog << __FILE__<<":" << __LINE__ << std::endl;
 		GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), simul_patterns);
 		mark = gpuMarkPaths(*mark_results, *sim_results, ckt);
 		gpu += mark;

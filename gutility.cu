@@ -3,8 +3,8 @@
 #include <cuda.h>
 ARRAY2D<int> gpuAllocateBlockResults(size_t height) {
 	int* tgt = NULL;
-	cudaMalloc(&tgt, sizeof(int)*(height));
-	cudaMemset(tgt, -1, sizeof(int)*height);
+//	cudaMalloc(&tgt, sizeof(int)*(height));
+//	cudaMemset(tgt, -1, sizeof(int)*height);
 	return ARRAY2D<int>(tgt, height, 1);
 }
 void selectGPU() {
@@ -31,7 +31,7 @@ int gpuCalculateSimulPatterns(int lines, int patterns) {
 	size_t free_mem, total_mem;
 	int allowed_patterns;
 	cudaMemGetInfo(&free_mem, &total_mem);
-	
-	allowed_patterns = (free_mem - (lines*sizeof(int))) / (lines*(sizeof(int)*2) + sizeof(char));
+	// added a buffer 	
+	allowed_patterns = (free_mem - (lines*sizeof(int))) / (lines*(sizeof(int)*2.5) + sizeof(char)*1.5);
 	return min(patterns, allowed_patterns -(allowed_patterns % 32));
 }
