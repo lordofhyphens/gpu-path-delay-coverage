@@ -26,7 +26,7 @@ ARRAY2D<t>::ARRAY2D(t *in, int height, int width) {
 }
 template <class t>
 ARRAY2D<t>::ARRAY2D(size_t height, size_t width, size_t pitch) {
-	t* in = (t*)malloc(pitch*height);
+	t* in = new t[pitch*height];
 	assert(in != NULL);
 	this->initialize(in, height, width, pitch);
 }

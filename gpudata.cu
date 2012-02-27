@@ -23,6 +23,7 @@ ARRAY2D<char> GPU_Data::gpu(int ref) {
 	if (ref == this->_current) {
 		return *(this->_gpu);
 	}
+//	DPRINT("%s:%d - Switching to chunk %d\n", __FILE__, __LINE__, ref);
 	int tmp = this->_current;
 	int err; 
 	try {
@@ -30,10 +31,13 @@ ARRAY2D<char> GPU_Data::gpu(int ref) {
 	} catch (std::out_of_range& oor) { 
 		// handling the problem by returning NULL and ensuring that _current is not changed.
 		this->_current = tmp;
+		DPRINT("Out of range in swap.\n");
 		return ARRAY2D<char>(NULL,0,0,0);
 	}
-	if (err != ERR_NONE)
+	if (err != ERR_NONE) {
+		DPRINT("Unknown error in swap.\n");
 		return ARRAY2D<char>(NULL,0,0,0);
+	}
 	return *(this->_gpu);
 }
 
@@ -45,7 +49,9 @@ int GPU_Data::initialize(size_t in_columns, size_t in_rows, int block_width) {
 	cudaMallocPitch(&(this->_gpu->data), &(this->_gpu->pitch), sizeof(char)*this->_gpu->width, in_rows);
 	int rem_columns = in_columns;
 	for (int i = 0; i < chunks;i++) {
-		this->_data->push_back(ARRAY2D<char>(in_rows, min(block_width, rem_columns)));
+		char* data = new char[in_rows*sizeof(char)*min(block_width,rem_columns)];
+		this->_data->push_back(ARRAY2D<char>(data, in_rows, min(block_width, rem_columns),sizeof(char)*min(block_width,rem_columns)));
+		assert(this->_data->back().data != NULL);
 		if (rem_columns > block_width) {
 			rem_columns -= block_width;
 		}
@@ -61,16 +67,21 @@ int GPU_Data::initialize(size_t in_columns, size_t in_rows, int block_width) {
 // performs a swap-out of GPU memory. 
 int GPU_Data::copy(int ref) {
 	int error;
+//	DPRINT("%s:%d - Copying chunk %d from GPU, %d to GPU.\n",__FILE__,__LINE__,_current, ref);
 	ARRAY2D<char>* cpu = &(this->_data->at(this->_current));
 	ARRAY2D<char>* gpu = this->_gpu;
-	cudaMemcpy2D(cpu->data, gpu->pitch, gpu->data, cpu->pitch, cpu->width * sizeof(char), cpu->height, cudaMemcpyDeviceToHost);
+//	DPRINT("%s:%d - Memcpy from GPU\n", __FILE__,__LINE__);
+	cudaMemcpy2D(cpu->data, cpu->pitch, gpu->data, gpu->pitch, cpu->width * sizeof(char), cpu->height, cudaMemcpyDeviceToHost);
+//	DPRINT("%s:%d - Memcpy from GPU\n", __FILE__,__LINE__);
 	error = cudaGetLastError();
+//	DPRINT("%s:%d - Getting reference to CPU", __FILE__,__LINE__);
 	cpu = &(this->_data->at(ref));
 	cudaMemcpy2D(gpu->data, gpu->pitch, cpu->data, cpu->pitch, cpu->width * sizeof(char), cpu->height, cudaMemcpyHostToDevice);
 	gpu->width = cpu->width;
 	gpu->height = cpu->height;
 	error = cudaGetLastError();
 	this->_current = ref;
+//	DPRINT("%s:%d - Finished copy.\n", __FILE__,__LINE__);
 	if (error != cudaSuccess)
 		return ERR_NONE;
 	return error;

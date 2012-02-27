@@ -97,16 +97,16 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int> mergeids) {
 		size_t block_x = (input.gpu(chunk).width / MERGE_SIZE) + ((input.gpu(chunk).width % MERGE_SIZE) > 0);
 		size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		do {
-			DPRINT("%s:%d - Blocks: %lu/%lu (%lu, %lu), %d\n", __FILE__, __LINE__, input.gpu(chunk).width, input.width(), block_x, block_y, MERGE_SIZE);
+			//DPRINT("%s:%d - Blocks: %lu/%lu (%lu, %lu), %d\n", __FILE__, __LINE__, input.gpu(chunk).width, input.width(), block_x, block_y, MERGE_SIZE);
 			dim3 blocks(block_x, block_y);
 			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count);
 			cudaDeviceSynchronize();
 /*			cudaMemcpy2D(debugt, sizeof(int)*block_x, temparray, pitch, sizeof(int)*block_x, input.height(), cudaMemcpyDeviceToHost);
 			for (unsigned int j = 0; j < block_x/2; j++) {
 				for (unsigned int i = 0; i < input.height(); i++) {
-					DPRINT("%4d ", REF2D(int, debugt, sizeof(int)*block_x,j,i));
+					//DPRINT("%4d ", REF2D(int, debugt, sizeof(int)*block_x,j,i));
 				}
-				DPRINT("\n");
+				//DPRINT("\n");
 			}
  */
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
@@ -120,11 +120,12 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int> mergeids) {
 		} while (remaining_blocks > 65535);
 /*		cudaMemcpy(debug, mergeids.data, sizeof(int)*input.height(),  cudaMemcpyDeviceToHost);
 		for (unsigned int i = 0; i < input.height(); i++) {
-			DPRINT("%2d ", debug[i]);
+			//DPRINT("%2d ", debug[i]);
 		}
-		DPRINT("\n");
+		//DPRINT("\n");
  */
 	}
+	cudaFree(temparray);
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));

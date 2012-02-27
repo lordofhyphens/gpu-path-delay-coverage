@@ -88,12 +88,13 @@ int main(int argc, char ** argv) {
 
 		std::cerr << "..complete." << std::endl;
 		std::clog << sim_results->debug() << std::endl;
+		std::clog << "Simulation pass 1...";
 		sim1 = gpuRunSimulation(*sim_results, *vec, ckt, 1);
+		std::clog << "..complete." << std::endl;
 		gpu += sim1;
 		std::cerr << "Pass 1: " << sim1 << " ms" << std::endl;
 //		debugDataOutput(vec->gpu(), "siminputs.log");
 //		debugSimulationOutput(sim_results->ar2d(), "gpusim-p1.log");
-// Don't need this routine if I just shift tids by 1 in the second sim pass.
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		gpu_shift(*vec);
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);

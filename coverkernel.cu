@@ -121,7 +121,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 	int* temp_coverage, *g_coverage;
 	long* finalcoverage;
 	*coverage = 0;
-	int startGate=ckt.size()-1;
+	int startGate;
 	size_t pitch, h_pitch;
 	int startPattern = 0;
 	size_t summedPatterns = (mark.width() / (MERGE_SIZE*2)) + ((mark.width() % (MERGE_SIZE*2)) > 0);
@@ -155,22 +155,23 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif
 	int pcount = 0;
-	//DPRINT("%s:%d - level count: %d\n", __FILE__,__LINE__, ckt.levels());
+	////DPRINT("%s:%d - level count: %d\n", __FILE__,__LINE__, ckt.levels());
 	for (unsigned int chunk = 0; chunk < mark.size(); chunk++) {
 		pcount += mark.gpu(chunk).width;
-		startGate = ckt.size()-1;
+		startGate = ckt.size();
 		int blockcount_y = (int)(mark.gpu(chunk).width/COVER_BLOCK) + (mark.gpu(chunk).width%COVER_BLOCK > 0);
-	//	DPRINT("Patterns to process in block %u: %lu\n", chunk, mark.gpu(chunk).width);
+		//DPRINT("Patterns to process in block %u: %lu\n", chunk, mark.gpu(chunk).width);
 		for (int i = ckt.levels(); i >= 0; i--) {
 			int levelsize = ckt.levelsize(i);
 			do { 
-
 				int simblocks = min(MAX_BLOCKS, levelsize);
 				dim3 numBlocks(simblocks,blockcount_y);
 				startGate -= simblocks;
-	//			DPRINT("%s:%d - running cover %d - %d\n", __FILE__,__LINE__, i, levelsize);
+	//			//DPRINT("%s:%d - running cover %d - %d\n", __FILE__,__LINE__, i, levelsize);
+				assert(startGate < ckt.size());
+				assert(startGate >= 0);
 				kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(), mark.gpu(chunk).data, mark.gpu(chunk).pitch,
-						merges.data, g_results,pitch, gh_results, h_pitch, startGate+1, 
+						merges.data, g_results,pitch, gh_results, h_pitch, startGate, 
 						pcount, startPattern, ckt.offset());
 				if (levelsize > MAX_BLOCKS) {
 					levelsize -= simblocks;
@@ -184,12 +185,12 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 		/*
 		cudaMemcpy2D(debug,sizeof(int)*mark.block_width(),g_results,pitch,sizeof(int)*mark.block_width(),mark.height(),cudaMemcpyDeviceToHost);
 		for (unsigned int r = 0;r < mark.block_width(); r++) {
-			DPRINT("Vector %d:\t",r);
+			//DPRINT("Vector %d:\t",r);
 			for (unsigned int i = 0; i < mark.height(); i++) {
 				int z = REF2D(int, debug, sizeof(int)*mark.block_width(), r, i);
-				DPRINT("%2d ", z);
+				//DPRINT("%2d ", z);
 			}
-			DPRINT("\n");
+			//DPRINT("\n");
 		}
 */
 		size_t remaining_blocks = mark.height();
@@ -198,7 +199,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 			size_t block_x = summedPatterns;//(h.width / MERGE_SIZE) + ((h.width % MERGE_SIZE) > 0);
 			size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 			dim3 blocks(block_x, block_y);
-//			DPRINT("%s:%d - (%lu,%lu)\n", __FILE__,__LINE__, block_x, block_y);
+//			//DPRINT("%s:%d - (%lu,%lu)\n", __FILE__,__LINE__, block_x, block_y);
 			kernSum<<<blocks, MERGE_SIZE>>>(ckt.gpu_graph(),g_results, h.width, pitch, g_coverage, sizeof(int)*summedPatterns, count);
 			cudaDeviceSynchronize();
 			count++;
@@ -206,13 +207,13 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, ARRAY2D<int> merges,
 			count += 65535;
 			block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		} while (remaining_blocks > 65535);
-//		DPRINT("%s:%d - summedPatterns: %lu\n", __FILE__,__LINE__, summedPatterns);
+//		//DPRINT("%s:%d - summedPatterns: %lu\n", __FILE__,__LINE__, summedPatterns);
 		for (unsigned int j = 0; j < summedPatterns; j++) {
 			for (int i = 0; i < ckt.size(); i++) {
-//				DPRINT("%d ", REF2D(int, temp_coverage, sizeof(int)*summedPatterns, i, j));
+//				//DPRINT("%d ", REF2D(int, temp_coverage, sizeof(int)*summedPatterns, i, j));
 				*coverage = *coverage + REF2D(int, temp_coverage, sizeof(int)*summedPatterns, i, j);
 			}
-//			DPRINT("\n");
+//			//DPRINT("\n");
 		}
 		startPattern += mark.gpu(chunk).width;
 	}
