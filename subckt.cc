@@ -8,6 +8,7 @@ SubCkt::SubCkt(const Circuit& ckt, unsigned int node) : _ckt(ckt) {
 	_levels = new std::vector<int>();
 	_subckt = new std::vector<int>();
 	grow(node);
+	levelize();
 }
 
 std::string SubCkt::save() {
@@ -35,10 +36,10 @@ SubCkt::~SubCkt() {
 	delete _subckt;
 }
 void SubCkt::add(const Circuit& ckt, const int& n) {
-	for (int i = this->_levels->size(); i <= ckt.at(n).level; i++) {
-		_levels->push_back(0); // add more nodes to the levels vector if necessary
-	}
-	_levels->at(ckt.at(n).level) += 1;
+//	for (int i = this->_levels->size(); i <= ckt.at(n).level; i++) {
+//		_levels->push_back(0); // add more nodes to the levels vector if necessary
+//	}
+//	_levels->at(ckt.at(n).level) += 1;
 	_subckt->push_back(n);
 }
 
@@ -58,6 +59,8 @@ void SubCkt::grow(unsigned int node) {
 }
 
 void SubCkt::grow_recurse_back(unsigned int node) {
+	if ((int)node > _ckt.size()) { return; }
+	if (find(_subckt->begin(),_subckt->end(),node) != _subckt->end()) { return;}
 	const NODEC& home_node = _ckt.at(node);
 	add(node);
 	for (unsigned int i = 0; i < home_node.fin.size(); i++) {
@@ -66,6 +69,8 @@ void SubCkt::grow_recurse_back(unsigned int node) {
 }
 
 void SubCkt::grow_recurse_forward(unsigned int node) {
+	if ((int)node > _ckt.size()) { return; }
+	// avoid multiple node additions.
 	const NODEC& home_node = _ckt.at(node);
 	add(node);
 	for (unsigned int i = 0; i < home_node.fot.size(); i++) {
