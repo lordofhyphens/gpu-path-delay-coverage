@@ -11,14 +11,14 @@ Circuit::~Circuit() {
 // pos:name:type:po:level:nfi:fin1:...:finn:nfo:fot1:...:fotn \n
 void Circuit::save(const char* memfile) {
 	std::ofstream ofile(memfile);
-	unsigned long j = 0;
+	uint64_t j = 0;
 	for (nodeiter i = this->graph->begin(); i < this->graph->end(); i++) {
-		ofile << j << " " << i->name << " " << (int)i->typ << " " << i->po << " " << i->level << " " << i->fin.size() << " ";
-		for (std::vector<std::pair<std::string, int > >::iterator fin = i->fin.begin(); fin < i->fin.end(); fin++) {
+		ofile << j << " " << i->name << " " << (uint8_t)i->typ << " " << i->po << " " << i->level << " " << i->fin.size() << " ";
+		for (std::vector<std::pair<std::string, uint32_t > >::iterator fin = i->fin.begin(); fin < i->fin.end(); fin++) {
 			ofile << fin->first << "," << fin->second << " ";
 		}
 		ofile << i->fot.size();
-		for (std::vector<std::pair<std::string, int > >::iterator fot = i->fot.begin(); fot < i->fot.end(); fot++) {
+		for (std::vector<std::pair<std::string, uint32_t > >::iterator fot = i->fot.begin(); fot < i->fot.end(); fot++) {
 			ofile << " " << fot->first << "," << fot->second;
 		}
 		ofile << std::endl;
@@ -42,7 +42,7 @@ void Circuit::load(const char* memfile) {
 		buf.ignore(300, ' ');
 		buf >> node.name >> type >> node.po >> node.level >> node.nfi;
 		node.typ = type;
-		for (int i = 0; i < node.nfi; i++) {
+		for (uint32_t i = 0; i < node.nfi; i++) {
 			std::string temp;
 			int id;
 			size_t p;
@@ -57,7 +57,7 @@ void Circuit::load(const char* memfile) {
 			node.fin.push_back(std::make_pair(temp.substr(0,p),id));
 		}
 		buf >> node.nfo;
-		for (int i = 0; i < node.nfo; i++) {
+		for (uint32_t i = 0; i < node.nfo; i++) {
 			std::string temp;
 			int id;
 			size_t p;
@@ -206,8 +206,8 @@ void Circuit::levelize() {
 					iter->placed = true;
 				} else {
 					bool allplaced = true;
-					int level = 0;
-					for (unsigned int i = 0; i < iter->fin.size(); i++) {
+					uint32_t level = 0;
+					for (size_t i = 0; i < iter->fin.size(); i++) {
 						allplaced = allplaced && g->at(iter->fin[i].second).placed;
 						if (level < g->at(iter->fin[i].second).level)
 							level = g->at(iter->fin[i].second).level;
@@ -235,22 +235,22 @@ void Circuit::print() const {
 	}
 }
 
-int Circuit::levelsize(int l) const {
+uint32_t Circuit::levelsize(uint32_t l) const {
 	return countInLevel(*graph, l);
 }
 // labels each fanin of each circuit 
 void Circuit::annotate() {
 	std::vector<NODEC>* g = this->graph;
 	for (std::vector<NODEC>::iterator iter = g->begin(); iter < g->end(); iter++) {
-		for (std::vector<std::pair<std::string, int> >::iterator i = iter->fin.begin(); i < iter->fin.end(); i++) {
+		for (std::vector<std::pair<std::string, uint32_t> >::iterator i = iter->fin.begin(); i < iter->fin.end(); i++) {
 			i->second = count_if(g->begin(), find(g->begin(),g->end(),i->first), Yes);
 		}
-		for (std::vector<std::pair<std::string, int> >::iterator i = iter->fot.begin(); i < iter->fot.end(); i++) {
+		for (std::vector<std::pair<std::string, uint32_t> >::iterator i = iter->fot.begin(); i < iter->fot.end(); i++) {
 			i->second = count_if(g->begin(), find(g->begin(),g->end(),i->first), Yes);
 		}
 	}
 }
-int countInLevel(std::vector<NODEC>& v, int level)  {
+uint32_t countInLevel(std::vector<NODEC>& v, uint32_t level)  {
 	int cnt = 0;
 	for (std::vector<NODEC>::iterator iter = v.begin(); iter < v.end(); iter++) {
 		if (isInLevel(*iter, level)) 
@@ -264,7 +264,7 @@ bool Circuit::nodelevel(unsigned int n, unsigned int m) const {
 bool isUnknown(const NODEC& node) {
 	return node.typ == UNKN;
 }
-bool isInLevel(const NODEC& node, int N) {
+bool isInLevel(const NODEC& node, uint32_t N) {
 	return node.level == N;
 }
 bool isDuplicate(const NODEC& a, const NODEC& b) {

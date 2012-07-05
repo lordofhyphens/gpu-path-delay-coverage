@@ -1,11 +1,11 @@
 #include "utility.h"
 #include "defines.h"
 #include <cuda.h>
-ARRAY2D<int> gpuAllocateBlockResults(size_t height) {
-	int* tgt = NULL;
+ARRAY2D<int32_t> gpuAllocateBlockResults(size_t height) {
+	int32_t* tgt = NULL;
 	cudaMalloc(&tgt, sizeof(int)*(height));
 	cudaMemset(tgt, -1, sizeof(int)*height);
-	return ARRAY2D<int>(tgt, 1, height, sizeof(int)*height);
+	return ARRAY2D<int32_t>(tgt, 1, height, sizeof(int32_t)*height);
 }
 void selectGPU() {
 	int num_devices, device;

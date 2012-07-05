@@ -17,7 +17,7 @@ texture<int, 2> xnor2LUT;
 texture<int, 2> stableLUT;
 texture<int, 1> notLUT;
 
-__device__ char simLUT(int type, char val, char r) {
+__device__ uint8_t simLUT(int type, uint8_t val, uint8_t r) {
 	switch(type) {
 		case XOR: return tex2D(xor2LUT, val, r );
 		case XNOR: return tex2D(xnor2LUT, val, r);
@@ -29,23 +29,23 @@ __device__ char simLUT(int type, char val, char r) {
 			return 0;
 	}
 }
-__global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, size_t pi_offset, char* output_data, size_t pitch, size_t pattern_count, int* fanout_index, int start_offset, int startPattern) {
+__global__ void kernSimulateP1(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch, size_t pi_offset, uint8_t* output_data, size_t pitch, size_t pattern_count, uint32_t* fanout_index, int start_offset, int startPattern) {
 	int tid = (blockIdx.y * SIM_BLOCK) + threadIdx.x;
 	int gid = blockIdx.x+start_offset;
 	int pid = tid + startPattern;
-	char rowcache;
-	char *row, r, val;
+	uint8_t rowcache;
+	uint8_t *row, r, val;
 	int goffset, nfi, j,type;
 	if (pid < pattern_count)  {
-		row = ((char*)output_data + gid*pitch)+tid; // get the line row for the current gate
+		row = ((uint8_t*)output_data + gid*pitch)+tid; // get the line row for the current gate
 		goffset = graph[gid].offset;
 		nfi = graph[gid].nfi;
 		type = graph[gid].type;
 		__syncthreads();
-		rowcache = REF2D(char, output_data, pitch, tid, FIN(fanout_index, goffset, 0));
+		rowcache = REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index, goffset, 0));
 		switch (type) {
-			case INPT: val = REF2D(char, pi_data, pi_pitch, pid+pi_offset, gid); break;
-			case FROM: val = REF2D(char, output_data, pitch, tid, FIN(fanout_index, goffset, 0)); break;
+			case INPT: val = REF2D(uint8_t, pi_data, pi_pitch, pid+pi_offset, gid); break;
+			case FROM: val = REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index, goffset, 0)); break;
 			default: 
 					// we're guaranteed at least one fanin per 
 					// gate if not on an input.
@@ -54,7 +54,7 @@ __global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 					j = 1;
 					while (j < nfi) {
 						__syncthreads();
-						r = REF2D(char, output_data, pitch, tid, FIN(fanout_index, goffset, j));  
+						r = REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index, goffset, j));  
 						val = simLUT(type,val,r);
 						j++;
 					}
@@ -62,25 +62,25 @@ __global__ void kernSimulateP1(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 		*row = val;
 	}
 }
-__global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, size_t pi_offset, char* output_data, size_t pitch,size_t pattern_count,  int* fanout_index, int start_offset, int startPattern) {
+__global__ void kernSimulateP2(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch, size_t pi_offset, uint8_t* output_data, size_t pitch,size_t pattern_count,  uint32_t* fanout_index, int start_offset, int startPattern) {
 	int tid = (blockIdx.y * SIM_BLOCK) + threadIdx.x, prev=0;
 	int gid = blockIdx.x+start_offset;
 	int pid = tid + startPattern;
-	char rowcache;
-	char *row, r;
+	uint8_t rowcache;
+	uint8_t *row, r;
 	int goffset, nfi, val, j,type;
 
 	if (pid < pattern_count) {
-		row = ((char*)output_data + gid*pitch)+tid; // get the line row for the current gate
+		row = ((uint8_t*)output_data + gid*pitch)+tid; // get the line row for the current gate
 		goffset = graph[gid].offset;
 		nfi = graph[gid].nfi;
 		type = graph[gid].type;
 		prev = *row;
 
-		rowcache = ((char*)output_data+(fanout_index[goffset]*pitch))[tid];
+		rowcache = ((uint8_t*)output_data+(fanout_index[goffset]*pitch))[tid];
 		switch (type) {
-			case INPT: val = BIN(REF2D(char, pi_data, pi_pitch, (pid+pi_offset), gid)); break;
-			case FROM: val = BIN(REF2D(char, output_data, pitch, tid, FIN(fanout_index, goffset, 0))); break;
+			case INPT: val = BIN(REF2D(uint8_t, pi_data, pi_pitch, (pid+pi_offset), gid)); break;
+			case FROM: val = BIN(REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index, goffset, 0))); break;
 			default: 
 					// we're guaranteed at least one fanin per 
 					// gate if not on an input.
@@ -89,7 +89,7 @@ __global__ void kernSimulateP2(GPUNODE* graph, char* pi_data, size_t pi_pitch, s
 					j = 1;
 					while (j < nfi) {
 						__syncthreads();
-						r = REF2D(char, output_data, pitch, tid, FIN(fanout_index,goffset,j));
+						r = REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index,goffset,j));
 						val = simLUT(type,val,BIN(r));
 						j++;
 					}
@@ -142,7 +142,7 @@ void loadSimLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(notLUT,cuNotArray,channelDesc));
 }
 
-float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, int pass = 1) {
+float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, uint8_t pass = 1) {
 	cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	loadSimLUTs(); // set up our lookup tables for simulation.
@@ -157,7 +157,7 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, in
 	for (unsigned int chunk = 0; chunk < results.size(); chunk++) {
 		startGate = 0;
 		//DPRINT("Patterns to process in block %u: %lu\n", chunk, results.gpu(chunk).width);
-		for (int i = 0; i <= ckt.levels(); i++) {
+		for (uint32_t i = 0; i <= ckt.levels(); i++) {
 			int levelsize = ckt.levelsize(i);
 			do { 
 				int simblocks = min(MAX_BLOCKS, levelsize);
@@ -193,16 +193,16 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, in
 	return 0.0;
 #endif // NTIMING
 }
-void debugSimulationOutput(ARRAY2D<char> results, std::string outfile = "simdebug.log") {
+void debugSimulationOutput(ARRAY2D<uint8_t> results, std::string outfile = "simdebug.log") {
 #ifndef NDEBUG
-	char *lvalues;
+	uint8_t *lvalues;
 	std::ofstream ofile(outfile.c_str());
-	lvalues = (char*)malloc(results.height*results.pitch);
+	lvalues = (uint8_t*)malloc(results.height*results.pitch);
 	cudaMemcpy2D(lvalues,results.pitch,results.data,results.pitch,results.width,results.height,cudaMemcpyDeviceToHost);
 	for (unsigned int r = 0;r < results.width; r++) {
 		ofile << "Vector " << r << ":\t";
 		for (unsigned int i = 0; i < results.height; i++) {
-			char z = REF2D(char, lvalues, results.pitch, r, i);
+			uint8_t z = REF2D(uint8_t, lvalues, results.pitch, r, i);
 			switch(z) {
 				case S0:
 					ofile  << std::setw(OUTJUST+1) << "S0 "; break;

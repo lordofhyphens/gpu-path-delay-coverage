@@ -1,7 +1,7 @@
 #include "gpuckt.h"
 #include <cuda.h>
 
-int GPU_Circuit::max_offset() const {
+uint32_t GPU_Circuit::max_offset() const {
 	return this->_max_offset;
 }
 GPUNODE* GPU_Circuit::gpu_graph() const {
@@ -25,17 +25,17 @@ GPU_Circuit::~GPU_Circuit() {
 // Copy the circuit representation to the GPU.
 void GPU_Circuit::copy() {
 	std::vector<NODEC>* g = this->graph;
-	int *offsets;
+	uint32_t *offsets;
 	GPUNODE *ggraph = (GPUNODE*)malloc(sizeof(GPUNODE)*g->size());
-	int off = 0;
-	int maxoff = 0;
+	uint32_t off = 0;
+	uint32_t maxoff = 0;
 	for (std::vector<NODEC>::iterator i = g->begin(); i < g->end(); i++) {
 		if (i->typ != UNKN) {
 			maxoff += (i->nfi + i->nfo);
 		}
 	}
-	offsets = (int*)malloc(sizeof(int)*maxoff); 
-	for (unsigned int i = 0; i < g->size(); i++) {
+	offsets = (uint32_t*)malloc(sizeof(uint32_t)*maxoff); 
+	for (uint32_t i = 0; i < g->size(); i++) {
 		ggraph[i].type = graph->at(i).typ;
 		ggraph[i].nfi = graph->at(i).fin.size();
 		ggraph[i].nfo = graph->at(i).fot.size();
@@ -47,22 +47,22 @@ void GPU_Circuit::copy() {
 		}
 		ggraph[i].offset = off;
 		// position of a particular node
-		for (std::vector<std::pair<std::string,int> >::iterator fins = graph->at(i).fin.begin(); fins < graph->at(i).fin.end();fins++) {
+		for (std::vector<std::pair<std::string,uint32_t> >::iterator fins = graph->at(i).fin.begin(); fins < graph->at(i).fin.end();fins++) {
 			offsets[off] = fins->second;//this->id(*fins);
 			off++;
 		}
-		for (std::vector<std::pair<std::string,int> >::iterator fots = graph->at(i).fot.begin(); fots < graph->at(i).fot.end();fots++) {
+		for (std::vector<std::pair<std::string,uint32_t> >::iterator fots = graph->at(i).fot.begin(); fots < graph->at(i).fot.end();fots++) {
 			offsets[off] = fots->second;//this->id(*fots);
 			off++;
 		}
 	}
 	this->_max_offset = off;
 	cudaMalloc(&(this->_gpu_graph), sizeof(GPUNODE)*(g->size()));
-	cudaMalloc(&(this->_offset), sizeof(int)*off);
+	cudaMalloc(&(this->_offset), sizeof(uint32_t)*off);
 	cudaMemcpy(this->_gpu_graph, ggraph, sizeof(GPUNODE)*(g->size()),cudaMemcpyHostToDevice);
-	cudaMemcpy(this->_offset, offsets, sizeof(int)*off,cudaMemcpyHostToDevice);
+	cudaMemcpy(this->_offset, offsets, sizeof(uint32_t)*off,cudaMemcpyHostToDevice);
 }
 
-int GPU_Circuit::id(std::string name) const {
+uint32_t GPU_Circuit::id(std::string name) const {
 	return std::count_if(this->graph->begin(), find(this->graph->begin(),this->graph->end(),name), Yes<NODEC>);
 }

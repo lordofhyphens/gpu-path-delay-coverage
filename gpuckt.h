@@ -11,13 +11,13 @@ typedef struct GPU_NODE_type {
 // subclass of Circuit to provide GPU-friendly representation of the circuit.
 class GPU_Circuit : public Circuit { 
 	private: 
-		int* _offset;
+		uint32_t* _offset;
 		GPUNODE* _gpu_graph;
-		int _max_offset;
-		int id(std::string) const;
+		uint32_t _max_offset;
+		uint32_t id(std::string) const;
 	public:
-		int* offset() const { return this->_offset;}
-		int max_offset() const;
+		uint32_t* offset() const { return this->_offset;}
+		uint32_t max_offset() const;
 		GPUNODE* gpu_graph() const;
 		void copy();
 		~GPU_Circuit();

@@ -42,25 +42,11 @@ int main(int argc, char ** argv) {
 	std::vector<SubCkt> sub_pis;
 	std::vector<SubCkt> sub_pos;
 	std::vector<SubCkt> sec_order;
-	std::clog << "Generating subcircuits...";
-//	for (int i = 0; i < ckt.size(); i++) {
-//		if (ckt.at(i).typ == INPT) {
-//			sub_pis.push_back(SubCkt(ckt, i));
-//		}
-//		if (ckt.at(i).po == true) {
-//			sub_pos.push_back(SubCkt(ckt, i));
-//		}
-//	}
-//	std::clog << "... complete. Generating second-order subcircuits..."; 
-//	for (unsigned int i = 0; i < sub_pis.size(); i++) {
-//		for (unsigned int j = 0; j < sub_pos.size(); j++) {
-//			sec_order.push_back(sub_pis.at(i) / sub_pos.at(j));
-//		}
-//	}
-	std::clog << "...complete." << std::endl;
-	unsigned long int *scoverage;
-	for (int i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
-		long unsigned int *coverage = new long unsigned int; 
+
+	uint64_t *scoverage;
+
+	for (int32_t i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
+		uint64_t *coverage = new uint64_t; 
 		gpu = 0.0;
 		std::cerr << "Vector set " << argv[i] << std::endl;
 		std::pair<size_t,size_t> vecdim = get_vector_dim(argv[i]);
@@ -72,13 +58,18 @@ int main(int argc, char ** argv) {
 		cpvec << vec->print();
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
-		int simul_patterns = gpuCalculateSimulPatterns(ckt.size(), vecdim.first);
-		scoverage = new unsigned long int;
+		uint32_t simul_patterns = gpuCalculateSimulPatterns(ckt.size(), vecdim.first);
+		scoverage = new unsigned long uint32_t;
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 		std::clog << "Maximum patterns per pass: " << simul_patterns << std::endl;
+		std::clog << "Running serial simulation... " << std::endl;
 		float serial_time = serial(ckt, *vec, scoverage);
+//		float serial_time = 0;
+		
 		std::cerr << "Performing serial work." << std::endl;
 		std::cerr << "Serial: " << serial_time << " ms" << std::endl;
+		std::cerr << "Running just simulation and dumping to a file." << std::endl;
+//		serial_simulate(ckt, *vec, "serialsim.bin");
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size(), simul_patterns); // initializing results array for simulation
@@ -94,7 +85,7 @@ int main(int argc, char ** argv) {
 		gpu += sim1;
 		std::cerr << "Pass 1: " << sim1 << " ms" << std::endl;
 //		debugDataOutput(vec->gpu(), "siminputs.log");
-//		debugSimulationOutput(sim_results->ar2d(), "gpusim-p1.log");
+		debugSimulationOutput(sim_results->ar2d(), "gpusim-p1.log");
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		gpu_shift(*vec);
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
@@ -104,7 +95,7 @@ int main(int argc, char ** argv) {
 		sim2 = gpuRunSimulation(*sim_results, *vec, ckt, 2);
 		gpu += sim2;
 		std::cerr << "Pass 2: " << sim2 << " ms" << std::endl;
-//		debugSimulationOutput(sim_results->ar2d(), "gpusim-p2.log");
+		debugSimulationOutput(sim_results->ar2d(), "gpusim-p2.log");
 //		debugDataOutput(vec->gpu(), "siminputs-shifted.log");
 		// don't need the input vectors anymore, so remove.
 //		std::clog << __FILE__<<":" << __LINE__ << std::endl;
@@ -115,13 +106,14 @@ int main(int argc, char ** argv) {
 		gpu += mark;
 		std::cerr << "  Mark: " << mark << " ms" << std::endl;
 		std::cerr << sim_results->debug();
-//		debugMarkOutput(mark_results->ar2d(), "gpumark.log");
+		debugMarkOutput(mark_results->ar2d(), "gpumark.log");
 		delete sim_results;
-		ARRAY2D<int> merge_ids = gpuAllocateBlockResults(ckt.size());
+		ARRAY2D<int32_t> merge_ids = gpuAllocateBlockResults(ckt.size());
 		std::cerr << mark_results->debug();
 		merge = gpuMergeHistory(*mark_results, merge_ids);  
 		gpu += merge;
 		std::cerr << " Merge: " << merge << " ms" << std::endl;
+		debugMergeOutput(merge_ids, "gpumerge.log");
 		
 		cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
 //		cover = 0;

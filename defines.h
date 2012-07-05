@@ -1,6 +1,6 @@
 #ifndef DEFINES_H
 #define DEFINES_H
-
+#include <stdint.h>
 #define UNINITIALIZED -1
 #ifdef NDEBUG 
 	#define DPRINT(...) 

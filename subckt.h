@@ -20,24 +20,19 @@ class SubCkt {
 		void grow_recurse_forward(unsigned int node);
 	public:	
 		~SubCkt();
-		std::string save() const;
+		std::string save();
 		void load(const std::string& memfile);
 		SubCkt(const Circuit& ckt);
 		SubCkt(const SubCkt&);
-		void clear();
 		SubCkt(const Circuit& ckt, unsigned int node);
 		void add(const int& n) { add(this->_ckt, n);}
 		void add(const Circuit&, const int&);
 		void copy();
+		void clear();
 		bool operator<(const SubCkt&) const;
 		bool operator<(const int) const;
 
-		int* gpu() { 
-			if (this->_gpu == NULL) {
-				this->copy();
-			}
-			return this->_gpu;
-		}
+		int* gpu() { return this->_gpu;}
 		int at(unsigned int);
 		int in(unsigned int);
 		int levelsize(unsigned int);

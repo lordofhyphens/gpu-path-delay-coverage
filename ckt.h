@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cassert>
 #include <utility>
+#include <stdint.h>
 #include "defines.h"
 
 #define FBENCH 1 // iscas89 BENCH format.
@@ -29,17 +30,17 @@
 
 struct NODEC {
 	std::string name;
-	char typ;
-	int nfi, nfo, level;
-	int cur_fo;
+	uint8_t typ;
+	uint32_t nfi, nfo, level;
+	uint32_t cur_fo;
 	bool po, placed;
 	std::string finlist;
-	std::vector<std::pair<std::string, int > > fin;
-	std::vector<std::pair<std::string, int > > fot;
+	std::vector<std::pair<std::string, uint32_t > > fin;
+	std::vector<std::pair<std::string, uint32_t > > fot;
 	NODEC() { name = "", typ = 0, nfi = 0, nfo = 0, po = false, finlist="";}
 	NODEC(std::string);
-	NODEC(std::string, int type);
-	NODEC(std::string id, std::string type, int nfi, std::string finlist);
+	NODEC(std::string, uint8_t type);
+	NODEC(std::string id, std::string type, uint32_t nfi, std::string finlist);
 	bool operator==(const std::string& other) const;
 	bool operator==(const NODEC& other) const;
 	bool operator<(const NODEC& other) const;
@@ -47,8 +48,8 @@ struct NODEC {
 	bool operator<=(const NODEC& other) const;
 	bool operator>=(const NODEC& other) const;
 	private:
-		void initialize(std::string id, int type, int nfi, int nfo, bool po, std::string finlist);
-		void initialize(std::string id, std::string type, int nfi, int nfo, bool po, std::string finlist);
+		void initialize(std::string id, uint8_t type, uint32_t nfi, uint32_t nfo, bool po, std::string finlist);
+		void initialize(std::string id, std::string type, uint32_t nfi, uint32_t nfo, bool po, std::string finlist);
 		void load(std::string attr);
 };
 
@@ -58,33 +59,33 @@ class Circuit {
 		std::string name;
 		void levelize();
 		void mark_lines();
-		int _levels;
+		uint32_t _levels;
 		void annotate();
 	public:
 		Circuit();
-		Circuit(int type, const char* benchfile) {
+		Circuit(uint8_t type, const char* benchfile) {
 			this->graph = new std::vector<NODEC>();
 			this->_levels = 1;
 			if (type == FBENCH)
 				this->read_bench(benchfile);
 		}
 		~Circuit();
-		bool nodelevel(unsigned int n, unsigned int m) const;
+		bool nodelevel(uint32_t n, uint32_t m) const;
 		void read_bench(const char* benchfile);
 		void print() const;
-		NODEC& at(int node) const { return this->graph->at(node);}
-		inline int levels() const { return this->_levels;}
-		int levelsize(int) const;
-		int size() const { return this->graph->size();}
+		NODEC& at(uint32_t node) const { return this->graph->at(node);}
+		inline uint32_t levels() const { return this->_levels;}
+		uint32_t levelsize(uint32_t) const;
+		uint32_t size() const { return this->graph->size();}
 		void save(const char*); // save a copy of the circuit in its current levelized form
 		void load(const char* memfile); // load a circuit that has been levelized.
 };
 
 std::ostream& operator<<(std::ostream& outstream, const NODEC& node);
 bool isPlaced(const NODEC& node);
-bool isInLevel(const NODEC& node, int N);
+bool isInLevel(const NODEC& node, uint32_t N);
 
-int countInLevel(std::vector<NODEC>& v, int level);
+uint32_t countInLevel(std::vector<NODEC>& v, uint32_t level);
 bool isUnknown(const NODEC& node) ;
 bool isDuplicate(const NODEC& a, const NODEC& b);
 bool nameSort(const NODEC& a, const NODEC& b);

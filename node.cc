@@ -3,13 +3,13 @@
 NODEC::NODEC(std::string id) {
 	this->initialize(id, 0, 0, 0, false, "");
 }
-NODEC::NODEC(std::string id, int type) {
+NODEC::NODEC(std::string id, uint8_t type) {
 	this->initialize(id, type, 0, 0, false, "");
 }
-NODEC::NODEC(std::string id, std::string type, int nfi, std::string finlist) {
+NODEC::NODEC(std::string id, std::string type, uint32_t nfi, std::string finlist) {
 	this->initialize(id, type, nfi, 0, false, finlist);
 }
-void NODEC::initialize(std::string id, int type, int nfi, int nfo, bool po, std::string finlist) {
+void NODEC::initialize(std::string id, uint8_t type, uint32_t nfi, uint32_t nfo, bool po, std::string finlist) {
 	this->name = id;
 	this->name.erase(std::remove_if(this->name.begin(), this->name.end(),isspace),this->name.end());
 	this->placed = false;
@@ -24,7 +24,7 @@ void NODEC::initialize(std::string id, int type, int nfi, int nfo, bool po, std:
 
 	this->name.erase(std::remove_if(this->name.begin(), this->name.end(),isspace),this->name.end());
 }
-void NODEC::initialize(std::string id, std::string type, int nfi, int nfo, bool po, std::string finlist) {
+void NODEC::initialize(std::string id, std::string type, uint32_t nfi, uint32_t nfo, bool po, std::string finlist) {
 	int n_type;
 	type.erase(std::remove_if(type.begin(), type.end(),isspace),type.end());
 	if (type == "NAND") {

@@ -24,7 +24,7 @@ texture<int, 2> OrInChainLUT;
 texture<int, 2> OrOutChainLUT;
 texture<int, 2> XorInChainLUT;
 texture<int, 2> XorOutChainLUT;
-texture<char, 2> inputTexture;
+texture<uint8_t, 2> inputTexture;
 
 
 void loadPropLUTs() {
@@ -106,53 +106,53 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(AndOutChainLUT,cuAndOutChain,channelDesc));
 	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
-__device__ char markeval_out (char f1, char f2, int type) {
-	char and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,0,1};
-	char or2_output_prop[16] = {2,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
-	char xor2_output_prop[16]= {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+__device__ uint8_t markeval_out (uint8_t f1, uint8_t f2, int type) {
+	uint8_t and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,0,1};
+	uint8_t or2_output_prop[16] = {2,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
+	uint8_t xor2_output_prop[16]= {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
 
 	switch(type) {
 		case AND:
 		case NAND:
-			return REF2D(char,and2_output_prop,sizeof(char)*4,f1,f2);
+			return REF2D(uint8_t,and2_output_prop,sizeof(uint8_t)*4,f1,f2);
 		case OR:
 		case NOR:
-			return REF2D(char,or2_output_prop,sizeof(char)*4,f1,f2);
+			return REF2D(uint8_t,or2_output_prop,sizeof(uint8_t)*4,f1,f2);
 		case XOR:
 		case XNOR:
-			return REF2D(char,xor2_output_prop,sizeof(char)*4,f1,f2);
+			return REF2D(uint8_t,xor2_output_prop,sizeof(uint8_t)*4,f1,f2);
 	}
 	return 0xff;
 }
-__device__ char markeval_in (char f1, char f2, int type) {
-	char and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,0,1};
-	char or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
-	char xor2_input_prop[16] = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+__device__ uint8_t markeval_in (uint8_t f1, uint8_t f2, int type) {
+	uint8_t and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,0,1};
+	uint8_t or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	uint8_t xor2_input_prop[16] = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
 	switch(type) {
 		case AND:
 		case NAND:
-			return REF2D(char,and2_input_prop,sizeof(char)*4,f1,f2);
+			return REF2D(uint8_t,and2_input_prop,sizeof(uint8_t)*4,f1,f2);
 		case OR:
 		case NOR:
-			return REF2D(char,or2_input_prop,sizeof(char)*4,f1,f2);
+			return REF2D(uint8_t,or2_input_prop,sizeof(uint8_t)*4,f1,f2);
 		case XOR:
 		case XNOR:
-			return REF2D(char,xor2_input_prop,sizeof(char)*4,f1,f2);
+			return REF2D(uint8_t,xor2_input_prop,sizeof(uint8_t)*4,f1,f2);
 	}
 	return 0xff;
 }
 
-__global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, size_t pitch, size_t patterns, GPUNODE* node, int* fans, int start, int startPattern) {
+__global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* mark, size_t pitch, size_t patterns, GPUNODE* node, uint32_t* fans, int start, int startPattern) {
 	int tid = (blockIdx.y * blockDim.x) + threadIdx.x, nfi, goffset,val,prev;
 	int gid = (blockIdx.x) + start;
 	int pid = tid+startPattern;
-	char rowCache, resultCache;
-	char cache, fin = 1;
+	uint8_t rowCache, resultCache;
+	uint8_t cache, fin = 1;
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type;
 	if (pid < patterns) {
 		cache = 0;
-		rowCache = REF2D(char,sim,sim_pitch,tid,gid);
-		resultCache = REF2D(char,mark,pitch,tid,gid);
+		rowCache = REF2D(uint8_t,sim,sim_pitch,tid,gid);
+		resultCache = REF2D(uint8_t,mark,pitch,tid,gid);
 		tmp = 1;
 		nfi = node[gid].nfi;
 		type = node[gid].type;
@@ -172,7 +172,7 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 			prev = 0;
 			resultCache = 0;
 			for (int i = 0; i < node[gid].nfo; i++) {
-				resultCache = (resultCache == 1) || (REF2D(char,mark,pitch,tid,FIN(fans,goffset,i+node[gid].nfi)) > 0);
+				resultCache = (resultCache == 1) || (REF2D(uint8_t,mark,pitch,tid,FIN(fans,goffset,i+node[gid].nfi)) > 0);
 			}
 			prev = resultCache;
 		}
@@ -181,7 +181,7 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 			case BUFF:
 			case NOT:
 				val = NOT_IN(rowCache) && prev;
-				REF2D(char,mark,pitch,tid,FIN(fans,goffset,0)) = val;
+				REF2D(uint8_t,mark,pitch,tid,FIN(fans,goffset,0)) = val;
 				resultCache = val;
 				break;
 				// For the standard gates, setting three values -- both the
@@ -209,22 +209,22 @@ __global__ void kernMarkPathSegments(char *sim, size_t sim_pitch, char* mark, si
 					fin = 1;
 					for (fin2 = 0; fin2 < nfi; fin2++) {
 						if (fin1 != fin2) {
-							cache = markeval_out(REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin1)),REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin2)), type);
+							cache = markeval_out(REF2D(uint8_t,sim,sim_pitch,tid,FIN(fans,goffset,fin1)),REF2D(uint8_t,sim,sim_pitch,tid,FIN(fans,goffset,fin2)), type);
 							pass += (cache > 1);
 							tmp = tmp && (cache > 0);
 							if (nfi > 1) {
-								cache = markeval_in(REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin1)),REF2D(char,sim,sim_pitch,tid,FIN(fans,goffset,fin2)), type);
+								cache = markeval_in(REF2D(uint8_t,sim,sim_pitch,tid,FIN(fans,goffset,fin1)),REF2D(uint8_t,sim,sim_pitch,tid,FIN(fans,goffset,fin2)), type);
 								fin = cache && fin && prev;
 							}
 						}
 					}
-					REF2D(char,mark,pitch,tid,FIN(fans,goffset,fin1)) = fin;
+					REF2D(uint8_t,mark,pitch,tid,FIN(fans,goffset,fin1)) = fin;
 				}
 				break;
 			default: break;
 		}
 		// stick the contents of resultCache into the mark array
-		REF2D(char,mark,pitch,tid,gid) = resultCache;
+		REF2D(uint8_t,mark,pitch,tid,gid) = resultCache;
 
 
 	}
@@ -273,21 +273,21 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 }
 
 
-void debugMarkOutput(ARRAY2D<char> results, std::string outfile) {
+void debugMarkOutput(ARRAY2D<uint8_t> results, std::string outfile) {
 #ifndef NDEBUG
-	char *lvalues;
+	uint8_t *lvalues;
 	std::ofstream ofile(outfile.c_str());
 //	ofile << "Line:   \t";
 //	for (unsigned int i = 0; i < results.height; i++) {
 //		ofile << std::setw(OUTJUST) << i << " ";
 //	}
 //	ofile << std::endl;
-	lvalues = (char*)malloc(results.height*results.pitch);
+	lvalues = (uint8_t*)malloc(results.height*results.pitch);
 	cudaMemcpy2D(lvalues,results.pitch,results.data,results.pitch,results.width,results.height,cudaMemcpyDeviceToHost);
 	for (unsigned int r = 0;r < results.width; r++) {
 		ofile << "Vector " << r << ":\t";
 		for (unsigned int i = 0; i < results.height; i++) {
-			char z = REF2D(char, lvalues, results.pitch, r, i);
+			uint8_t z = REF2D(uint8_t, lvalues, results.pitch, r, i);
 			switch(z) {
 				case 0:
 					ofile  << std::setw(OUTJUST) << "N" << " "; break;
