@@ -68,19 +68,20 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark,size_t mark_pitch, i
 	uint32_t resultCache = 0;
 	uint32_t histCache = 0;
 	uint8_t cache;
-	GPUNODE gate = ckt[g];
+	const GPUNODE& gate = ckt[g];
 //	printf("%s:%d - pid = %d, pattern_count=%d\n",__FILE__,__LINE__,pid, pattern_count);
 	if (pid < pattern_count) {
 		cache = REF2D(uint8_t,mark,mark_pitch,tid, g); // cache the current node's marked status.
 		// shorthand references to current coverage and history count.
 		uint32_t c, h;
-		c = REF2D(uint32_t, cover     , cover_pitch , tid, g);
-		h = REF2D(uint32_t, hist_cover, hcover_pitch, tid, g);
 
 		if (gate.po == 1) {
 			c = 0;
             h = (cache > 0); // set history = 1 if this line is marked.
-        }
+        } else {
+			c = REF2D(uint32_t, cover     , cover_pitch , tid, g);
+			h = REF2D(uint32_t, hist_cover, hcover_pitch, tid, g);
+		}
 
 		if (gate.nfo > 1) {
 			for (uint32_t i = 0; i < gate.nfo; i++) {

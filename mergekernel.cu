@@ -112,7 +112,7 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int32_t>& mergeids) {
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			dim3 blocksmin(1, block_y);
 			DPRINT("Merging for %lu blocks of patterns", block_x);
-			kernSetMin<<<blocksmin, 1>>>(mergeids.data, mergeids.pitch, temparray,  pitch, block_x/2, count);
+			kernSetMin<<<blocksmin, 1>>>(mergeids.data, mergeids.pitch, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count);
 			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			count+=65535;

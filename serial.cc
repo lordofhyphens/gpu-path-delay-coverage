@@ -13,7 +13,7 @@ typedef uint64_t long unsigned int;
 void cpuSimulateP1(const Circuit& ckt, uint8_t* pi, uint32_t* sim,size_t pi_pitch, size_t pattern);
 void cpuSimulateP2(const Circuit& ckt, uint8_t* pi, uint32_t* sim,size_t pi_pitch, size_t pattern);
 void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark);
-void cpuCover(const Circuit& ckt, uint32_t* mark, uint32_t* hist, uint32_t* cover, uint32_t* hist_cover, uint64_t* covered);
+void cpuCover(const Circuit& ckt, uint32_t* mark, uint32_t pattern, int32_t* history, uint32_t* cover, uint32_t* hist_cover, uint64_t& covered);
 inline void cpuMerge(const Circuit& ckt, uint32_t* in, uint32_t* hist) { for (uint32_t i = 0; i < ckt.size(); i++) { hist[i] = hist[i] | in[i];} }
 
 void cpuMergeLog(const Circuit& ckt, uint32_t * in, int32_t* hist, uint32_t p) { 
@@ -137,9 +137,10 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		//std::cerr << "    Mark: ";
 		debugPrintSim(ckt, mark,pattern, 3, mfile);
         // calculate coverage against all previous runs
+		cpuMergeLog(ckt, mark, mergeLog, pattern);
 		try { 
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-	        cpuCover(ckt, mark, merge, hist_cover, cover, coverage);
+	        cpuCover(ckt, mark, pattern, mergeLog, hist_cover, cover, *coverage);
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 			elapsed = floattime(diff(start, stop));
 			total += elapsed;
@@ -150,8 +151,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
         // merge mark to history
         //std::cerr << "Merge" << std::endl;
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-        cpuMerge(ckt, mark, merge);
-		cpuMergeLog(ckt, mark, mergeLog, pattern);
+//        cpuMerge(ckt, mark, merge);
 
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
         elapsed = floattime(diff(start, stop));
@@ -387,33 +387,48 @@ void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark) {
 		mark[g] = resultCache;
 	}
 }
-void cpuCover(const Circuit& ckt, uint32_t* mark, uint32_t* hist, uint32_t* hist_cover, uint32_t* cover, uint64_t* covered) {
+void cpuCover(const Circuit& ckt, uint32_t* mark, uint32_t pattern, int32_t* history, uint32_t* hist_cover, uint32_t* cover, uint64_t& covered) {
     // cover is the coverage uint32_ts we're working with for this pass.
     // mark is the fresh marks
     // hist is the history of the mark status of all lines.
-    for (uint32_t g2 = 0; g2 < ckt.size(); g2--) {
+    for (uint32_t g2 = 0; g2 < ckt.size(); g2++) {
 		uint32_t g = ckt.size() - (g2+1);
+		const uint8_t cache = mark[g];
+		uint32_t c, h;
         const NODEC& gate = ckt.at(g);
         if (gate.po == true) {
-            cover[g] = 0;
-            hist_cover[g] = (mark[g] > 0);
-        }
+            c = 0;
+            h = (cache > 0);
+        } else { // there should already be values
+			c = cover[g];
+			h = hist_cover[g];
+		}
 		if (gate.nfo > 1) {
+			uint32_t resultCache = 0, histCache = 0;
 			for (uint32_t i = 0; i < gate.nfo; i++) {
-				cover[g] += FREF(cover,gate,fot,i);
-				hist_cover[g] += FREF(hist_cover,gate,fot,i);
+				uint32_t fot = gate.fot.at(i).second;
+				resultCache += cover[fot];
+				histCache += hist_cover[fot];
 			}
+			c = resultCache;
+			h = histCache;
 		}
 		if (gate.typ != FROM) {
-			cover[g] = (NOTMARKED(mark,hist,g))*(cover[g]+hist_cover[g]);
-			hist_cover[g] = (NOTMARKED(mark,hist,g) ? 0 : hist_cover[g]);
+//			DPRINT("history[%d] = %d, pattern = %d, c: %d, h: %d \n",g,history[g],pattern,  (c+h)*(cache > 0) * (history[g] >= (int32_t)pattern), h*(cache > 0)*(history[g] < (int32_t)pattern));
+			c = (c+h)*(cache > 0) * (history[g] >= (int32_t)pattern);
+			h = h*(cache > 0)*(history[g] < (int32_t)pattern);
             for (uint32_t i = 0; i < gate.nfi; i++) {
-				FREF(cover,gate,fin,i) = cover[g];
-				FREF(hist_cover,gate,fin,i) = hist_cover[g];
+				uint32_t fin = gate.fin.at(i).second; // reference to current fan-in
+				cover[fin] = c;
+				hist_cover[fin] = h;
+//				DPRINT("For fin %u, c:%d h:%d\n", fin, cover[fin],hist_cover[fin]);
             }
         } 
-		if (gate.typ == INPT)
-            *covered = *covered + cover[g];
-		//hist[g] |= mark[g];
+		cover[g] = c;
+		hist_cover[g] = h;
+
+		if (gate.typ == INPT) {
+            covered += c;
+		}
 	}
 }
