@@ -177,6 +177,11 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 			prev = resultCache;
 		}
 		switch(type) {
+			case INPT:
+				if (node[gid].nfo == 0 && node[gid].nfi == 0) {
+					resultCache = 0; // on the odd case that an input is literally connected to nothing, this is not a path.
+				}
+				break;
 			case FROM: break;
 			case BUFF:
 			case NOT:

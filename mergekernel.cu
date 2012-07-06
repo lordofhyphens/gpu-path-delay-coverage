@@ -143,7 +143,7 @@ void debugMergeOutput(ARRAY2D<int32_t>& results, std::string outfile) {
 	std::ofstream ofile(outfile.c_str());
 	ofile << "Size: " << results.width << "x" << results.height << " WxH "  << results.pitch << " Pitch" << std::endl;
 	lvalues = (int32_t*)malloc(results.height*results.pitch);
-	cudaMemcpy(lvalues,results.data,results.width*sizeof(uint32_t),cudaMemcpyDeviceToHost);
+	cudaMemcpy(lvalues,results.data,results.width*sizeof(int32_t),cudaMemcpyDeviceToHost);
 	for (uint32_t r = 0;r < results.width; r++) {
 		ofile << "Gate " << r << ":\t";
 		for (uint32_t i = 0; i < results.height; i++) {

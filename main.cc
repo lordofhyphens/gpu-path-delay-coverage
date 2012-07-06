@@ -59,17 +59,15 @@ int main(int argc, char ** argv) {
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
 		uint32_t simul_patterns = gpuCalculateSimulPatterns(ckt.size(), vecdim.first);
-		scoverage = new unsigned long uint32_t;
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 		std::clog << "Maximum patterns per pass: " << simul_patterns << std::endl;
 		std::clog << "Running serial simulation... " << std::endl;
-		float serial_time = serial(ckt, *vec, scoverage);
+		scoverage = NULL;
+		float serial_time = serial(ckt, *vec, &scoverage);
 //		float serial_time = 0;
 		
 		std::cerr << "Performing serial work." << std::endl;
 		std::cerr << "Serial: " << serial_time << " ms" << std::endl;
-		std::cerr << "Running just simulation and dumping to a file." << std::endl;
-//		serial_simulate(ckt, *vec, "serialsim.bin");
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size(), simul_patterns); // initializing results array for simulation

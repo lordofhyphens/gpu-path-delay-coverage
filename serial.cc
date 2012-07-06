@@ -57,7 +57,7 @@ void debugPrintSim(const Circuit& ckt, uint32_t* in, uint32_t pattern, uint32_t 
 	ofile << std::endl;
 }
 
-float serial(Circuit& ckt, CPU_Data& input, uint64_t* covered) {
+float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 	std::ofstream s1file("serialsim-p1.log", std::ios::out);
 	std::ofstream s2file("serialsim-p2.log", std::ios::out);
 	std::ofstream mfile("serialmark.log", std::ios::out);
@@ -70,7 +70,8 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t* covered) {
     int32_t* mergeLog = new int32_t[ckt.size()];
     uint32_t* cover = new uint32_t[ckt.size()];
     uint32_t* hist_cover;
-	uint64_t* coverage = new uint64_t;
+	*covered = new uint64_t;
+	uint64_t* coverage = *covered;
     *coverage = 0;
 	
 /*	std::cerr << "CPU results:" << std::endl;
@@ -138,7 +139,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t* covered) {
         // calculate coverage against all previous runs
 		try { 
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-	        cpuCover(ckt, mark, merge, hist_cover, cover,coverage);
+	        cpuCover(ckt, mark, merge, hist_cover, cover, coverage);
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 			elapsed = floattime(diff(start, stop));
 			total += elapsed;
@@ -162,7 +163,6 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t* covered) {
 		delete hist_cover;
     }
 	debugMergeOutput(mergeLog, 1, ckt.size(), "serialmerge.log" );
-	*covered = *coverage;
     DPRINT("Serial Coverage: %lu\n", *coverage);
     delete coverage;
 	s1file.close();
@@ -180,10 +180,10 @@ void debugMergeOutput(int32_t* data, size_t height, size_t width, std::string ou
 	for (uint32_t r = 0;r < width; r++) {
 		ofile << "Gate " << r << ":\t";
 		for (uint32_t i = 0; i < height; i++) {
-			uint32_t z = data[r];//REF2D(uint8_t, lvalues, pitch, r, i);
+			int32_t z = data[r];
 			switch(z) {
 				default:
-					ofile << std::setw(OUTJUST) << (uint32_t)z << " "; break;
+					ofile << std::setw(OUTJUST) << (int32_t)z << " "; break;
 			}
 		}
 		ofile << std::endl;
@@ -325,6 +325,11 @@ void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark) {
 				prev = resultCache;
 			}
 			switch(gate.typ) {
+				case INPT:
+					if (gate.nfo == 0 && gate.nfi == 0) {
+						resultCache = 0; // on the odd case that an input is literally connected to nothing, this is not a path.
+					};
+				break;
 				case FROM: break;
 				case BUFF:
 				case NOT:
