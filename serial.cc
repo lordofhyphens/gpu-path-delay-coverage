@@ -1,22 +1,27 @@
 #include "serial.h"
+#include <omp.h>
 #include <fstream>
 #include <cstdlib>
 #include <string>
 #include <cstring>
 #include <stdint.h>
 
+#define THREADS 8
+
 /*typedef int32_t signed int;
 typedef uint32_t unsigned int;
 typedef uint8_t unsigned uint8_t;
 typedef uint64_t long unsigned int;
 */
-void cpuSimulateP1(const Circuit& ckt, uint8_t* pi, uint32_t* sim,size_t pi_pitch, size_t pattern);
-void cpuSimulateP2(const Circuit& ckt, uint8_t* pi, uint32_t* sim,size_t pi_pitch, size_t pattern);
+void cpuSimulateP1(const Circuit& ckt, const uint8_t* pi, uint32_t* sim,const size_t pi_pitch, const size_t pattern);
+void cpuSimulateP2(const Circuit& ckt, const uint8_t* pi, uint32_t* sim,const size_t pi_pitch, const size_t pattern);
 void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark);
 void cpuCover(const Circuit& ckt, uint32_t* mark, uint32_t pattern, int32_t* history, uint32_t* cover, uint32_t* hist_cover, uint64_t& covered);
 inline void cpuMerge(const Circuit& ckt, uint32_t* in, uint32_t* hist) { for (uint32_t i = 0; i < ckt.size(); i++) { hist[i] = hist[i] | in[i];} }
 
-void cpuMergeLog(const Circuit& ckt, uint32_t * in, int32_t* hist, uint32_t p) { 
+// Performs a merge compatible with the GPU implementation.
+void cpuMergeLog(const Circuit& ckt, uint32_t * in, int32_t* hist, const uint32_t p) {
+	#pragma omp parallel for num_threads(THREADS)
 	for (uint32_t i = 0; i < ckt.size(); i++) { 
 		if (hist[i] < 0) { 
 			if (in[i] == 1) { 
@@ -81,6 +86,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 	}
 	std::clog << std::endl;
 */
+	#pragma omp parallel for num_threads(THREADS)
 	for (uint32_t i = 0; i < ckt.size(); i++) {
 		merge[i] = 0;
 		mergeLog[i] = -1;
@@ -90,6 +96,8 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
         mark = new uint32_t[ckt.size()];
 		cover = new uint32_t[ckt.size()];
 		hist_cover = new uint32_t[ckt.size()];
+		// Try to 
+		#pragma omp parallel for num_threads(THREADS)
         for (uint32_t i = 0; i < ckt.size(); i++) {
             simulate[i] = 0;
             mark[i] = 0;
@@ -99,7 +107,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		try { 
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 			// simulate pattern 1
-			//        std::cerr << "Serial Simulate P1" << std::endl;
+//			std::cerr << pattern <<  " - Serial Simulate P1" << std::endl;
 			cpuSimulateP1(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern);
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 			elapsed = floattime(diff(start, stop));
@@ -137,7 +145,11 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		//std::cerr << "    Mark: ";
 		debugPrintSim(ckt, mark,pattern, 3, mfile);
         // calculate coverage against all previous runs
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		cpuMergeLog(ckt, mark, mergeLog, pattern);
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+        elapsed = floattime(diff(start, stop));
+        total += elapsed;
 		try { 
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	        cpuCover(ckt, mark, pattern, mergeLog, hist_cover, cover, *coverage);
@@ -148,15 +160,18 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 			std::cerr << "Caught an exception in cpuCover - " << e.what() << std::endl;
 		}
 		debugPrintSim(ckt, cover,pattern, 4, cfile);
+		uint64_t covercache = 0;
+		#pragma omp parallel for default(none) shared(cover, ckt) reduction(+:covercache) num_threads(THREADS)
+		for (size_t i = 0; i < ckt.size(); i++) {
+			if (ckt.at(i).typ == INPT) {
+				covercache += cover[i];
+			}
+		}
+		*coverage = *coverage + covercache;
         // merge mark to history
         //std::cerr << "Merge" << std::endl;
-        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 //        cpuMerge(ckt, mark, merge);
 
-        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-        elapsed = floattime(diff(start, stop));
-//		std::cerr << "Pass " << pattern << " time: " << elapsed<<std::endl;
-        total += elapsed;
         delete mark;
         delete simulate;
 		delete cover;
@@ -217,31 +232,36 @@ uint32_t gateeval (uint32_t f1, uint32_t f2, uint32_t type) {
 	return val;
 }
 
-void cpuSimulateP1(const Circuit& ckt, uint8_t* pi, uint32_t* sim, size_t pi_pitch, size_t pattern) {
-    for (uint32_t g = 0; g < ckt.size(); g++) {
-        const NODEC gate = ckt.at(g);
-        uint32_t val=0;
-        switch(gate.typ) {
-            case INPT:
-                val = REF2D(uint8_t,pi,pi_pitch,pattern,g); break;
-			case FROM:
-				val = FREF(sim,gate,fin,0); break;
-            default:
-                if (gate.typ != NOT) {
-                    val = FREF(sim,gate,fin,0);
-                } else {
-                    val = (FREF(sim,gate,fin,0) != 1);
-                }
-                uint32_t j = 1;
-                while (j < gate.fin.size()) {
-					val = gateeval(val,sim[gate.fin.at(j).second],gate.typ);
-					j++;
-                }
-        }
-        sim[g] = val;
-    }
+void cpuSimulateP1(const Circuit& ckt, const uint8_t* pi, uint32_t* sim, const size_t pi_pitch, const size_t pattern) {
+	uint32_t mingate = 0;
+	for (uint16_t level = 0; level <= ckt.levels(); level++) {
+		#pragma omp parallel for num_threads(THREADS)
+		for (uint32_t g = mingate; g < mingate + ckt.levelsize(level); g++) {
+			const NODEC gate = ckt.at(g);
+			uint8_t val = 0;
+			switch(gate.typ) {
+				case INPT:
+					val = REF2D(uint8_t,pi,pi_pitch,pattern,g); break;
+				case FROM:
+					val = FREF(sim,gate,fin,0); break;
+				default:
+					if (gate.typ != NOT) {
+						val = FREF(sim,gate,fin,0);
+					} else {
+						val = (FREF(sim,gate,fin,0) != 1);
+					}
+					uint32_t j = 1;
+					while (j < gate.fin.size()) {
+						val = gateeval(val,sim[gate.fin.at(j).second],gate.typ);
+						j++;
+					}
+			}
+			sim[g] = val;
+		}
+	mingate += ckt.levelsize(level);
+	}
 }
-void cpuSimulateP2(const Circuit& ckt, uint8_t* pi, uint32_t* sim,size_t pi_pitch, size_t pattern) {
+void cpuSimulateP2(const Circuit& ckt, const uint8_t* pi, uint32_t* sim, const size_t pi_pitch, const size_t pattern) {
 	uint32_t stable[2][2] = {{S0, T1}, {T0, S1}};
     for (uint32_t g = 0; g < ckt.size(); g++) {
         const NODEC gate = ckt.at(g);
@@ -387,15 +407,15 @@ void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark) {
 		mark[g] = resultCache;
 	}
 }
-void cpuCover(const Circuit& ckt, uint32_t* mark, uint32_t pattern, int32_t* history, uint32_t* hist_cover, uint32_t* cover, uint64_t& covered) {
+void cpuCover(const Circuit& ckt, uint32_t* mark, const uint32_t pattern, int32_t* history, uint32_t* hist_cover, uint32_t* cover, uint64_t& covered) {
     // cover is the coverage uint32_ts we're working with for this pass.
     // mark is the fresh marks
     // hist is the history of the mark status of all lines.
     for (uint32_t g2 = 0; g2 < ckt.size(); g2++) {
-		uint32_t g = ckt.size() - (g2+1);
+		const uint32_t g = ckt.size() - (g2+1);
+        const NODEC& gate = ckt.at(g);
 		const uint8_t cache = mark[g];
 		uint32_t c, h;
-        const NODEC& gate = ckt.at(g);
         if (gate.po == true) {
             c = 0;
             h = (cache > 0);
@@ -413,22 +433,19 @@ void cpuCover(const Circuit& ckt, uint32_t* mark, uint32_t pattern, int32_t* his
 			c = resultCache;
 			h = histCache;
 		}
-		if (gate.typ != FROM) {
-//			DPRINT("history[%d] = %d, pattern = %d, c: %d, h: %d \n",g,history[g],pattern,  (c+h)*(cache > 0) * (history[g] >= (int32_t)pattern), h*(cache > 0)*(history[g] < (int32_t)pattern));
+		if (gate.typ != FROM) { // FROM nodes always take the value of their fan-outs
+			// c equals c+h if history[g] >= current pattern and line is marked
 			c = (c+h)*(cache > 0) * (history[g] >= (int32_t)pattern);
+			// h equals 0 if history[g] >= current pattern, h if this line is marked, 0 if line is not marked;
 			h = h*(cache > 0)*(history[g] < (int32_t)pattern);
+        } 
+		// Cycle through the fanins of this node and assign them the current value
             for (uint32_t i = 0; i < gate.nfi; i++) {
 				uint32_t fin = gate.fin.at(i).second; // reference to current fan-in
 				cover[fin] = c;
 				hist_cover[fin] = h;
-//				DPRINT("For fin %u, c:%d h:%d\n", fin, cover[fin],hist_cover[fin]);
             }
-        } 
 		cover[g] = c;
 		hist_cover[g] = h;
-
-		if (gate.typ == INPT) {
-            covered += c;
-		}
 	}
 }
