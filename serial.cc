@@ -63,6 +63,7 @@ void debugPrintSim(const Circuit& ckt, uint32_t* in, uint32_t pattern, uint32_t 
 }
 
 float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
+	#pragma omp parallel num_threads(THREADS)
 	std::ofstream s1file("serialsim-p1.log", std::ios::out);
 	std::ofstream s2file("serialsim-p2.log", std::ios::out);
 	std::ofstream mfile("serialmark.log", std::ios::out);
@@ -86,7 +87,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 	}
 	std::clog << std::endl;
 */
-	#pragma omp parallel for num_threads(THREADS)
+	#pragma omp for
 	for (uint32_t i = 0; i < ckt.size(); i++) {
 		merge[i] = 0;
 		mergeLog[i] = -1;
@@ -97,7 +98,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		cover = new uint32_t[ckt.size()];
 		hist_cover = new uint32_t[ckt.size()];
 		// Try to 
-		#pragma omp parallel for num_threads(THREADS)
+		#pragma omp for 
         for (uint32_t i = 0; i < ckt.size(); i++) {
             simulate[i] = 0;
             mark[i] = 0;
@@ -115,7 +116,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		} catch(std::exception e) { 
 			std::cerr << "Caught exception in cpuSim Pass 1" << e.what() << std::endl;
 		}
-		debugPrintSim(ckt, simulate,pattern, 2, s1file);
+//		debugPrintSim(ckt, simulate,pattern, 2, s1file);
 		// simulate pattern 2
 		try { 
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -131,7 +132,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		} catch(std::exception e) { 
 			std::cerr << "Caught exception in cpuSim Pass 2" << e.what() << std::endl;
 		}
-		debugPrintSim(ckt, simulate,pattern, 2, s2file);
+//		debugPrintSim(ckt, simulate,pattern, 2, s2file);
         // mark
 		try {
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -143,7 +144,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 			std::cerr << "Caught exception in cpuMark" << e.what() << std::endl;
 		}
 		//std::cerr << "    Mark: ";
-		debugPrintSim(ckt, mark,pattern, 3, mfile);
+//		debugPrintSim(ckt, mark,pattern, 3, mfile);
         // calculate coverage against all previous runs
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		cpuMergeLog(ckt, mark, mergeLog, pattern);
@@ -159,9 +160,9 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		} catch (std::exception e) {
 			std::cerr << "Caught an exception in cpuCover - " << e.what() << std::endl;
 		}
-		debugPrintSim(ckt, cover,pattern, 4, cfile);
+	//	debugPrintSim(ckt, cover,pattern, 4, cfile);
 		uint64_t covercache = 0;
-		#pragma omp parallel for default(none) shared(cover, ckt) reduction(+:covercache) num_threads(THREADS)
+		#pragma omp for default(none) shared(cover, ckt) reduction(+:covercache)
 		for (size_t i = 0; i < ckt.size(); i++) {
 			if (ckt.at(i).typ == INPT) {
 				covercache += cover[i];
@@ -235,7 +236,7 @@ uint32_t gateeval (uint32_t f1, uint32_t f2, uint32_t type) {
 void cpuSimulateP1(const Circuit& ckt, const uint8_t* pi, uint32_t* sim, const size_t pi_pitch, const size_t pattern) {
 	uint32_t mingate = 0;
 	for (uint16_t level = 0; level <= ckt.levels(); level++) {
-		#pragma omp parallel for num_threads(THREADS)
+		#pragma omp for
 		for (uint32_t g = mingate; g < mingate + ckt.levelsize(level); g++) {
 			const NODEC gate = ckt.at(g);
 			uint8_t val = 0;
@@ -258,33 +259,37 @@ void cpuSimulateP1(const Circuit& ckt, const uint8_t* pi, uint32_t* sim, const s
 			}
 			sim[g] = val;
 		}
-	mingate += ckt.levelsize(level);
+		mingate += ckt.levelsize(level);
 	}
 }
 void cpuSimulateP2(const Circuit& ckt, const uint8_t* pi, uint32_t* sim, const size_t pi_pitch, const size_t pattern) {
 	uint32_t stable[2][2] = {{S0, T1}, {T0, S1}};
-    for (uint32_t g = 0; g < ckt.size(); g++) {
-        const NODEC gate = ckt.at(g);
-        uint32_t val;
-        switch(gate.typ) {
-            case INPT: val = REF2D(uint8_t,pi,pi_pitch,pattern, g); break;
-			case FROM: val = BIN(FREF(sim,gate,fin,0)); break;
-            default:
-                if (gate.typ != NOT) {
-                    val = BIN(FREF(sim,gate,fin,0));
-                } else {
-                    val = (BIN(FREF(sim,gate,fin,0)) != 1);
-                }
-              uint32_t j = 1;
-              while (j < gate.fin.size()) {
-					val = gateeval(val,FREF(sim,gate,fin,j),gate.typ);
-					j++;
-                }
- 
-        }
-		sim[g] = stable[sim[g]][val];
-    }
+	uint32_t mingate = 0;
+	for (uint16_t level = 0; level <= ckt.levels(); level++) {
+		#pragma omp for
+		for (uint32_t g = mingate; g < mingate + ckt.levelsize(level); g++) {
+			const NODEC gate = ckt.at(g);
+			uint32_t val;
+			switch(gate.typ) {
+				case INPT: val = REF2D(uint8_t,pi,pi_pitch,pattern, g); break;
+				case FROM: val = BIN(FREF(sim,gate,fin,0)); break;
+				default:
+						   if (gate.typ != NOT) {
+							   val = BIN(FREF(sim,gate,fin,0));
+						   } else {
+							   val = (BIN(FREF(sim,gate,fin,0)) != 1);
+						   }
+						   uint32_t j = 1;
+						   while (j < gate.fin.size()) {
+							   val = gateeval(val,FREF(sim,gate,fin,j),gate.typ);
+							   j++;
+						   }
 
+			}
+			sim[g] = stable[sim[g]][val];
+		}
+		mingate += ckt.levelsize(level);
+	}
 }
 uint32_t cpuMarkEval_in(uint32_t f1, uint32_t f2, uint32_t type) {
 	uint32_t and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,0,1};
