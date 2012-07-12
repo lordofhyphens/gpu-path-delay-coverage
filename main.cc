@@ -76,7 +76,7 @@ int main(int argc, char ** argv) {
 		gpu += elapsed;
 
 		std::cerr << "..complete." << std::endl;
-		std::clog << sim_results->debug() << std::endl;
+//		std::clog << sim_results->debug() << std::endl;
 		std::clog << "Simulation pass 1...";
 		sim1 = gpuRunSimulation(*sim_results, *vec, ckt, 1);
 		std::clog << "..complete." << std::endl;
@@ -91,14 +91,14 @@ int main(int argc, char ** argv) {
 		gpu += mark;
 		std::cerr << "  Mark: " << mark << " ms" << std::endl;
 		std::cerr << sim_results->debug();
-		debugMarkOutput(mark_results->ar2d(), "gpumark.log");
+//		debugMarkOutput(mark_results->ar2d(), "gpumark.log");
 		delete sim_results;
 		ARRAY2D<int32_t> merge_ids = gpuAllocateBlockResults(ckt.size());
 		std::cerr << mark_results->debug();
 		merge = gpuMergeHistory(*mark_results, merge_ids);  
 		gpu += merge;
 		std::cerr << " Merge: " << merge << " ms" << std::endl;
-		debugMergeOutput(merge_ids, "gpumerge.log");
+//		debugMergeOutput(merge_ids, "gpumerge.log");
 		
 		cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
 //		cover = 0;

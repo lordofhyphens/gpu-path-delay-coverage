@@ -20,7 +20,6 @@ inline void cpuMerge(const Circuit& ckt, uint32_t* in, uint32_t* hist) { for (ui
 
 // Performs a merge compatible with the GPU implementation.
 void cpuMergeLog(const Circuit& ckt, uint32_t * in, int32_t* hist, const uint32_t p) {
-	#pragma omp parallel for num_threads(THREADS)
 	for (uint32_t i = 0; i < ckt.size(); i++) { 
 		if (hist[i] < 0) { 
 			if (in[i] == 1) { 
@@ -61,7 +60,6 @@ void debugPrintSim(const Circuit& ckt, uint32_t* in, uint32_t pattern, uint32_t 
 }
 
 float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
-	#pragma omp parallel num_threads(THREADS)
 	std::ofstream s1file("serialsim-p1.log", std::ios::out);
 	std::ofstream s2file("serialsim-p2.log", std::ios::out);
 	std::ofstream mfile("serialmark.log", std::ios::out);
@@ -86,7 +84,6 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 	}
 	std::clog << std::endl;
 */
-	#pragma omp for
 	for (uint32_t i = 0; i < ckt.size(); i++) {
 		merge[i] = 0;
 		mergeLog[i] = -1;
@@ -97,7 +94,6 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		cover = new uint32_t[ckt.size()];
 		hist_cover = new uint32_t[ckt.size()];
 		// Try to 
-		#pragma omp for 
         for (uint32_t i = 0; i < ckt.size(); i++) {
             simulate[i] = 0;
             mark[i] = 0;
@@ -130,7 +126,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 //		debugPrintSim(ckt, mark,pattern, 3, mfile);
         // calculate coverage against all previous runs
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-//		cpuMergeLog(ckt, mark, mergeLog, pattern);
+		cpuMergeLog(ckt, mark, mergeLog, pattern);
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
         elapsed = floattime(diff(start, stop));
         total += elapsed;
@@ -146,7 +142,6 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 //		debugPrintSim(ckt, cover,pattern, 4, cfile);
 //		debugPrintSim(ckt, hist_cover,pattern, 4, hcfile);
 		uint64_t covercache = 0;
-		#pragma omp for default(none) shared(cover, ckt) reduction(+:covercache)
 		for (size_t i = 0; i < ckt.size(); i++) {
 			if (ckt.at(i).typ == INPT) {
 				covercache += cover[i];

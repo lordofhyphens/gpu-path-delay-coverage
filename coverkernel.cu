@@ -97,8 +97,6 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 		REF2D(uint32_t, cover     , cover_pitch , tid, g) = c;
 		REF2D(uint32_t, hist_cover, hcover_pitch, tid, g) = h;
 
-//		printf("%s:%d - history[%d] = %d\n", __FILE__, __LINE__, g, history[g]);
-//		printf("%s:%d - cover[%d][%d] = %d, history[%d][%d] = %d \n",__FILE__, __LINE__, tid,g, c, tid,g, h);
 	}
 }
 
@@ -109,7 +107,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 	std::ofstream cfile("gpucover.log", std::ios::out);
 	std::ofstream chfile("gpuhcover.log", std::ios::out);
 	uint32_t *results, *g_results, *gh_results;
-	uint32_t *d_results, *dh_results; // debug results 
+//	uint32_t *d_results, *dh_results; // debug results 
 	uint64_t *finalcoverage;
 	*coverage = 0;
 	uint32_t startGate;
@@ -121,13 +119,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 	cudaMemset(finalcoverage, 0, sizeof(uint64_t)); // set value to 0 explicitly
 	HANDLE_ERROR(cudaGetLastError()); // checking that last memory operation completed successfully.
 
-
 	results = (uint32_t*)malloc(mark.block_width()*sizeof(uint32_t)*mark.height());
 //	h_results = (uint32_t*)malloc(mark.block_width()*sizeof(uint32_t)*mark.height());
-
-	ARRAY2D<uint32_t> h = ARRAY2D<uint32_t>(results, mark.height(), mark.width(), sizeof(uint32_t)*mark.width()); // on CPU 
-	ARRAY2D<uint32_t> hc = ARRAY2D<uint32_t>(NULL, mark.height(), mark.width(), sizeof(uint32_t)*mark.width()); // on CPU
-
 
 #ifndef NTIMING
 	float elapsed;
@@ -173,7 +166,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			if (i == 0) {
 				// Sum for all gates and patterns
-				kernSumSingle<<<1,BLOCK_SIZE>>>(ckt.gpu_graph(), ckt.size(), g_results, h.width, pitch, finalcoverage); // inefficient singlethreaded GPU add.
+				kernSumSingle<<<1,BLOCK_SIZE>>>(ckt.gpu_graph(), ckt.size(), g_results, mark.gpu(chunk).width, pitch, finalcoverage); // inefficient singlethreaded GPU add.
 			}
 		}
 		startPattern += mark.gpu(chunk).width;

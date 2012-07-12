@@ -13,7 +13,7 @@ gobj=$(gobj_cu:.c=.o)
 out=fcount
 CPFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char #-fopenmp -Werror # -DNDEBUG #-DNTIMING
 CFLAGS=${CPFLAGS}
-NVCFLAGS=-arch=sm_20 -G -g -O2 --compiler-options -I/opt/net/apps/cuda/include --compiler-options -Wall --compiler-options -Werror -ccbin ${CC} --compiler-options -funsigned-char --compiler-options -fopenmp # --compiler-options -DNDEBUG --ptxas-options=-v #--compiler-options -DNTIMING  
+NVCFLAGS=-arch=sm_20 -O2 --compiler-options -I/opt/net/apps/cuda/include --compiler-options -Wall --compiler-options -Werror -ccbin ${CC} --compiler-options -funsigned-char --compiler-options -fopenmp # --compiler-options -DNDEBUG --ptxas-options=-v #--compiler-options -DNTIMING  
 PYLIB=_fsim.so
 SWIGTEMPLATE=iscas.i sort.i gpuiscas.i simkernel.i
 

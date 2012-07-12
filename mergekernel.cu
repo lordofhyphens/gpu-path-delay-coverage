@@ -97,7 +97,6 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int32_t>& mergeids) {
 		size_t block_x = (input.gpu(chunk).width / MERGE_SIZE) + ((input.gpu(chunk).width % MERGE_SIZE) > 0);
 		size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		do {
-			//DPRINT("%s:%d - Blocks: %lu/%lu (%lu, %lu), %d\n", __FILE__, __LINE__, input.gpu(chunk).width, input.width(), block_x, block_y, MERGE_SIZE);
 			dim3 blocks(block_x, block_y);
 			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count);
 			cudaDeviceSynchronize();
@@ -111,7 +110,6 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int32_t>& mergeids) {
  */
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			dim3 blocksmin(1, block_y);
-			DPRINT("Merging for %lu blocks of patterns", block_x);
 			kernSetMin<<<blocksmin, 1>>>(mergeids.data, mergeids.pitch, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count);
 			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
