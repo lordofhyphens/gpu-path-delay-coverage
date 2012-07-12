@@ -18,7 +18,7 @@ int main(int argc, char ** argv) {
 	GPU_Circuit ckt;
 	std::ofstream cpvec("cpuvectors.log");
 	timespec start, stop;
-	float elapsed = 0.0,mark=0.0,merge =0.0,cover = 0.0,sim1 = 0.0,sim2 =0.0,gpu =0.0;
+	float elapsed = 0.0,mark=0.0,merge =0.0,cover = 0.0,sim1 = 0.0,gpu =0.0;
 	std::cerr << "Reading benchmark file " << argv[1] << "....";
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	std::string infile(argv[1]);
@@ -83,22 +83,9 @@ int main(int argc, char ** argv) {
 		gpu += sim1;
 		std::cerr << "Pass 1: " << sim1 << " ms" << std::endl;
 //		debugDataOutput(vec->gpu(), "siminputs.log");
-		debugSimulationOutput(sim_results->ar2d(), "gpusim-p1.log");
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-		gpu_shift(*vec);
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-		elapsed = floattime(diff(start, stop));
-		gpu += elapsed;
-
-		sim2 = gpuRunSimulation(*sim_results, *vec, ckt, 2);
-		gpu += sim2;
-		std::cerr << "Pass 2: " << sim2 << " ms" << std::endl;
-		debugSimulationOutput(sim_results->ar2d(), "gpusim-p2.log");
-//		debugDataOutput(vec->gpu(), "siminputs-shifted.log");
+//		debugSimulationOutput(sim_results->ar2d(), "gpusim-p1.log");
 		// don't need the input vectors anymore, so remove.
-//		std::clog << __FILE__<<":" << __LINE__ << std::endl;
 		delete vec;
-//		std::clog << __FILE__<<":" << __LINE__ << std::endl;
 		GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), simul_patterns);
 		mark = gpuMarkPaths(*mark_results, *sim_results, ckt);
 		gpu += mark;
@@ -124,7 +111,7 @@ int main(int argc, char ** argv) {
 		std::cerr << "Speedup:" << serial_time/gpu << "X" <<std::endl;
 
 		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << serial_time <<","<< gpu << "_" << sim1 
-			      <<  "_" << sim2 << "_" << mark << "_"<< merge << "_" << cover << "," <<  serial_time/gpu << ":" << *scoverage << ","<< *coverage << std::endl;
+			      <<  "_" << mark << "_"<< merge << "_" << cover << "," <<  serial_time/gpu << ":" << *scoverage << ","<< *coverage << std::endl;
 		delete scoverage;
 		delete coverage;
 	}

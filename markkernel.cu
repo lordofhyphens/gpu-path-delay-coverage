@@ -8,22 +8,22 @@ void HandleMarkError( cudaError_t err, const char *file, int line ) {
 }
 
 #define HANDLE_ERROR( err ) (HandleMarkError( err, __FILE__, __LINE__ ))
-texture<int, 2> and2OutputPropLUT;
-texture<int, 2> and2InputPropLUT;
-texture<int, 2> or2OutputPropLUT;
-texture<int, 2> or2InputPropLUT;
-texture<int, 2> xor2OutputPropLUT;
-texture<int, 2> xor2InputPropLUT;
-texture<int, 2> fromPropLUT;
-texture<int, 2> inptPropLUT;
-texture<int, 2> mergeLUT;
+texture<uint8_t, 2> and2OutputPropLUT;
+texture<uint8_t, 2> and2InputPropLUT;
+texture<uint8_t, 2> or2OutputPropLUT;
+texture<uint8_t, 2> or2InputPropLUT;
+texture<uint8_t, 2> xor2OutputPropLUT;
+texture<uint8_t, 2> xor2InputPropLUT;
+texture<uint8_t, 2> fromPropLUT;
+texture<uint8_t, 2> inptPropLUT;
+texture<uint8_t, 2> mergeLUT;
 
-texture<int, 2> AndInChainLUT;
-texture<int, 2> AndOutChainLUT;
-texture<int, 2> OrInChainLUT;
-texture<int, 2> OrOutChainLUT;
-texture<int, 2> XorInChainLUT;
-texture<int, 2> XorOutChainLUT;
+texture<uint8_t, 2> AndInChainLUT;
+texture<uint8_t, 2> AndOutChainLUT;
+texture<uint8_t, 2> OrInChainLUT;
+texture<uint8_t, 2> OrOutChainLUT;
+texture<uint8_t, 2> XorInChainLUT;
+texture<uint8_t, 2> XorOutChainLUT;
 texture<uint8_t, 2> inputTexture;
 
 
@@ -31,28 +31,28 @@ void loadPropLUTs() {
 	// Creating a set of static arrays that represent our LUTs
 		// Addressing for the propagations:
 	// 2 4x4 groups such that 
-	int and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,0,1};
-	int and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,0,1};
-	int or2_output_prop[16] = {2,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
-	int or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
-	int xor2_input_prop[16] = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
-	int xor2_output_prop[16]= {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
-	int from_prop[16]       = {0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1};
-	int inpt_prop[8]        = {0,0,0,0,0,0,1,1};
+	uint8_t and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,0,1};
+	uint8_t and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,0,1};
+	uint8_t or2_output_prop[16] = {2,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
+	uint8_t or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	uint8_t xor2_input_prop[16] = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	uint8_t xor2_output_prop[16]= {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
+	uint8_t from_prop[16]       = {0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1};
+	uint8_t inpt_prop[8]        = {0,0,0,0,0,0,1,1};
 
-	int and_outp_chain[8]   = {0,0,1,0,0,1,1,1};
-	int and_inp_chain[8]    = {0,0,0,0,0,1,1,1};
-	int or_outp_chain[8]    = {0,0,0,1,1,0,1,1};
-	int or_inp_chain[8]     = {0,0,0,0,1,0,1,1};
-	int xor_outp_chain[8]   = {0,0,0,0,0,0,0,0};
-	int xor_inp_chain[8]    = {0,0,0,0,0,0,0,0};
+	uint8_t and_outp_chain[8]   = {0,0,1,0,0,1,1,1};
+	uint8_t and_inp_chain[8]    = {0,0,0,0,0,1,1,1};
+	uint8_t or_outp_chain[8]    = {0,0,0,1,1,0,1,1};
+	uint8_t or_inp_chain[8]     = {0,0,0,0,1,0,1,1};
+	uint8_t xor_outp_chain[8]   = {0,0,0,0,0,0,0,0};
+	uint8_t xor_inp_chain[8]    = {0,0,0,0,0,0,0,0};
 
 	cudaExtent volumeSize = make_cudaExtent(4,4,2);
 	// device memory arrays, required. 
 	cudaArray *cuAndInptProp, *cuAndOutpProp, *cuOrInptProp, *cuOrOutpProp, *cuFromProp, *cuInptProp, *cuXorInptProp, *cuXorOutpProp;
 	cudaArray *cuAndOutChain, *cuAndInChain, *cuOrInChain, *cuOrOutChain, *cuXorInChain, *cuXorOutChain;
 	// generic formatting information. All of our arrays are the same, so sharing it shouldn't be a problem.
-	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
+	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<uint8_t>();
 	// Allocating memory on the device.
 		
 	HANDLE_ERROR(cudaMallocArray(&cuFromProp, &channelDesc, 4,4));
@@ -72,21 +72,21 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaMallocArray(&cuAndOutChain, &channelDesc, 4,2));
 
 	// Copying the LUTs Host->Device
-	HANDLE_ERROR(cudaMemcpyToArray(cuFromProp, 0,0, from_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuAndInptProp, 0,0, and2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuAndOutpProp, 0,0, and2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuOrInptProp, 0,0, or2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuOrOutpProp, 0,0, or2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuXorInptProp, 0,0, xor2_input_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuXorOutpProp, 0,0, xor2_output_prop, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuInptProp, 0,0, inpt_prop, sizeof(int)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuFromProp, 0,0, from_prop, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuAndInptProp, 0,0, and2_input_prop, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuAndOutpProp, 0,0, and2_output_prop, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuOrInptProp, 0,0, or2_input_prop, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuOrOutpProp, 0,0, or2_output_prop, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXorInptProp, 0,0, xor2_input_prop, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXorOutpProp, 0,0, xor2_output_prop, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuInptProp, 0,0, inpt_prop, sizeof(uint8_t)*8,cudaMemcpyHostToDevice));
 	
-	HANDLE_ERROR(cudaMemcpyToArray(cuXorInChain, 0,0, xor_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuXorOutChain, 0,0, xor_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuOrInChain, 0,0, or_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuOrOutChain, 0,0, or_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuAndInChain, 0,0, and_inp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuAndOutChain, 0,0, and_outp_chain, sizeof(int)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXorInChain, 0,0, xor_inp_chain, sizeof(uint8_t)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXorOutChain, 0,0, xor_outp_chain, sizeof(uint8_t)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuOrInChain, 0,0, or_inp_chain, sizeof(uint8_t)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuOrOutChain, 0,0, or_outp_chain, sizeof(uint8_t)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuAndInChain, 0,0, and_inp_chain, sizeof(uint8_t)*8,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuAndOutChain, 0,0, and_outp_chain, sizeof(uint8_t)*8,cudaMemcpyHostToDevice));
 
 	// Marking them as textures. LUTs should be in texture memory and cached on
 	// access.
@@ -107,37 +107,31 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
 __device__ uint8_t markeval_out (uint8_t f1, uint8_t f2, int type) {
-	uint8_t and2_output_prop[16]= {0,0,0,0,0,2,1,1,0,1,1,0,0,1,0,1};
-	uint8_t or2_output_prop[16] = {2,0,1,1,0,0,0,0,1,0,1,1,1,0,1,1};
-	uint8_t xor2_output_prop[16]= {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
 
 	switch(type) {
 		case AND:
 		case NAND:
-			return REF2D(uint8_t,and2_output_prop,sizeof(uint8_t)*4,f1,f2);
+			return tex2D(and2OutputPropLUT, f1, f2);
 		case OR:
 		case NOR:
-			return REF2D(uint8_t,or2_output_prop,sizeof(uint8_t)*4,f1,f2);
+			return tex2D(or2OutputPropLUT, f1, f2);
 		case XOR:
 		case XNOR:
-			return REF2D(uint8_t,xor2_output_prop,sizeof(uint8_t)*4,f1,f2);
+			return tex2D(xor2OutputPropLUT, f1, f2);
 	}
 	return 0xff;
 }
 __device__ uint8_t markeval_in (uint8_t f1, uint8_t f2, int type) {
-	uint8_t and2_input_prop[16] = {0,0,0,0,0,0,1,1,0,0,1,0,0,0,0,1};
-	uint8_t or2_input_prop[16]  = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
-	uint8_t xor2_input_prop[16] = {0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1};
 	switch(type) {
 		case AND:
 		case NAND:
-			return REF2D(uint8_t,and2_input_prop,sizeof(uint8_t)*4,f1,f2);
+			return tex2D(and2InputPropLUT, f1, f2);
 		case OR:
 		case NOR:
-			return REF2D(uint8_t,or2_input_prop,sizeof(uint8_t)*4,f1,f2);
+			return tex2D(or2InputPropLUT, f1, f2);
 		case XOR:
 		case XNOR:
-			return REF2D(uint8_t,xor2_input_prop,sizeof(uint8_t)*4,f1,f2);
+			return tex2D(xor2InputPropLUT, f1, f2);
 	}
 	return 0xff;
 }

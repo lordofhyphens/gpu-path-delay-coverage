@@ -13,8 +13,7 @@ typedef uint32_t unsigned int;
 typedef uint8_t unsigned uint8_t;
 typedef uint64_t long unsigned int;
 */
-void cpuSimulateP1(const Circuit& ckt, const uint8_t* pi, uint32_t* sim,const size_t pi_pitch, const size_t pattern);
-void cpuSimulateP2(const Circuit& ckt, const uint8_t* pi, uint32_t* sim,const size_t pi_pitch, const size_t pattern);
+void cpuSimulateP1(const Circuit& ckt, const uint8_t* pi, uint32_t* sim,const size_t pi_pitch, const size_t pattern,const size_t pattern_count);
 void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark);
 void cpuCover(const Circuit& ckt, uint32_t* mark, uint32_t pattern, int32_t* history, uint32_t* cover, uint32_t* hist_cover, uint64_t& covered);
 inline void cpuMerge(const Circuit& ckt, uint32_t* in, uint32_t* hist) { for (uint32_t i = 0; i < ckt.size(); i++) { hist[i] = hist[i] | in[i];} }
@@ -55,8 +54,7 @@ void debugPrintSim(const Circuit& ckt, uint32_t* in, uint32_t pattern, uint32_t 
 					default: ofile << std::setw(OUTJUST) << (uint32_t)in[i] << " "; break;
 				} break;
 			default:
-				if (ckt.at(i).typ == INPT)
-					ofile << std::setw(OUTJUST) << (uint32_t)in[i] << " "; break;
+				ofile << std::setw(OUTJUST) << (uint32_t)in[i] << " "; break;
 		}
 	}
 	ofile << std::endl;
@@ -68,6 +66,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 	std::ofstream s2file("serialsim-p2.log", std::ios::out);
 	std::ofstream mfile("serialmark.log", std::ios::out);
 	std::ofstream cfile("serialcover.log", std::ios::out);
+	std::ofstream hcfile("serialhcover.log", std::ios::out);
     float total = 0.0, elapsed;
     timespec start, stop;
     uint32_t* simulate;
@@ -109,7 +108,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 			// simulate pattern 1
 //			std::cerr << pattern <<  " - Serial Simulate P1" << std::endl;
-			cpuSimulateP1(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern);
+			cpuSimulateP1(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern, input.width());
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 			elapsed = floattime(diff(start, stop));
 			total += elapsed;
@@ -117,22 +116,6 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 			std::cerr << "Caught exception in cpuSim Pass 1" << e.what() << std::endl;
 		}
 //		debugPrintSim(ckt, simulate,pattern, 2, s1file);
-		// simulate pattern 2
-		try { 
-			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-			if (pattern == (input.width()-1))  {
-				cpuSimulateP2(ckt, input.cpu().data, simulate, input.cpu().pitch,0);
-			}
-			else {
-				cpuSimulateP2(ckt, input.cpu().data, simulate, input.cpu().pitch,pattern+1);
-			}
-			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-			elapsed = floattime(diff(start, stop));
-			total += elapsed;
-		} catch(std::exception e) { 
-			std::cerr << "Caught exception in cpuSim Pass 2" << e.what() << std::endl;
-		}
-//		debugPrintSim(ckt, simulate,pattern, 2, s2file);
         // mark
 		try {
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -147,7 +130,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 //		debugPrintSim(ckt, mark,pattern, 3, mfile);
         // calculate coverage against all previous runs
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-		cpuMergeLog(ckt, mark, mergeLog, pattern);
+//		cpuMergeLog(ckt, mark, mergeLog, pattern);
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
         elapsed = floattime(diff(start, stop));
         total += elapsed;
@@ -160,7 +143,8 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		} catch (std::exception e) {
 			std::cerr << "Caught an exception in cpuCover - " << e.what() << std::endl;
 		}
-	//	debugPrintSim(ckt, cover,pattern, 4, cfile);
+//		debugPrintSim(ckt, cover,pattern, 4, cfile);
+//		debugPrintSim(ckt, hist_cover,pattern, 4, hcfile);
 		uint64_t covercache = 0;
 		#pragma omp for default(none) shared(cover, ckt) reduction(+:covercache)
 		for (size_t i = 0; i < ckt.size(); i++) {
@@ -209,12 +193,12 @@ void debugMergeOutput(int32_t* data, size_t height, size_t width, std::string ou
 
 }
 uint32_t gateeval (uint32_t f1, uint32_t f2, uint32_t type) {
-	uint32_t nand2[16] = {1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0};
-	uint32_t and2[16]  = {0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1};
-	uint32_t nor2[16]  = {1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0};
-	uint32_t or2[16]   = {0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1};
-	uint32_t xnor2[16] = {1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1};
-	uint32_t xor2[16]  = {0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0};
+	uint32_t nand2[16] = {S1, S1, S1, S1, S1, S0, T1, T0, S1, T1, T1, S1, S1, T0, S1, T0};
+	uint32_t and2[16]  = {S0, S0, S0, S0, S0, S1, T0, T1, S0, T0, T0, S0, S0, T1, S0, T1};
+	uint32_t nor2[16]  = {S1, S0, T1, T0, S0, S0, S0, S0, T1, S0, T1, S0, T0, S0, S0, T0};
+	uint32_t or2[16]   = {S0, S1, T0, T1, S1, S1, S1, S1, T0, S1, T0, S1, T1, S1, S1, T1};
+	uint32_t xnor2[16] = {S1, S0, T1, T0, S0, S1, T0, T1, T1, T0, S1, S0, T0, T1, S0, S1};
+	uint32_t xor2[16]  = {S0, S1, T0, T1, S1, S0, T1, T0, T0, T1, S0, S1, T1, T0, S1, S0};
 	uint32_t val = 0xff;
 	switch(type) {
 		case AND: 
@@ -233,23 +217,27 @@ uint32_t gateeval (uint32_t f1, uint32_t f2, uint32_t type) {
 	return val;
 }
 
-void cpuSimulateP1(const Circuit& ckt, const uint8_t* pi, uint32_t* sim, const size_t pi_pitch, const size_t pattern) {
-	uint32_t mingate = 0;
-	for (uint16_t level = 0; level <= ckt.levels(); level++) {
-		#pragma omp for
-		for (uint32_t g = mingate; g < mingate + ckt.levelsize(level); g++) {
+void cpuSimulateP1(const Circuit& ckt, const uint8_t* pi, uint32_t* sim, const size_t pi_pitch, const size_t pattern, const size_t pattern_count) {
+//	uint32_t mingate = 0;
+	uint32_t stable[2][2] = {{S0, T1}, {T0, S1}};
+	uint32_t not_gate[4] = {S1, S0, T1, T0};
+	const uint32_t pattern2 = (pattern < pattern_count - 1 ? pattern+1 : 0);
+//	for (uint16_t level = 0; level <= ckt.levels(); level++) {
+//		#pragma omp for
+//		for (uint32_t g = mingate; g < mingate + ckt.levelsize(level); g++) {
+		for (uint32_t g = 0; g < ckt.size(); g++) {
 			const NODEC gate = ckt.at(g);
 			uint8_t val = 0;
 			switch(gate.typ) {
 				case INPT:
-					val = REF2D(uint8_t,pi,pi_pitch,pattern,g); break;
+					val = stable[REF2D(uint8_t,pi,pi_pitch,pattern,g)][REF2D(uint8_t,pi,pi_pitch,pattern2,g)]; break;
 				case FROM:
 					val = FREF(sim,gate,fin,0); break;
 				default:
 					if (gate.typ != NOT) {
 						val = FREF(sim,gate,fin,0);
 					} else {
-						val = (FREF(sim,gate,fin,0) != 1);
+						val = not_gate[FREF(sim,gate,fin,0)];
 					}
 					uint32_t j = 1;
 					while (j < gate.fin.size()) {
@@ -258,37 +246,8 @@ void cpuSimulateP1(const Circuit& ckt, const uint8_t* pi, uint32_t* sim, const s
 					}
 			}
 			sim[g] = val;
-		}
-		mingate += ckt.levelsize(level);
-	}
-}
-void cpuSimulateP2(const Circuit& ckt, const uint8_t* pi, uint32_t* sim, const size_t pi_pitch, const size_t pattern) {
-	uint32_t stable[2][2] = {{S0, T1}, {T0, S1}};
-	uint32_t mingate = 0;
-	for (uint16_t level = 0; level <= ckt.levels(); level++) {
-		#pragma omp for
-		for (uint32_t g = mingate; g < mingate + ckt.levelsize(level); g++) {
-			const NODEC gate = ckt.at(g);
-			uint32_t val;
-			switch(gate.typ) {
-				case INPT: val = REF2D(uint8_t,pi,pi_pitch,pattern, g); break;
-				case FROM: val = BIN(FREF(sim,gate,fin,0)); break;
-				default:
-						   if (gate.typ != NOT) {
-							   val = BIN(FREF(sim,gate,fin,0));
-						   } else {
-							   val = (BIN(FREF(sim,gate,fin,0)) != 1);
-						   }
-						   uint32_t j = 1;
-						   while (j < gate.fin.size()) {
-							   val = gateeval(val,FREF(sim,gate,fin,j),gate.typ);
-							   j++;
-						   }
-
-			}
-			sim[g] = stable[sim[g]][val];
-		}
-		mingate += ckt.levelsize(level);
+//		}
+//		mingate += ckt.levelsize(level);
 	}
 }
 uint32_t cpuMarkEval_in(uint32_t f1, uint32_t f2, uint32_t type) {
@@ -420,7 +379,7 @@ void cpuCover(const Circuit& ckt, uint32_t* mark, const uint32_t pattern, int32_
 		const uint32_t g = ckt.size() - (g2+1);
         const NODEC& gate = ckt.at(g);
 		const uint8_t cache = mark[g];
-		uint32_t c, h;
+		uint32_t c=0, h=0;
         if (gate.po == true) {
             c = 0;
             h = (cache > 0);

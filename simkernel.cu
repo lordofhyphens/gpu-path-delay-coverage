@@ -8,14 +8,14 @@ void HandleSimError( cudaError_t err, const char *file, int line ) {
     }
 }
 #define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
-texture<int, 2> and2LUT;
-texture<int, 2> nand2LUT;
-texture<int, 2> or2LUT;
-texture<int, 2> nor2LUT;
-texture<int, 2> xor2LUT;
-texture<int, 2> xnor2LUT;
-texture<int, 2> stableLUT;
-texture<int, 1> notLUT;
+texture<uint8_t, 2> and2LUT;
+texture<uint8_t, 2> nand2LUT;
+texture<uint8_t, 2> or2LUT;
+texture<uint8_t, 2> nor2LUT;
+texture<uint8_t, 2> xor2LUT;
+texture<uint8_t, 2> xnor2LUT;
+texture<uint8_t, 2> stableLUT;
+texture<uint8_t, 1> notLUT;
 
 __device__ uint8_t simLUT(int type, uint8_t val, uint8_t r) {
 	switch(type) {
@@ -33,7 +33,7 @@ __global__ void kernSimulateP1(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch
 	int tid = (blockIdx.y * SIM_BLOCK) + threadIdx.x;
 	int gid = blockIdx.x+start_offset;
 	int pid = tid + startPattern;
-	uint8_t rowcache;
+	int pid2 = (tid+startPattern == pattern_count -1 ? 0: tid+startPattern+1);
 	uint8_t *row, r, val;
 	int goffset, nfi, j,type;
 	if (pid < pattern_count)  {
@@ -42,15 +42,15 @@ __global__ void kernSimulateP1(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch
 		nfi = graph[gid].nfi;
 		type = graph[gid].type;
 		__syncthreads();
-		rowcache = REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index, goffset, 0));
 		switch (type) {
-			case INPT: val = REF2D(uint8_t, pi_data, pi_pitch, pid+pi_offset, gid); break;
+			case INPT: val = tex2D(stableLUT,REF2D(uint8_t, pi_data, pi_pitch, pid+pi_offset, gid),REF2D(uint8_t, pi_data, pi_pitch, pid2+pi_offset, gid)); break;
 			case FROM: val = REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index, goffset, 0)); break;
 			default: 
 					// we're guaranteed at least one fanin per 
 					// gate if not on an input.
 					__syncthreads();
-					if (type != NOT) { val = rowcache; } else { val = !(BIN(rowcache)); }
+					if (type != NOT) { val = REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index, goffset, 0)); } 
+					else { val = tex1D(notLUT, REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index, goffset, 0))); }
 					j = 1;
 					while (j < nfi) {
 						__syncthreads();
@@ -59,58 +59,26 @@ __global__ void kernSimulateP1(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch
 						j++;
 					}
 		}
-		*row = val;
-	}
-}
-__global__ void kernSimulateP2(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch, size_t pi_offset, uint8_t* output_data, size_t pitch,size_t pattern_count,  uint32_t* fanout_index, int start_offset, int startPattern) {
-	int tid = (blockIdx.y * SIM_BLOCK) + threadIdx.x, prev=0;
-	int gid = blockIdx.x+start_offset;
-	int pid = tid + startPattern;
-	uint8_t rowcache;
-	uint8_t *row, r;
-	int goffset, nfi, val, j,type;
-
-	if (pid < pattern_count) {
-		row = ((uint8_t*)output_data + gid*pitch)+tid; // get the line row for the current gate
-		goffset = graph[gid].offset;
-		nfi = graph[gid].nfi;
-		type = graph[gid].type;
-		prev = *row;
-
-		rowcache = ((uint8_t*)output_data+(fanout_index[goffset]*pitch))[tid];
-		switch (type) {
-			case INPT: val = BIN(REF2D(uint8_t, pi_data, pi_pitch, (pid+pi_offset), gid)); break;
-			case FROM: val = BIN(REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index, goffset, 0))); break;
-			default: 
-					// we're guaranteed at least one fanin per 
-					// gate if not on an input.
-					__syncthreads();
-					if (type != NOT) { val = BIN(rowcache); } else { val = !(BIN(rowcache)); }
-					j = 1;
-					while (j < nfi) {
-						__syncthreads();
-						r = REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index,goffset,j));
-						val = simLUT(type,val,BIN(r));
-						j++;
-					}
+		if (val > T1) {
+			assert(val <= T1);
 		}
-		*row = tex2D(stableLUT,prev,val);
+		*row = val;
 	}
 }
 
 void loadSimLUTs() {
-	int nand2[16] = {1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0};
-	int and2[16]  = {0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1};
-	int nor2[16]  = {1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0};
-	int or2[16]   = {0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1};
-	int xnor2[16] = {1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1};
-	int xor2[16]  = {0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0};
-	int stable[4] = {S0, T0, T1, S1};
-	int not_gate[4] = {1, 1, 0, 0};
+	uint8_t nand2[16] = {S1, S1, S1, S1, S1, S0, T1, T0, S1, T1, T1, S1, S1, T0, S1, T0};
+	uint8_t and2[16]  = {S0, S0, S0, S0, S0, S1, T0, T1, S0, T0, T0, S0, S0, T1, S0, T1};
+	uint8_t nor2[16]  = {S1, S0, T1, T0, S0, S0, S0, S0, T1, S0, T1, S0, T0, S0, S0, T0};
+	uint8_t or2[16]   = {S0, S1, T0, T1, S1, S1, S1, S1, T0, S1, T0, S1, T1, S1, S1, T1};
+	uint8_t xnor2[16] = {S1, S0, T1, T0, S0, S1, T0, T1, T1, T0, S1, S0, T0, T1, S0, S1};
+	uint8_t xor2[16]  = {S0, S1, T0, T1, S1, S0, T1, T0, T0, T1, S0, S1, T1, T0, S1, S0};
+	uint8_t stable[4] = {S0, T0, T1, S1};
+	uint8_t not_gate[4] = {S1, S0, T1, T0};
 
 	// device memory arrays, required. 
 	cudaArray *cuNandArray, *cuAndArray,*cuNorArray, *cuOrArray,*cuXnorArray,*cuXorArray, *cuNotArray,*cuStableArray;
-	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
+	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<uint8_t>();
 
 	// Allocate space in device memory for the LUTs. 
 	HANDLE_ERROR(cudaMallocArray(&cuNandArray, &channelDesc, 4,4));
@@ -123,14 +91,14 @@ void loadSimLUTs() {
 	HANDLE_ERROR(cudaMallocArray(&cuNotArray, &channelDesc, 4,1));
 
 	// Copying the static arrays given to device memory.
-	HANDLE_ERROR(cudaMemcpyToArray(cuNandArray, 0,0, nand2, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuAndArray, 0,0, and2, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuNorArray, 0,0, nor2, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuOrArray, 0,0, or2, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuXnorArray, 0,0, xnor2, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuXorArray, 0,0, xor2, sizeof(int)*16,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuStableArray, 0,0, stable, sizeof(int)*4,cudaMemcpyHostToDevice));
-	HANDLE_ERROR(cudaMemcpyToArray(cuNotArray, 0,0, not_gate, sizeof(int)*4,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuNandArray, 0,0, nand2, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuAndArray, 0,0, and2, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuNorArray, 0,0, nor2, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuOrArray, 0,0, or2, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXnorArray, 0,0, xnor2, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuXorArray, 0,0, xor2, sizeof(uint8_t)*16,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuStableArray, 0,0, stable, sizeof(uint8_t)*4,cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToArray(cuNotArray, 0,0, not_gate, sizeof(uint8_t)*4,cudaMemcpyHostToDevice));
 
 	HANDLE_ERROR(cudaBindTextureToArray(and2LUT,cuAndArray,channelDesc));
 	HANDLE_ERROR(cudaBindTextureToArray(nand2LUT,cuNandArray,channelDesc));
@@ -162,16 +130,11 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 			do { 
 				int simblocks = min(MAX_BLOCKS, levelsize);
 				dim3 numBlocks(simblocks,blockcount_y);
-//				//DPRINT("%s:%d - %d %d %d %d \n", __FILE__,__LINE__, i, simblocks, blockcount_y, levelsize);
-				if (pass > 1) {
-					kernSimulateP2<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(), inputs.gpu().data, inputs.gpu().pitch,
-							chunk*results.gpu(chunk).width, results.gpu(chunk).data, results.gpu(chunk).pitch, 
-							inputs.block_width(), ckt.offset(), startGate, startPattern);
-				} else {
-					kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(), inputs.gpu().data, inputs.gpu().pitch, 
-							chunk*results.gpu(chunk).width, results.gpu(chunk).data, results.gpu(chunk).pitch, 
-							inputs.block_width(), ckt.offset(), startGate, startPattern);
-				}
+
+				kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(), inputs.gpu().data, inputs.gpu().pitch,
+						chunk*results.gpu(chunk).width, results.gpu(chunk).data, results.gpu(chunk).pitch, 
+						inputs.block_width(), ckt.offset(), startGate, startPattern);
+
 				startGate += simblocks;
 				if (levelsize > MAX_BLOCKS) {
 					levelsize -= MAX_BLOCKS;
