@@ -60,11 +60,10 @@ void debugPrintSim(const Circuit& ckt, uint32_t* in, uint32_t pattern, uint32_t 
 }
 
 float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
-	std::ofstream s1file("serialsim-p1.log", std::ios::out);
-	std::ofstream s2file("serialsim-p2.log", std::ios::out);
-	std::ofstream mfile("serialmark.log", std::ios::out);
-	std::ofstream cfile("serialcover.log", std::ios::out);
-	std::ofstream hcfile("serialhcover.log", std::ios::out);
+	LOGEXEC(std::ofstream s1file("serialsim-p1.log", std::ios::out));
+	LOGEXEC(std::ofstream mfile("serialmark.log", std::ios::out));
+	LOGEXEC(std::ofstream cfile("serialcover.log", std::ios::out));
+	LOGEXEC(std::ofstream hcfile("serialhcover.log", std::ios::out));
     float total = 0.0, elapsed;
     timespec start, stop;
     uint32_t* simulate;
@@ -77,13 +76,6 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 	uint64_t* coverage = *covered;
     *coverage = 0;
 	
-/*	std::cerr << "CPU results:" << std::endl;
-	std::clog << "Line:   \t";
-	for (uint32_t i = 0; i < ckt.size(); i++) { 
-		DPRINT("%3d ", i);
-	}
-	std::clog << std::endl;
-*/
 	for (uint32_t i = 0; i < ckt.size(); i++) {
 		merge[i] = 0;
 		mergeLog[i] = -1;
@@ -111,7 +103,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		} catch(std::exception e) { 
 			std::cerr << "Caught exception in cpuSim Pass 1" << e.what() << std::endl;
 		}
-		debugPrintSim(ckt, simulate,pattern, 2, s1file);
+		LOGEXEC(debugPrintSim(ckt, simulate,pattern, 2, s1file));
         // mark
 		try {
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -123,7 +115,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 			std::cerr << "Caught exception in cpuMark" << e.what() << std::endl;
 		}
 		//std::cerr << "    Mark: ";
-//		debugPrintSim(ckt, mark,pattern, 3, mfile);
+		LOGEXEC(debugPrintSim(ckt, mark,pattern, 3, mfile));
         // calculate coverage against all previous runs
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		cpuMergeLog(ckt, mark, mergeLog, pattern);
@@ -139,8 +131,8 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		} catch (std::exception e) {
 			std::cerr << "Caught an exception in cpuCover - " << e.what() << std::endl;
 		}
-//		debugPrintSim(ckt, cover,pattern, 4, cfile);
-//		debugPrintSim(ckt, hist_cover,pattern, 4, hcfile);
+		LOGEXEC(debugPrintSim(ckt, cover,pattern, 4, cfile));
+		LOGEXEC(debugPrintSim(ckt, hist_cover,pattern, 4, hcfile));
 		uint64_t covercache = 0;
 		for (size_t i = 0; i < ckt.size(); i++) {
 			if (ckt.at(i).typ == INPT) {
@@ -148,22 +140,19 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 			}
 		}
 		*coverage = *coverage + covercache;
-        // merge mark to history
-        //std::cerr << "Merge" << std::endl;
-//        cpuMerge(ckt, mark, merge);
 
         delete mark;
         delete simulate;
 		delete cover;
 		delete hist_cover;
     }
-	debugMergeOutput(mergeLog, 1, ckt.size(), "serialmerge.log" );
+	LOGEXEC(debugMergeOutput(mergeLog, 1, ckt.size(), "serialmerge.log" ));
     DPRINT("Serial Coverage: %lu\n", *coverage);
     delete coverage;
-	s1file.close();
-	s2file.close();
-	mfile.close();
-	cfile.close();
+	LOGEXEC(s1file.close());
+	LOGEXEC(mfile.close());
+	LOGEXEC(cfile.close());
+	LOGEXEC(chfile.close());
 	std::clog << "Completed serial simulation." << std::endl;
     return total;
 }

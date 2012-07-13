@@ -15,14 +15,19 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 		AR[A]*(AR[B]==0) + \
 		AR[B]*(AR[A]==0) )
 
-__global__ void kernReduce(uint8_t* input, size_t height, size_t pitch, int32_t* meta, uint32_t mpitch, uint32_t startGate) {
+#define MIN_GEN(L,R) ( \
+		((L) != 0)*((L) < (R))*(L) + \
+		((R) != 0)*((R) < (L))*(R) )
+
+
+__global__ void kernReduce(uint8_t* input, size_t height, size_t pitch, int32_t* meta, uint32_t mpitch, uint32_t startGate, uint32_t startPattern) {
 	uint32_t tid = threadIdx.x;
 	uint32_t gid = blockIdx.y+startGate;
 	__shared__ uint32_t sdata[MERGE_SIZE];
 	uint8_t* row = input + pitch*gid;
-	 uint32_t i = blockIdx.x*(MERGE_SIZE*2) + threadIdx.x;
+	 uint32_t i = blockIdx.x*(MERGE_SIZE*2)+tid;
 	sdata[tid] = 0;
-	// need to put the lower of i and i+MERGE_SIZE for which g_idata[i] == 1
+	// Put the lower of pid and pid+MERGE_SIZE for which row[i] == 1
 	// Minimum ID given by this is 1.
 	if (i < height) {
 		if (i+MERGE_SIZE > height) { // correcting for blocks smaller than MERGE_SIZE
@@ -59,18 +64,25 @@ __global__ void kernReduce(uint8_t* input, size_t height, size_t pitch, int32_t*
 	}
 }
 
-__global__ void kernSetMin(int32_t* g_odata, size_t pitch,int32_t* intermediate, uint32_t i_pitch,uint32_t length, uint32_t startGate) {
+__global__ void kernSetMin(int32_t* g_odata, size_t pitch,int32_t* intermediate, uint32_t i_pitch,uint32_t length, uint32_t startGate, uint32_t startPattern, uint16_t chunk) {
 	 uint32_t gid = blockIdx.y + startGate;
 	// scan sequentially until a thread ID is discovered;
-	uint32_t i = 0;
+	int32_t i = 0;
 	while (REF2D(int32_t, intermediate, i_pitch, i, gid) < 0 && i < length) {
 		i++;
 	}
 //	printf("%s:%d - gid[%d] i = %d\n", __FILE__, __LINE__, gid, i);
+
 	if (i < length) {
-		g_odata[gid] = REF2D(int32_t, intermediate, i_pitch, i, gid);
+		if (chunk > 0) {
+			g_odata[gid] = MIN_GEN(REF2D(int32_t, intermediate, i_pitch, i, gid) + startPattern, g_odata[gid]);
+		} else {
+			g_odata[gid] = REF2D(int32_t, intermediate, i_pitch, i, gid);
+		}
 	} else {
-		g_odata[gid] = -1;
+		if (chunk == 0) {
+			g_odata[gid] = -1;
+		}
 	}
 //	printf("%s:%d - g_odata[%d] = %d\n", __FILE__, __LINE__, gid, g_odata[gid]);
 
@@ -91,6 +103,7 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int32_t>& mergeids) {
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+	uint32_t startPattern = 0;
 #endif // NTIMING
 	for ( uint32_t chunk = 0; chunk < input.size(); chunk++) {
 		count = 0;
@@ -98,31 +111,19 @@ float gpuMergeHistory(GPU_Data& input, ARRAY2D<int32_t>& mergeids) {
 		size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		do {
 			dim3 blocks(block_x, block_y);
-			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count);
+			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count, startPattern);
 			cudaDeviceSynchronize();
-/*			cudaMemcpy2D(debugt, sizeof(uint32_t)*block_x, temparray, pitch, sizeof(uint32_t)*block_x, input.height(), cudaMemcpyDeviceToHost);
-			for ( uint32_t j = 0; j < block_x/2; j++) {
-				for ( uint32_t i = 0; i < input.height(); i++) {
-					//DPRINT("%4d ", REF2D(uint32_t, debugt, sizeof(uint32_t)*block_x,j,i));
-				}
-				//DPRINT("\n");
-			}
- */
+
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			dim3 blocksmin(1, block_y);
-			kernSetMin<<<blocksmin, 1>>>(mergeids.data, mergeids.pitch, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count);
+			kernSetMin<<<blocksmin, 1>>>(mergeids.data, mergeids.pitch, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count, startPattern,chunk);
 			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			count+=65535;
 			if (remaining_blocks > 65535) { remaining_blocks -= 65535; }
 			block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		} while (remaining_blocks > 65535);
-/*		cudaMemcpy(debug, mergeids.data, sizeof(uint32_t)*input.height(),  cudaMemcpyDeviceToHost);
-		for ( uint32_t i = 0; i < input.height(); i++) {
-			//DPRINT("%2d ", debug[i]);
-		}
-		//DPRINT("\n");
- */
+		startPattern += input.gpu(chunk).width;
 	}
 	cudaFree(temparray);
 #ifndef NTIMING

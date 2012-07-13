@@ -12,6 +12,12 @@
 	#define DPRINT(...) fprintf(stderr, __VA_ARGS__)
 #endif // DPRINT definition
 
+#define NDUMPLOG
+#ifndef NDUMPLOG
+	#define LOGEXEC(...) (...)
+#else
+	#define LOGEXEC(...)
+#endif
 #ifdef NDEBUG 
 	#define GPRINT(A, ...) 
 #else

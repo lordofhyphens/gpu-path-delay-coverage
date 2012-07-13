@@ -139,11 +139,10 @@ __device__ uint8_t markeval_in (uint8_t f1, uint8_t f2, int type) {
 __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* mark, size_t pitch, size_t patterns, GPUNODE* node, uint32_t* fans, int start, int startPattern) {
 	int tid = (blockIdx.y * blockDim.x) + threadIdx.x, nfi, goffset,val,prev;
 	int gid = (blockIdx.x) + start;
-	int pid = tid+startPattern;
 	uint8_t rowCache, resultCache;
 	uint8_t cache, fin = 1;
 	int tmp = 1, pass = 0, fin1 = 0, fin2 = 0,type;
-	if (pid < patterns) {
+	if (tid < patterns) {
 		cache = 0;
 		rowCache = REF2D(uint8_t,sim,sim_pitch,tid,gid);
 		resultCache = REF2D(uint8_t,mark,pitch,tid,gid);
@@ -243,7 +242,6 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 	for (unsigned int chunk = 0; chunk < input.size(); chunk++) {
 		blockcount_y = (int)(results.gpu(chunk).width/MARK_BLOCK) + ((results.gpu(chunk).width% MARK_BLOCK) > 0);
 		startGate=ckt.size()-1;
-		DPRINT("Patterns to process in block %u: %lu\n", chunk, results.gpu(chunk).width);
 		for (int i = ckt.levels(); i >= 0; i--) {
 			int levelsize = ckt.levelsize(i);
 			do { 
@@ -256,8 +254,8 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 				} else {
 					levelsize = 0;
 				}
+				cudaDeviceSynchronize();
 			} while (levelsize > 0);
-			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
 		startPattern += input.gpu(chunk).width;
@@ -271,7 +269,36 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 #endif // NTIMING
 }
 
+void debugMarkOutput(GPU_Data* results, std::string outfile = "simdebug.log") {
+#ifndef NDEBUG
+	std::ofstream ofile(outfile.c_str());
+	size_t t = 0;
+	for (size_t chunk = 0; chunk < results->size(); chunk++) {
+		uint8_t *lvalues;
+		lvalues = (uint8_t*)malloc(results->gpu(chunk).height*results->gpu(chunk).pitch);
+		cudaMemcpy2D(lvalues,results->gpu().pitch,results->gpu(chunk).data,results->gpu(chunk).pitch,results->gpu(chunk).width,results->gpu(chunk).height,cudaMemcpyDeviceToHost);
+		for (unsigned int r = 0;r < results->gpu(chunk).width; r++) {
+			ofile << "Vector " << t << ":\t";
+			for (unsigned int i = 0; i < results->gpu(chunk).height; i++) {
+				uint8_t z = REF2D(uint8_t, lvalues, results->gpu(chunk).pitch, r, i);
+				switch(z) {
+					case 0:
+						ofile  << std::setw(OUTJUST) << "N" << " "; break;
+					case 1:
+						ofile  << std::setw(OUTJUST) << "Y" << " "; break;
+					default:
+						ofile << std::setw(OUTJUST) << (int)z << " "; break;
+				}
+			}
+			ofile << std::endl;
+			t++;
+		}
+		free(lvalues);
+	}
+	ofile.close();
+#endif
 
+}
 void debugMarkOutput(ARRAY2D<uint8_t> results, std::string outfile) {
 #ifndef NDEBUG
 	uint8_t *lvalues;

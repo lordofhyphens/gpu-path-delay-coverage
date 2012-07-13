@@ -15,6 +15,7 @@ __device__ void warpReduce(volatile uint32_t* sdata, uint16_t tid) {
 	if (blockSize >= 4) sdata[tid] += sdata[tid + 2];
 	if (blockSize >= 2) sdata[tid] += sdata[tid + 1];
 }
+
 #define SUM(A, B, DATA) (DATA[A]+DATA[B])
 #define BLOCK_SIZE 1024
 __global__ void kernSumSingle(GPUNODE* ckt, size_t size, uint32_t* input, size_t height, size_t pitch, uint64_t* meta) {
@@ -60,7 +61,7 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 	const uint32_t g = blockIdx.x+start_offset;
 	const GPUNODE& gate = ckt[g];
 	
-	if (pid < pattern_count) {
+	if (tid < pattern_count) {
 		const uint8_t cache = REF2D(uint8_t,mark,mark_pitch,tid, g); // cache the current node's marked status.
 		// shorthand references to current coverage and history count.
 		uint32_t c = 0, h = 0;
@@ -104,10 +105,10 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_t>& merges, uint64_t* coverage) {
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure there aren't any errors going into function.
 
-	std::ofstream cfile("gpucover.log", std::ios::out);
-	std::ofstream chfile("gpuhcover.log", std::ios::out);
+	LOGEXEC(std::ofstream cfile("gpucover.log", std::ios::out));
+	LOGEXEC(std::ofstream chfile("gpuhcover.log", std::ios::out));
 	uint32_t *g_results, *gh_results;
-//	uint32_t *d_results, *dh_results; // debug results 
+	LOGEXEC(uint32_t *d_results, *dh_results); // debug results 
 	uint64_t *finalcoverage;
 	*coverage = 0;
 	uint32_t startGate;
@@ -131,8 +132,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 		cudaMallocPitch(&gh_results,&h_pitch,sizeof(uint32_t)*mark.block_width(),mark.height());
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
 
-		//	d_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
-		//	dh_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
+		LOGEXEC(d_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height()));
+		LOGEXEC(dh_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height()));
 		cudaMemset(g_results, 0, mark.height()*pitch);
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
 		cudaMemset(gh_results, 0, mark.height()*h_pitch);
@@ -152,7 +153,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 //				std::cerr << "Working from gate " <<  startGate << " to " << startGate + simblocks << std::endl;
 				kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(), mark.gpu(chunk).data, mark.gpu(chunk).pitch,
 						merges.data, g_results,pitch, gh_results, h_pitch, startGate, 
-						pcount, startPattern, ckt.offset());
+						mark.gpu(chunk).width, startPattern, ckt.offset());
 				if (levelsize > MAX_BLOCKS) {
 					levelsize -= simblocks;
 				} else {
@@ -171,12 +172,12 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 		startPattern += mark.gpu(chunk).width;
 		assert(startGate == 0);
 		// dump to file for debugging.
-//		cudaMemcpy2D(d_results, sizeof(uint32_t)*mark.gpu(chunk).width, g_results, pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(), cudaMemcpyDeviceToHost);
-//		cudaMemcpy2D(dh_results, sizeof(uint32_t)*mark.gpu(chunk).width, gh_results, h_pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(),cudaMemcpyDeviceToHost);
-//		debugCover(d_results, mark.gpu(chunk).width, mark.height(), cfile);
-//		debugCover(dh_results, mark.gpu(chunk).width, mark.height(), chfile);
-//		free(d_results);
-//		free(dh_results);
+		LOGEXEC(cudaMemcpy2D(d_results, sizeof(uint32_t)*mark.gpu(chunk).width, g_results, pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(), cudaMemcpyDeviceToHost));
+		LOGEXEC(cudaMemcpy2D(dh_results, sizeof(uint32_t)*mark.gpu(chunk).width, gh_results, h_pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(),cudaMemcpyDeviceToHost));
+		LOGEXEC(debugCover(d_results, mark.gpu(chunk).width, mark.height(), cfile));
+		LOGEXEC(debugCover(dh_results, mark.gpu(chunk).width, mark.height(), chfile));
+		LOGEXEC(free(d_results));
+		LOGEXEC(free(dh_results));
 	cudaFree(g_results); // clean up.
 	cudaFree(gh_results); // clean up
 	}
@@ -186,8 +187,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
 #endif
-	cfile.close();
-	chfile.close();
+	LOGEXEC(cfile.close());
+	LOGEXEC(chfile.close());
 #ifndef NTIMING
 	return elapsed;
 #else 

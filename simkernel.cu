@@ -132,7 +132,7 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 				dim3 numBlocks(simblocks,blockcount_y);
 
 				kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(), inputs.gpu().data, inputs.gpu().pitch,
-						chunk*results.gpu(chunk).width, results.gpu(chunk).data, results.gpu(chunk).pitch, 
+						0, results.gpu(chunk).data, results.gpu(chunk).pitch, 
 						inputs.block_width(), ckt.offset(), startGate, startPattern);
 
 				startGate += simblocks;
@@ -146,7 +146,6 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
 		startPattern += results.gpu(chunk).width;
-		DPRINT("%s:%d - Processing chunk %u of %lu\n",__FILE__, __LINE__, chunk+1, results.size() );
 	}
 	// We're done simulating at this point.
 #ifndef NTIMING
@@ -170,17 +169,18 @@ void debugSimulationOutput(GPU_Data* results, std::string outfile = "simdebug.lo
 			for (unsigned int i = 0; i < results->gpu(chunk).height; i++) {
 				uint8_t z = REF2D(uint8_t, lvalues, results->gpu(chunk).pitch, r, i);
 				switch(z) {
-					case S0:
-						ofile  << std::setw(OUTJUST+1) << "S0 "; break;
-					case S1:
-						ofile  << std::setw(OUTJUST+1) << "S1 "; break;
-					case T0:
-						ofile  << std::setw(OUTJUST+1) << "T0 "; break;
-					case T1:
-						ofile  << std::setw(OUTJUST+1) << "T1 "; break;
-					default:
-						ofile << std::setw(OUTJUST) << (int)z << " "; break;
+				case S0:
+					ofile  << std::setw(OUTJUST+1) << "S0 "; break;
+				case S1:
+					ofile  << std::setw(OUTJUST+1) << "S1 "; break;
+				case T0:
+					ofile  << std::setw(OUTJUST+1) << "T0 "; break;
+				case T1:
+					ofile  << std::setw(OUTJUST+1) << "T1 "; break;
+				default:
+					ofile << std::setw(OUTJUST) << (int)z << " "; break;
 				}
+
 			}
 			ofile << std::endl;
 			t++;

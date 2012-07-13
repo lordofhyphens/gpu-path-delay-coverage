@@ -12,11 +12,11 @@
 #include <utility>
 #include <iostream>
 #include <fstream>
-#define MAX_PATTERNS 3
+#define MAX_PATTERNS simul_patterns
 int main(int argc, char ** argv) {
 	selectGPU();
 	GPU_Circuit ckt;
-	std::ofstream cpvec("cpuvectors.log");
+	LOGEXEC(std::ofstream cpvec("cpuvectors.log"));
 	timespec start, stop;
 	float elapsed = 0.0,mark=0.0,merge =0.0,cover = 0.0,sim1 = 0.0,gpu =0.0;
 	std::cerr << "Reading benchmark file " << argv[1] << "....";
@@ -55,7 +55,7 @@ int main(int argc, char ** argv) {
 		std::cerr << "Reading vector file....";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		read_vectors(*vec, argv[i], vec->block_width());
-		cpvec << vec->print();
+		LOGEXEC(cpvec << vec->print());
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
 		uint32_t simul_patterns = gpuCalculateSimulPatterns(ckt.size(), vecdim.first);
@@ -76,30 +76,30 @@ int main(int argc, char ** argv) {
 		gpu += elapsed;
 
 		std::cerr << "..complete." << std::endl;
-		std::clog << "Simulation pass 1...";
+		std::clog << "Simulation ...";
 		sim1 = gpuRunSimulation(*sim_results, *vec, ckt, 1);
 		std::clog << "..complete." << std::endl;
 		gpu += sim1;
-		std::cerr << "Pass 1: " << sim1 << " ms" << std::endl;
-		debugSimulationOutput(sim_results, "gpusim-p1.log");
+		std::cerr << "Simulation: " << sim1 << " ms" << std::endl;
+		LOGEXEC(debugSimulationOutput(sim_results, "gpusim-p1.log"));
 		// don't need the input vectors anymore, so remove.
 		delete vec;
 		GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS);
 		mark = gpuMarkPaths(*mark_results, *sim_results, ckt);
 		gpu += mark;
-		std::cerr << "  Mark: " << mark << " ms" << std::endl;
+		std::cerr << "     Mark: " << mark << " ms" << std::endl;
 		std::cerr << sim_results->debug();
-//		debugMarkOutput(mark_results->ar2d(), "gpumark.log");
+		LOGEXEC(debugMarkOutput(mark_results, "gpumark.log"));
 		delete sim_results;
 		ARRAY2D<int32_t> merge_ids = gpuAllocateBlockResults(ckt.size());
 		std::cerr << mark_results->debug();
 		merge = gpuMergeHistory(*mark_results, merge_ids);  
 		gpu += merge;
 		std::cerr << " Merge: " << merge << " ms" << std::endl;
-//		debugMergeOutput(merge_ids, "gpumerge.log");
+		LOGEXEC(debugMergeOutput(merge_ids, "gpumerge.log"));
 		
 		cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
-//		cover = 0;
+
 		std::cerr << " Cover: " << cover << " ms" << std::endl;
 		delete mark_results;
 		std::cerr << "GPU Coverage: " << *coverage << std::endl;
@@ -114,6 +114,6 @@ int main(int argc, char ** argv) {
 		delete scoverage;
 		delete coverage;
 	}
-	cpvec.close();
+	LOGEXEC(cpvec.close());
 	return 0;
 }
