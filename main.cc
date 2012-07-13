@@ -12,7 +12,7 @@
 #include <utility>
 #include <iostream>
 #include <fstream>
-
+#define MAX_PATTERNS 3
 int main(int argc, char ** argv) {
 	selectGPU();
 	GPU_Circuit ckt;
@@ -70,23 +70,21 @@ int main(int argc, char ** argv) {
 		std::cerr << "Serial: " << serial_time << " ms" << std::endl;
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size(), simul_patterns); // initializing results array for simulation
+		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS); // initializing results array for simulation
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
 		gpu += elapsed;
 
 		std::cerr << "..complete." << std::endl;
-//		std::clog << sim_results->debug() << std::endl;
 		std::clog << "Simulation pass 1...";
 		sim1 = gpuRunSimulation(*sim_results, *vec, ckt, 1);
 		std::clog << "..complete." << std::endl;
 		gpu += sim1;
 		std::cerr << "Pass 1: " << sim1 << " ms" << std::endl;
-//		debugDataOutput(vec->gpu(), "siminputs.log");
-//		debugSimulationOutput(sim_results->ar2d(), "gpusim-p1.log");
+		debugSimulationOutput(sim_results, "gpusim-p1.log");
 		// don't need the input vectors anymore, so remove.
 		delete vec;
-		GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), simul_patterns);
+		GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS);
 		mark = gpuMarkPaths(*mark_results, *sim_results, ckt);
 		gpu += mark;
 		std::cerr << "  Mark: " << mark << " ms" << std::endl;
@@ -112,6 +110,7 @@ int main(int argc, char ** argv) {
 
 		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << serial_time <<","<< gpu << "_" << sim1 
 			      <<  "_" << mark << "_"<< merge << "_" << cover << "," <<  serial_time/gpu << ":" << *scoverage << ","<< *coverage << std::endl;
+//		assert(*scoverage == *coverage); // verify that the two coverages are equal.
 		delete scoverage;
 		delete coverage;
 	}

@@ -12,5 +12,6 @@
 float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, uint8_t pass);
 
 void debugSimulationOutput(ARRAY2D<uint8_t> results, std::string outfile);
+void debugSimulationOutput(GPU_Data* results, std::string outfile);
 
 #endif

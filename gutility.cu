@@ -1,6 +1,7 @@
 #include "utility.h"
 #include "defines.h"
 #include <cuda.h>
+#include <stdint.h>
 ARRAY2D<int32_t> gpuAllocateBlockResults(size_t height) {
 	int32_t* tgt = NULL;
 	cudaMalloc(&tgt, sizeof(int)*(height));
@@ -32,6 +33,6 @@ int gpuCalculateSimulPatterns(int lines, int patterns) {
 	int allowed_patterns;
 	cudaMemGetInfo(&free_mem, &total_mem);
 	// added a buffer 	
-	allowed_patterns = (free_mem - (lines*sizeof(int))) / (lines*(sizeof(int)*2.5) + sizeof(char)*1.5);
+	allowed_patterns = (free_mem + (lines*sizeof(int))) / (lines*(sizeof(uint32_t)*2.5) + sizeof(uint8_t)*1.5);
 	return min(patterns, allowed_patterns -(allowed_patterns % 32));
 }

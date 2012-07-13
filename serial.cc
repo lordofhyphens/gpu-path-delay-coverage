@@ -111,7 +111,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		} catch(std::exception e) { 
 			std::cerr << "Caught exception in cpuSim Pass 1" << e.what() << std::endl;
 		}
-//		debugPrintSim(ckt, simulate,pattern, 2, s1file);
+		debugPrintSim(ckt, simulate,pattern, 2, s1file);
         // mark
 		try {
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);

@@ -146,6 +146,7 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
 		startPattern += results.gpu(chunk).width;
+		DPRINT("%s:%d - Processing chunk %u of %lu\n",__FILE__, __LINE__, chunk+1, results.size() );
 	}
 	// We're done simulating at this point.
 #ifndef NTIMING
@@ -155,6 +156,40 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 #else 
 	return 0.0;
 #endif // NTIMING
+}
+void debugSimulationOutput(GPU_Data* results, std::string outfile = "simdebug.log") {
+#ifndef NDEBUG
+	std::ofstream ofile(outfile.c_str());
+	size_t t = 0;
+	for (size_t chunk = 0; chunk < results->size(); chunk++) {
+		uint8_t *lvalues;
+		lvalues = (uint8_t*)malloc(results->gpu(chunk).height*results->gpu(chunk).pitch);
+		cudaMemcpy2D(lvalues,results->gpu().pitch,results->gpu(chunk).data,results->gpu(chunk).pitch,results->gpu(chunk).width,results->gpu(chunk).height,cudaMemcpyDeviceToHost);
+		for (unsigned int r = 0;r < results->gpu(chunk).width; r++) {
+			ofile << "Vector " << t << ":\t";
+			for (unsigned int i = 0; i < results->gpu(chunk).height; i++) {
+				uint8_t z = REF2D(uint8_t, lvalues, results->gpu(chunk).pitch, r, i);
+				switch(z) {
+					case S0:
+						ofile  << std::setw(OUTJUST+1) << "S0 "; break;
+					case S1:
+						ofile  << std::setw(OUTJUST+1) << "S1 "; break;
+					case T0:
+						ofile  << std::setw(OUTJUST+1) << "T0 "; break;
+					case T1:
+						ofile  << std::setw(OUTJUST+1) << "T1 "; break;
+					default:
+						ofile << std::setw(OUTJUST) << (int)z << " "; break;
+				}
+			}
+			ofile << std::endl;
+			t++;
+		}
+		free(lvalues);
+	}
+	ofile.close();
+#endif
+
 }
 void debugSimulationOutput(ARRAY2D<uint8_t> results, std::string outfile = "simdebug.log") {
 #ifndef NDEBUG

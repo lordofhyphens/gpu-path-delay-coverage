@@ -106,7 +106,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 
 	std::ofstream cfile("gpucover.log", std::ios::out);
 	std::ofstream chfile("gpuhcover.log", std::ios::out);
-	uint32_t *results, *g_results, *gh_results;
+	uint32_t *g_results, *gh_results;
 //	uint32_t *d_results, *dh_results; // debug results 
 	uint64_t *finalcoverage;
 	*coverage = 0;
@@ -119,23 +119,20 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 	cudaMemset(finalcoverage, 0, sizeof(uint64_t)); // set value to 0 explicitly
 	HANDLE_ERROR(cudaGetLastError()); // checking that last memory operation completed successfully.
 
-	results = (uint32_t*)malloc(mark.block_width()*sizeof(uint32_t)*mark.height());
-//	h_results = (uint32_t*)malloc(mark.block_width()*sizeof(uint32_t)*mark.height());
-
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif
 	uint32_t pcount = 0;
-	for (uint32_t chunk = 0; chunk < mark.size(); chunk++) {
+	for (size_t chunk = 0; chunk < mark.size(); chunk++) {
 		cudaMallocPitch(&g_results,&pitch, sizeof(uint32_t)*mark.block_width(),mark.height());
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
-//		d_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
 		cudaMallocPitch(&gh_results,&h_pitch,sizeof(uint32_t)*mark.block_width(),mark.height());
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
-//		dh_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
 
+		//	d_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
+		//	dh_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
 		cudaMemset(g_results, 0, mark.height()*pitch);
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
 		cudaMemset(gh_results, 0, mark.height()*h_pitch);
@@ -167,6 +164,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 			if (i == 0) {
 				// Sum for all gates and patterns
 				kernSumSingle<<<1,BLOCK_SIZE>>>(ckt.gpu_graph(), ckt.size(), g_results, mark.gpu(chunk).width, pitch, finalcoverage); // inefficient singlethreaded GPU add.
+				cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
+				std::cerr << "Current coverage: " << *coverage << std::endl;
 			}
 		}
 		startPattern += mark.gpu(chunk).width;
@@ -178,11 +177,10 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 //		debugCover(dh_results, mark.gpu(chunk).width, mark.height(), chfile);
 //		free(d_results);
 //		free(dh_results);
-		cudaFree(g_results); // clean up.
-		cudaFree(gh_results); // clean up
+	cudaFree(g_results); // clean up.
+	cudaFree(gh_results); // clean up
 	}
 	cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
-	free(results);
 	cudaFree(finalcoverage);
 	#ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
