@@ -15,5 +15,5 @@
 #include <stdint.h>
 float serial(Circuit& ckt, CPU_Data& input, uint64_t**);
 void serial_simulate(Circuit& ckt, CPU_Data& input, const char* file);
-void debugMergeOutput(int32_t* data, size_t height, size_t width, std::string outfile);
+void debugMergeOutput(int32_t* data, int32_t*, size_t height, size_t width, std::string outfile);
 #endif

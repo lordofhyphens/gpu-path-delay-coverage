@@ -52,7 +52,7 @@ __device__ inline int32_t subCktFan(uint32_t* subckt, uint32_t subckt_size, uint
 }
 #define HANDLE_ERROR( err ) (HandleCoverError( err, __FILE__, __LINE__ ))
 
-__global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_pitch, int32_t* history,  uint32_t* cover,const size_t cover_pitch, uint32_t* hist_cover,const size_t hcover_pitch,const uint32_t start_offset,const uint32_t pattern_count,const uint32_t start_pattern, uint32_t* offsets) { //, uint32_t* subckt, size_t subckt_size) {
+__global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_pitch, int2* history,  uint32_t* cover,const size_t cover_pitch, uint32_t* hist_cover,const size_t hcover_pitch,const uint32_t start_offset,const uint32_t pattern_count,const uint32_t start_pattern, uint32_t* offsets) { //, uint32_t* subckt, size_t subckt_size) {
     // cover is the coverage ints we're working with for this pass.
     // mark is the fresh marks
     // hist is the history of the mark status of all lines.
@@ -85,9 +85,9 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 		}
 		if (gate.type != FROM) { // FROM nodes always take the value of their fan-outs
 			// c equals c+h if history[g] >= pid and line is marked
-			c = (c + h)*(cache > 0)*(history[g] >= pid);
+			c = (c + h)*(cache > 0)*(history[g].x >= pid || history[g].y >= pid);
 			// h equals 0 if history[g] >= pid, else h if this line is marked;
-			h = h*(cache > 0)*(history[g] < pid);
+			h = h*(cache > 0)*(history[g].x < pid || history[g].y < pid);
 
         }
 		// Cycle through the fanins of this node and assign them the current value
@@ -102,13 +102,14 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 }
 
 
-float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_t>& merges, uint64_t* coverage) {
+float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, uint64_t* coverage) {
+	int2* merges = (int2*)merge;
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure there aren't any errors going into function.
 
-	LOGEXEC(std::ofstream cfile("gpucover.log", std::ios::out));
-	LOGEXEC(std::ofstream chfile("gpuhcover.log", std::ios::out));
+	std::ofstream cfile("gpucover.log", std::ios::out);
+	std::ofstream chfile("gpuhcover.log", std::ios::out);
 	uint32_t *g_results, *gh_results;
-	LOGEXEC(uint32_t *d_results, *dh_results); // debug results 
+	uint32_t *d_results, *dh_results; // debug results 
 	uint64_t *finalcoverage;
 	*coverage = 0;
 	uint32_t startGate;
@@ -152,7 +153,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const ARRAY2D<int32_
 				assert((uint32_t)startGate + simblocks <= ckt.size());
 //				std::cerr << "Working from gate " <<  startGate << " to " << startGate + simblocks << std::endl;
 				kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(), mark.gpu(chunk).data, mark.gpu(chunk).pitch,
-						merges.data, g_results,pitch, gh_results, h_pitch, startGate, 
+						merges, g_results,pitch, gh_results, h_pitch, startGate, 
 						mark.gpu(chunk).width, startPattern, ckt.offset());
 				if (levelsize > MAX_BLOCKS) {
 					levelsize -= simblocks;

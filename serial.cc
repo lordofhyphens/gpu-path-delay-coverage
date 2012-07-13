@@ -15,17 +15,22 @@ typedef uint64_t long unsigned int;
 */
 void cpuSimulateP1(const Circuit& ckt, const uint8_t* pi, uint32_t* sim,const size_t pi_pitch, const size_t pattern,const size_t pattern_count);
 void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark);
-void cpuCover(const Circuit& ckt, uint32_t* mark, uint32_t pattern, int32_t* history, uint32_t* cover, uint32_t* hist_cover, uint64_t& covered);
-inline void cpuMerge(const Circuit& ckt, uint32_t* in, uint32_t* hist) { for (uint32_t i = 0; i < ckt.size(); i++) { hist[i] = hist[i] | in[i];} }
+void cpuCover(const Circuit& ckt, uint32_t* mark, uint32_t pattern, int32_t*, int32_t*, uint32_t* cover, uint32_t* hist_cover, uint64_t& covered);
 
 // Performs a merge compatible with the GPU implementation.
-void cpuMergeLog(const Circuit& ckt, uint32_t * in, int32_t* hist, const uint32_t p) {
+void cpuMergeLog(const Circuit& ckt, uint32_t * in, int32_t* histu, int32_t* histd, const uint32_t p) {
 	for (uint32_t i = 0; i < ckt.size(); i++) { 
-		if (hist[i] < 0) { 
-			if (in[i] == 1) { 
-				hist[i] = p; 
+		if (histu[i] < 0) { 
+			if (in[i] == T1) { 
+				histu[i] = p; 
 			} 
 		} 
+		if (histd[i] < 0) { 
+			if (in[i] == T0) { 
+				histd[i] = p; 
+			} 
+		} 
+
 	}
 }
 
@@ -60,16 +65,17 @@ void debugPrintSim(const Circuit& ckt, uint32_t* in, uint32_t pattern, uint32_t 
 }
 
 float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
-	LOGEXEC(std::ofstream s1file("serialsim-p1.log", std::ios::out));
-	LOGEXEC(std::ofstream mfile("serialmark.log", std::ios::out));
-	LOGEXEC(std::ofstream cfile("serialcover.log", std::ios::out));
-	LOGEXEC(std::ofstream hcfile("serialhcover.log", std::ios::out));
+	std::ofstream s1file("serialsim-p1.log", std::ios::out);
+	std::ofstream mfile("serialmark.log", std::ios::out);
+	std::ofstream cfile("serialcover.log", std::ios::out);
+	std::ofstream hcfile("serialhcover.log", std::ios::out);
     float total = 0.0, elapsed;
     timespec start, stop;
     uint32_t* simulate;
     uint32_t* mark; 
     uint32_t* merge = new uint32_t[ckt.size()];
-    int32_t* mergeLog = new int32_t[ckt.size()];
+    int32_t* mergeLogU = new int32_t[ckt.size()];
+    int32_t* mergeLogD = new int32_t[ckt.size()];
     uint32_t* cover = new uint32_t[ckt.size()];
     uint32_t* hist_cover;
 	*covered = new uint64_t;
@@ -78,7 +84,8 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 	
 	for (uint32_t i = 0; i < ckt.size(); i++) {
 		merge[i] = 0;
-		mergeLog[i] = -1;
+		mergeLogU[i] = -1;
+		mergeLogD[i] = -1;
 	}
     for (uint32_t pattern = 0; pattern < input.width(); pattern++) {
         simulate = new uint32_t[ckt.size()];
@@ -103,7 +110,7 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		} catch(std::exception e) { 
 			std::cerr << "Caught exception in cpuSim Pass 1" << e.what() << std::endl;
 		}
-		LOGEXEC(debugPrintSim(ckt, simulate,pattern, 2, s1file));
+		debugPrintSim(ckt, simulate,pattern, 2, s1file);
         // mark
 		try {
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -115,24 +122,24 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 			std::cerr << "Caught exception in cpuMark" << e.what() << std::endl;
 		}
 		//std::cerr << "    Mark: ";
-		LOGEXEC(debugPrintSim(ckt, mark,pattern, 3, mfile));
+		debugPrintSim(ckt, mark,pattern, 3, mfile);
         // calculate coverage against all previous runs
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-		cpuMergeLog(ckt, mark, mergeLog, pattern);
+		cpuMergeLog(ckt, mark, mergeLogU, mergeLogD, pattern);
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
         elapsed = floattime(diff(start, stop));
         total += elapsed;
 		try { 
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-	        cpuCover(ckt, mark, pattern, mergeLog, hist_cover, cover, *coverage);
+	        cpuCover(ckt, mark, pattern, mergeLogU, mergeLogD, hist_cover, cover, *coverage);
 			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 			elapsed = floattime(diff(start, stop));
 			total += elapsed;
 		} catch (std::exception e) {
 			std::cerr << "Caught an exception in cpuCover - " << e.what() << std::endl;
 		}
-		LOGEXEC(debugPrintSim(ckt, cover,pattern, 4, cfile));
-		LOGEXEC(debugPrintSim(ckt, hist_cover,pattern, 4, hcfile));
+		debugPrintSim(ckt, cover,pattern, 4, cfile);
+		debugPrintSim(ckt, hist_cover,pattern, 4, hcfile);
 		uint64_t covercache = 0;
 		for (size_t i = 0; i < ckt.size(); i++) {
 			if (ckt.at(i).typ == INPT) {
@@ -146,29 +153,27 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 		delete cover;
 		delete hist_cover;
     }
-	LOGEXEC(debugMergeOutput(mergeLog, 1, ckt.size(), "serialmerge.log" ));
+	debugMergeOutput(mergeLogU, mergeLogD, 1, ckt.size(), "serialmerge.log" );
     DPRINT("Serial Coverage: %lu\n", *coverage);
     delete coverage;
-	LOGEXEC(s1file.close());
-	LOGEXEC(mfile.close());
-	LOGEXEC(cfile.close());
-	LOGEXEC(chfile.close());
+	delete mergeLogU;
+	delete mergeLogD;
+	s1file.close();
+	mfile.close();
+	cfile.close();
+	hcfile.close();
 	std::clog << "Completed serial simulation." << std::endl;
     return total;
 }
 
-void debugMergeOutput(int32_t* data, size_t height, size_t width, std::string outfile) {
+void debugMergeOutput(int32_t* dataU, int32_t* dataD, size_t height, size_t width, std::string outfile) {
 #ifndef NDEBUG
 	std::ofstream ofile(outfile.c_str());
 	ofile << "Size: " << width << "x" << height << " WxH " << std::endl;
 	for (uint32_t r = 0;r < width; r++) {
 		ofile << "Gate " << r << ":\t";
 		for (uint32_t i = 0; i < height; i++) {
-			int32_t z = data[r];
-			switch(z) {
-				default:
-					ofile << std::setw(OUTJUST) << (int32_t)z << " "; break;
-			}
+			ofile << std::setw(OUTJUST) << dataU[r] << "," << dataD[r] << " "; break;
 		}
 		ofile << std::endl;
 	}
@@ -278,7 +283,7 @@ void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark) {
 			const NODEC gate = ckt.at(g);
 			resultCache = mark[g];
 			rowCache = sim[g];
-			val = (rowCache > 1);
+			val = (rowCache > 1)*sim[g];
 			if (gate.po > 0) {
 				resultCache = val; 
 				prev = val;
@@ -288,8 +293,9 @@ void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark) {
 				prev = 0;
 				resultCache = 0;
 				for (uint32_t i = 0; i < gate.nfo; i++) {
-					resultCache = (resultCache ==1) || (FREF(mark,gate,fot,i) > 0);
+					resultCache = (resultCache > 0) || (FREF(mark,gate,fot,i) > 0);
 				}
+				resultCache *= sim[g];
 				prev = resultCache;
 			}
 			switch(gate.typ) {
@@ -339,7 +345,7 @@ void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark) {
 									   }
 								   }
 							   }
-							   FREF(mark,gate,fin,fin1) = fin;
+							   FREF(mark,gate,fin,fin1) = fin*(FREF(sim,gate,fin,fin1) >= T0)*FREF(sim,gate,fin,fin1) ;
 						   }
 						   break;
 				default:
@@ -355,7 +361,7 @@ void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark) {
 		mark[g] = resultCache;
 	}
 }
-void cpuCover(const Circuit& ckt, uint32_t* mark, const uint32_t pattern, int32_t* history, uint32_t* hist_cover, uint32_t* cover, uint64_t& covered) {
+void cpuCover(const Circuit& ckt, uint32_t* mark, const uint32_t pattern, int32_t* histU, int32_t* histD, uint32_t* hist_cover, uint32_t* cover, uint64_t& covered) {
     // cover is the coverage uint32_ts we're working with for this pass.
     // mark is the fresh marks
     // hist is the history of the mark status of all lines.
@@ -383,9 +389,9 @@ void cpuCover(const Circuit& ckt, uint32_t* mark, const uint32_t pattern, int32_
 		}
 		if (gate.typ != FROM) { // FROM nodes always take the value of their fan-outs
 			// c equals c+h if history[g] >= current pattern and line is marked
-			c = (c+h)*(cache > 0) * (history[g] >= (int32_t)pattern);
+			c = (c+h)*(cache > 0) * (histU[g] >= (int32_t)pattern || histD[g] >= (int32_t)pattern);
 			// h equals 0 if history[g] >= current pattern, h if this line is marked, 0 if line is not marked;
-			h = h*(cache > 0)*(history[g] < (int32_t)pattern);
+			h = h*(cache > 0)*(histU[g] < (int32_t)pattern || histD[g] < (int32_t)pattern);
         } 
 		// Cycle through the fanins of this node and assign them the current value
             for (uint32_t i = 0; i < gate.nfi; i++) {

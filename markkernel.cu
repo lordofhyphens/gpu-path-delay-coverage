@@ -107,7 +107,6 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
 __device__ uint8_t markeval_out (uint8_t f1, uint8_t f2, int type) {
-
 	switch(type) {
 		case AND:
 		case NAND:
@@ -216,7 +215,7 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 							}
 						}
 					}
-					REF2D(uint8_t,mark,pitch,tid,FIN(fans,goffset,fin1)) = fin;
+					REF2D(uint8_t,mark,pitch,tid,FIN(fans,goffset,fin1)) = fin*(REF2D(uint8_t,sim,sim_pitch,tid,FIN(fans,goffset,fin1)) >= T0);
 				}
 				break;
 			default: break;
