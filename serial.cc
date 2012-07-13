@@ -169,11 +169,10 @@ float serial(Circuit& ckt, CPU_Data& input, uint64_t** covered) {
 void debugMergeOutput(int32_t* dataU, int32_t* dataD, size_t height, size_t width, std::string outfile) {
 #ifndef NDEBUG
 	std::ofstream ofile(outfile.c_str());
-	ofile << "Size: " << width << "x" << height << " WxH " << std::endl;
 	for (uint32_t r = 0;r < width; r++) {
 		ofile << "Gate " << r << ":\t";
 		for (uint32_t i = 0; i < height; i++) {
-			ofile << std::setw(OUTJUST) << dataU[r] << "," << dataD[r] << " "; break;
+			ofile << std::setw(OUTJUST) << dataD[r] << "," << dataU[r] << " "; break;
 		}
 		ofile << std::endl;
 	}
@@ -307,7 +306,7 @@ void cpuMark(const Circuit& ckt, uint32_t* sim, uint32_t* mark) {
 				case FROM: break;
 				case BUFF:
 				case NOT:
-						   val = NOT_IN(rowCache) && prev;
+						   val = (NOT_IN(rowCache) && prev)*rowCache;
 						   FREF(mark,gate,fin,0) = val;
 						   resultCache = val;
 						   break;
@@ -389,9 +388,9 @@ void cpuCover(const Circuit& ckt, uint32_t* mark, const uint32_t pattern, int32_
 		}
 		if (gate.typ != FROM) { // FROM nodes always take the value of their fan-outs
 			// c equals c+h if history[g] >= current pattern and line is marked
-			c = (c+h)*(cache > 0) * (histU[g] >= (int32_t)pattern || histD[g] >= (int32_t)pattern);
+			c = (c+h)*(cache > 0) * (histD[g] >= (int32_t)pattern || histU[g] >= (int32_t)pattern);
 			// h equals 0 if history[g] >= current pattern, h if this line is marked, 0 if line is not marked;
-			h = h*(cache > 0)*(histU[g] < (int32_t)pattern || histD[g] < (int32_t)pattern);
+			h = h*(cache > 0)*(histD[g] < (int32_t)pattern)*(histU[g] < (int32_t)pattern);
         } 
 		// Cycle through the fanins of this node and assign them the current value
             for (uint32_t i = 0; i < gate.nfi; i++) {

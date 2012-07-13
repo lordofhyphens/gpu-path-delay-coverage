@@ -38,7 +38,7 @@ __global__ void kernReduce(uint8_t* input, size_t height, size_t pitch, int2* me
 		if (i+MERGE_SIZE > height) { // correcting for blocks smaller than MERGE_SIZE
 			sdata[tid] = make_int2((row[i] == T0)*(i+1),(row[i] == T1)*(i+1));
 		} else {
-			sdata[tid] = make_int2((row[i] == T0)*(i+1) + (row[i+MERGE_SIZE] == 1)*(row[i] == 0)*(i+MERGE_SIZE+1), (row[i] == T1)*(i+1) + (row[i+MERGE_SIZE] == 1)*(row[i] == 0)*(i+MERGE_SIZE+1));
+			sdata[tid] = make_int2((row[i] == T0)*(i+1) + (row[i+MERGE_SIZE] == T0)*(row[i] == 0)*(i+MERGE_SIZE+1), (row[i] == T1)*(i+1) + (row[i+MERGE_SIZE] == T1)*(row[i] == 0)*(i+MERGE_SIZE+1));
 		}
 		__syncthreads();
 
@@ -76,10 +76,9 @@ __global__ void kernSetMin(int2* g_odata, size_t pitch, int2* intermediate, uint
 	while (REF2D(int2, intermediate, i_pitch, i, gid).x < 0 && i < length) {
 		i++;
 	}
-	while (REF2D(int2, intermediate, i_pitch, i, gid).y < 0 && j < length) {
+	while (REF2D(int2, intermediate, i_pitch, j, gid).y < 0 && j < length) {
 		j++;
 	}
-//	printf("%s:%d - gid[%d] i = %d\n", __FILE__, __LINE__, gid, i);
 
 	if (i < length) {
 		if (chunk > 0) {
@@ -90,19 +89,21 @@ __global__ void kernSetMin(int2* g_odata, size_t pitch, int2* intermediate, uint
 	} else {
 		if (chunk == 0) {
 			i = -1;
+		} else {
+			i = g_odata[gid].x;
 		}
 	}
-	if (i < length) {
+	if (j < length) {
 		if (chunk > 0) {
-			j = MIN_GEN(REF2D(int2, intermediate, i_pitch, i, gid).y + startPattern, g_odata[gid].y);
+			j = MIN_GEN(REF2D(int2, intermediate, i_pitch, j, gid).y + startPattern, g_odata[gid].y);
 		} else {
-			j = REF2D(int2, intermediate, i_pitch, i, gid).y;
+			j = REF2D(int2, intermediate, i_pitch, j, gid).y;
 		}
 	} else {
 		if (chunk == 0) {
 			j = -1;
 		} else {
-			j = REF2D(int2, intermediate, i_pitch, i, gid).y;
+			j = g_odata[gid].y;
 		}
 	}
 	g_odata[gid] = make_int2(i,j);

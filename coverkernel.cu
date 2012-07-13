@@ -84,10 +84,10 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 			h = histCache;
 		}
 		if (gate.type != FROM) { // FROM nodes always take the value of their fan-outs
-			// c equals c+h if history[g] >= pid and line is marked
+			// c equals c+h if either history[g] >= pid and line is marked
 			c = (c + h)*(cache > 0)*(history[g].x >= pid || history[g].y >= pid);
-			// h equals 0 if history[g] >= pid, else h if this line is marked;
-			h = h*(cache > 0)*(history[g].x < pid || history[g].y < pid);
+			// h equals 0 if neither history[g] >= pid, else h if this line is marked;
+			h = h*(cache > 0)*(history[g].x < pid)*(history[g].y < pid);
 
         }
 		// Cycle through the fanins of this node and assign them the current value
@@ -151,7 +151,6 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, u
 				dim3 numBlocks(simblocks,blockcount_y);
 				startGate -= simblocks;
 				assert((uint32_t)startGate + simblocks <= ckt.size());
-//				std::cerr << "Working from gate " <<  startGate << " to " << startGate + simblocks << std::endl;
 				kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(), mark.gpu(chunk).data, mark.gpu(chunk).pitch,
 						merges, g_results,pitch, gh_results, h_pitch, startGate, 
 						mark.gpu(chunk).width, startPattern, ckt.offset());
@@ -165,9 +164,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, u
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			if (i == 0) {
 				// Sum for all gates and patterns
-				kernSumSingle<<<1,BLOCK_SIZE>>>(ckt.gpu_graph(), ckt.size(), g_results, mark.gpu(chunk).width, pitch, finalcoverage); // inefficient singlethreaded GPU add.
+				kernSumSingle<<<1,BLOCK_SIZE>>>(ckt.gpu_graph(), ckt.size(), g_results, mark.gpu(chunk).width, pitch, finalcoverage); // multithreaded, single block GPU add.
 				cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
-				std::cerr << "Current coverage: " << *coverage << std::endl;
 			}
 		}
 		startPattern += mark.gpu(chunk).width;
