@@ -1,13 +1,13 @@
-#include "utility.h"
-#include "ckt.h"
-#include "gpuckt.h"
-#include "gpudata.h"
-#include "vectors.h"
+#include "util/utility.h"
+#include "util/ckt.h"
+#include "util/gpuckt.h"
+#include "util/gpudata.h"
+#include "util/vectors.h"
 #include "simkernel.h"
 #include "markkernel.h"
 #include "mergekernel.h"
 #include "coverkernel.h"
-#include "subckt.h"
+#include "util/subckt.h"
 #include <utility>
 #include <iostream>
 #include <fstream>
@@ -93,10 +93,8 @@ int main(int argc, char ** argv) {
 		gpu += cover;
 
 		std::cerr << "   GPU: " << gpu << " ms" <<std::endl;
-		std::cerr << "Speedup:" << serial_time/gpu << "X" <<std::endl;
-
 		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << gpu << "_" << sim1 
-			      <<  "_" << mark << "_"<< merge << "_" << cover << "," << ","<< *coverage << std::endl;
+			      <<  "_" << mark << "_"<< merge << "_" << cover << "," << *coverage << std::endl;
 		delete coverage;
 	}
 	return 0;

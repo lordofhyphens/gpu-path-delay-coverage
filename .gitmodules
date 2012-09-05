@@ -1,3 +1,6 @@
 [submodule "siuTgen"]
 	path = siuTgen
 	url = /grad/lenox/siuTgen
+[submodule "util"]
+	path = util
+	url = ../util.git

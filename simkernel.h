@@ -1,9 +1,10 @@
 #ifndef SIMKERNEL_H
 #define SIMKERNEL_H
-#include "defines.h"
 #include <cassert>
-#include "gpuckt.h"
-#include "gpudata.h"
+#include "util/gpuckt.h"
+#include "util/gpudata.h"
+#include "util/defines.h"
+#include "util/utility.h"
 #include <iomanip>
 #include <ctime>
 #include <string>
