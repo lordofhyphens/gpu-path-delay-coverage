@@ -7,7 +7,6 @@
 #include "markkernel.h"
 #include "mergekernel.h"
 #include "coverkernel.h"
-#include "serial.h"
 #include "subckt.h"
 #include <utility>
 #include <iostream>
@@ -39,7 +38,6 @@ int main(int argc, char ** argv) {
 	std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 	std::clog << "Circuit size is: " << ckt.size() << "Levels: " << ckt.levels() << std::endl;
 
-	uint64_t *scoverage;
 
 	for (int32_t i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
 		uint64_t *coverage = new uint64_t; 
@@ -56,13 +54,7 @@ int main(int argc, char ** argv) {
 		uint32_t simul_patterns = gpuCalculateSimulPatterns(ckt.size(), vecdim.first);
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 		std::clog << "Maximum patterns per pass: " << simul_patterns << std::endl;
-		std::clog << "Running serial simulation... " << std::endl;
-		scoverage = NULL;
-		float serial_time = serial(ckt, *vec, &scoverage);
-//		float serial_time = 0;
 		
-		std::cerr << "Performing serial work." << std::endl;
-		std::cerr << "Serial: " << serial_time << " ms" << std::endl;
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS); // initializing results array for simulation
@@ -103,10 +95,8 @@ int main(int argc, char ** argv) {
 		std::cerr << "   GPU: " << gpu << " ms" <<std::endl;
 		std::cerr << "Speedup:" << serial_time/gpu << "X" <<std::endl;
 
-		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << serial_time <<","<< gpu << "_" << sim1 
-			      <<  "_" << mark << "_"<< merge << "_" << cover << "," <<  serial_time/gpu << ":" << *scoverage << ","<< *coverage << std::endl;
-//		assert(*scoverage == *coverage); // verify that the two coverages are equal.
-		delete scoverage;
+		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << gpu << "_" << sim1 
+			      <<  "_" << mark << "_"<< merge << "_" << cover << "," << ","<< *coverage << std::endl;
 		delete coverage;
 	}
 	return 0;
