@@ -68,23 +68,24 @@ int main(int argc, char ** argv) {
 		std::clog << "..complete." << std::endl;
 		gpu += sim1;
 		std::cerr << "Simulation: " << sim1 << " ms" << std::endl;
-		debugSimulationOutput(sim_results, "gpusim-p1.log");
+		debugSimulationOutput(sim_results, "gpusim-p2.log");
 		// don't need the input vectors anymore, so remove.
 		delete vec;
 		GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS);
 		mark = gpuMarkPaths(*mark_results, *sim_results, ckt);
 		gpu += mark;
 		std::cerr << "     Mark: " << mark << " ms" << std::endl;
-		std::cerr << sim_results->debug();
+		//std::cerr << sim_results->debug();
 		debugMarkOutput(mark_results, "gpumark.log");
-		delete sim_results;
+//		debugSimulationOutput(mark_results, "gpusim-mark.log");
 		void* merge_ids;
-		std::cerr << mark_results->debug();
-		merge = gpuMergeHistory(*mark_results, &merge_ids);  
+		//std::cerr << mark_results->debug();
+		merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids);  
 		gpu += merge;
 		std::cerr << " Merge: " << merge << " ms" << std::endl;
 		debugMergeOutput(ckt.size(), merge_ids, "gpumerge.log");
 		
+		delete sim_results;
 		cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
 
 		std::cerr << " Cover: " << cover << " ms" << std::endl;

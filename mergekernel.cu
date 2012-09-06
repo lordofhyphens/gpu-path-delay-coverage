@@ -21,62 +21,63 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 		A*(B==0) + \
 		B*(A==0) )
 #define MIN_GEN(L,R) ( \
-		((L) != 0)*((L) < (R))*(L) + \
-		((R) != 0)*((R) < (L))*(R) )
+		((L) > 0)*((L) < (R))*(L) + \
+		((R) > 0)*((R) < (L))*(R) )
 
 
-__global__ void kernReduce(uint8_t* input, size_t height, size_t pitch, int2* meta, uint32_t mpitch, uint32_t startGate, uint32_t startPattern) {
+__global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t height, size_t pitch, int2* meta, uint32_t mpitch, uint32_t startGate, uint32_t startPattern) {
 	uint32_t tid = threadIdx.x;
 	uint32_t gid = blockIdx.y+startGate;
 	__shared__ int2 sdata[MERGE_SIZE];
 	uint8_t* row = input + pitch*gid;
-	 uint32_t i = blockIdx.x*(MERGE_SIZE*2)+tid;
+	uint8_t* sim = sim_input + pitch*gid;
+	uint32_t i = blockIdx.x*(MERGE_SIZE*2)+tid;
 	sdata[tid] = make_int2(0,0);
+
 	// Put the lower of pid and pid+MERGE_SIZE for which row[i] == 1
 	// Minimum ID given by this is 1.
 	if (i < height) {
 		if (i+MERGE_SIZE > height) { // correcting for blocks smaller than MERGE_SIZE
-			sdata[tid] = make_int2((row[i] == T0)*(i+1),(row[i] == T1)*(i+1));
+			sdata[tid] = make_int2((sim[i] == T0)*(row[i] == 1)*(i+1),(sim[i] == T1)*(row[i] == 1)*(i+1));
 		} else {
-			sdata[tid] = make_int2((row[i] == T0)*(i+1) + (row[i+MERGE_SIZE] == T0)*(row[i] == 0)*(i+MERGE_SIZE+1), (row[i] == T1)*(i+1) + (row[i+MERGE_SIZE] == T1)*(row[i] == 0)*(i+MERGE_SIZE+1));
+			sdata[tid] = make_int2(MIN((sim[i] == T0)*(row[i] == 1)*(i+1), (sim[i+MERGE_SIZE] == T0)*(row[i+MERGE_SIZE] == 1)*(i+MERGE_SIZE+1)), 
+					               MIN((sim[i] == T1)*(row[i] == 1)*(i+1), (sim[i+MERGE_SIZE] == T1)*(row[i+MERGE_SIZE] == 1)*(i+MERGE_SIZE+1)));
 		}
 		__syncthreads();
 
 		// this is loop unrolling
 		// do reduction in shared mem, comparisons against MERGE_SIZE are done at compile time.
-		if (MERGE_SIZE >= 1024) { if (tid < 512 && tid+512 < height) { sdata[tid] = make_int2(MIN(sdata[tid].x,sdata[tid + 512].x),MIN(sdata[tid].y,sdata[tid + 512].y)); } __syncthreads(); }
-		if (MERGE_SIZE >= 512) { if (tid < 256 && tid+256 < height) { sdata[tid] = make_int2(MIN(sdata[tid].x,sdata[tid + 256].x),MIN(sdata[tid].y,sdata[tid + 256].y)); } __syncthreads(); }
-		if (MERGE_SIZE >= 256) { if (tid < 128 && tid+128 < height) { sdata[tid] = make_int2(MIN(sdata[tid].x,sdata[tid + 128].x),MIN(sdata[tid].y,sdata[tid + 128].y)); } __syncthreads(); }
-		if (MERGE_SIZE >= 128) { if (tid <  64 && tid+64 < height) { sdata[tid] = make_int2(MIN(sdata[tid].x,sdata[tid + 64].x),MIN(sdata[tid].y,sdata[tid + 64].y)); } __syncthreads(); }
+		if (MERGE_SIZE >= 1024) { if (tid < 512 && tid+512 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 512].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 512].y); } __syncthreads(); }
+		if (MERGE_SIZE >= 512) { if (tid < 256 && tid+256 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 256].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 256].y); } __syncthreads(); }
+		if (MERGE_SIZE >= 256) { if (tid < 128 && tid+128 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 128].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 128].y); } __syncthreads(); }
+		if (MERGE_SIZE >= 128) { if (tid <  64 && tid+64 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 64].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 64].y); } __syncthreads(); }
 		if (tid < 32) {
 			// Within a warp,  don't need __syncthreads();
-			if (MERGE_SIZE >=  64) { if (tid+32 < height) { sdata[tid] = make_int2(MIN(sdata[tid].x,sdata[tid + 32].x),MIN(sdata[tid].y,sdata[tid + 32].y)); } }
-			if (MERGE_SIZE >=  32) { if (tid+16 < height) { sdata[tid] = make_int2(MIN(sdata[tid].x,sdata[tid + 16].x),MIN(sdata[tid].y,sdata[tid + 16].y)); } }
-			if (MERGE_SIZE >=  16) { if (tid+8 < height) { sdata[tid] = make_int2(MIN(sdata[tid].x,sdata[tid + 8].x),MIN(sdata[tid].y,sdata[tid + 8].y));} }
-			if (MERGE_SIZE >=   8) { if (tid+4 < height) { sdata[tid] = make_int2(MIN(sdata[tid].x,sdata[tid + 4].x),MIN(sdata[tid].y,sdata[tid + 4].y));} }
-			if (MERGE_SIZE >=   4) { if (tid+2 < height) { sdata[tid] = make_int2(MIN(sdata[tid].x,sdata[tid + 2].x),MIN(sdata[tid].y,sdata[tid + 2].y));} }
-			if (MERGE_SIZE >=   2) { if (tid+1 < height) { sdata[tid] = make_int2(MIN(sdata[tid].x,sdata[tid + 1].x),MIN(sdata[tid].y,sdata[tid + 1].y));} }
+			if (MERGE_SIZE >=  64) { if (tid+32 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 32].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 32].y); } }
+			if (MERGE_SIZE >=  32) { if (tid+16 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 16].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 16].y); } }
+			if (MERGE_SIZE >=  16) { if (tid+8 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 8].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 8].y);} }
+			if (MERGE_SIZE >=   8) { if (tid+4 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 4].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 4].y);} }
+			if (MERGE_SIZE >=   4) { if (tid+2 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 2].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 2].y);} }
+			if (MERGE_SIZE >=   2) { if (tid+1 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 1].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 1].y);} }
 		}
 
 		// at this point, we have the position of the lowest. Correct by 1 to compensate for above.
 
-//		if (tid ==0 ) { printf("Final Tid: %d, line %d, data+1 %d \n", tid, blockIdx.y, sdata[tid] - 1); }
-//		sdata[tid] = (sdata[0]-1)*(sdata[0]>0) + (sdata[0] == 0)*MERGE_SIZE*2;
-		if (threadIdx.x == 0) { REF2D(int2,meta,mpitch,blockIdx.x,gid) = make_int2(sdata[0].x-1, sdata[0].y-1); }
+		if (threadIdx.x == 0) { sdata[0].x -= 1; sdata[0].y -= 1; REF2D(int2,meta,mpitch,blockIdx.x,gid) = sdata[0]; }
 		__syncthreads();
 
 	}
 }
 
-__global__ void kernSetMin(int2* g_odata, size_t pitch, int2* intermediate, uint32_t i_pitch,uint32_t length, uint32_t startGate, uint32_t startPattern, uint16_t chunk) {
+__global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, uint32_t length, uint32_t startGate, uint32_t startPattern, uint16_t chunk) {
 	 uint32_t gid = blockIdx.y + startGate;
 	// scan sequentially until a thread ID is discovered;
 	int32_t i = 0;
 	int32_t j = 0;
-	while (REF2D(int2, intermediate, i_pitch, i, gid).x < 0 && i < length) {
+	while (REF2D(int2, intermediate, i_pitch, i, gid).x < 0 && i < length && g_odata[gid].x == -1) {
 		i++;
 	}
-	while (REF2D(int2, intermediate, i_pitch, j, gid).y < 0 && j < length) {
+	while (REF2D(int2, intermediate, i_pitch, j, gid).y < 0 && j < length && g_odata[gid].y == -1) {
 		j++;
 	}
 
@@ -106,11 +107,12 @@ __global__ void kernSetMin(int2* g_odata, size_t pitch, int2* intermediate, uint
 			j = g_odata[gid].y;
 		}
 	}
-	g_odata[gid] = make_int2(i,j);
+	g_odata[gid].x = i;
+	g_odata[gid].y = j;
 
 }
 // scan through input until the first 1 is found, save the identifier and memset all indicies above that.
-float gpuMergeHistory(GPU_Data& input, void** mergeid) {
+float gpuMergeHistory(GPU_Data& input, GPU_Data& sim, void** mergeid) {
 
 	cudaMalloc(mergeid, sizeof(int2)*input.height());
 	int2 *mergeids = (int2*)*mergeid;
@@ -137,12 +139,13 @@ float gpuMergeHistory(GPU_Data& input, void** mergeid) {
 		size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		do {
 			dim3 blocks(block_x, block_y);
-			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count, startPattern);
+			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, sim.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count, startPattern);
 			cudaDeviceSynchronize();
 
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
+			
 			dim3 blocksmin(1, block_y);
-			kernSetMin<<<blocksmin, 1>>>(mergeids, input.height(), temparray,  pitch, (block_x/2) + (block_x/2 == 0), count, startPattern,chunk);
+			kernSetMin<<<blocksmin, 1>>>(mergeids, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count, startPattern,chunk);
 			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			count+=65535;

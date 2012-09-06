@@ -151,8 +151,7 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 		goffset = node[gid].offset;
 		__syncthreads();
 		// switching based on value causes divergence, switch based on node type.
-		// rowCache is from the simulation mark. 0-1, stable, 2-3, transition
-		val = (rowCache > 1)*rowCache;
+		val = (rowCache > 1);
 
 		if (node[gid].po > 0) {
 			resultCache = val;
@@ -166,7 +165,6 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 			for (int i = 0; i < node[gid].nfo; i++) {
 				resultCache = (resultCache == 1) || (REF2D(uint8_t,mark,pitch,tid,FIN(fans,goffset,i+node[gid].nfi)) > 0);
 			}
-			resultCache *= rowCache;
 			prev = resultCache;
 		}
 		switch(type) {
@@ -178,7 +176,7 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 			case FROM: break;
 			case BUFF:
 			case NOT:
-				val = (NOT_IN(rowCache) && prev) * rowCache;
+				val = (NOT_IN(rowCache) && prev); 
 				REF2D(uint8_t,mark,pitch,tid,FIN(fans,goffset,0)) = val;
 				resultCache = val;
 				break;
@@ -216,8 +214,7 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 							}
 						}
 					}
-					// Criteria here is wrong, need to add annotation information for what type of transition was at the input for this T value (or stable).
-					REF2D(uint8_t,mark,pitch,tid,FIN(fans,goffset,fin1)) = fin*(REF2D(uint8_t,sim,sim_pitch,tid,FIN(fans,goffset,fin1)) >= T0)*REF2D(uint8_t,sim,sim_pitch,tid,FIN(fans,goffset,fin1));
+					REF2D(uint8_t,mark,pitch,tid,FIN(fans,goffset,fin1)) = fin;
 				}
 				break;
 			default: break;

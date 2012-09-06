@@ -87,7 +87,7 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 			// c equals c+h if either history[g] >= pid and line is marked
 			c = (c + h)*(cache > 0)*(history[g].x >= pid || history[g].y >= pid);
 			// h equals 0 if neither history[g] >= pid, else h if this line is marked;
-			h = h*(cache > 0)*(history[g].x < pid)*(history[g].y < pid);
+			h = h*(cache > 0)*((history[g].x < pid) && (history[g].y < pid));
 
         }
 		// Cycle through the fanins of this node and assign them the current value
@@ -171,12 +171,12 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, u
 		startPattern += mark.gpu(chunk).width;
 		assert(startGate == 0);
 		// dump to file for debugging.
-		LOGEXEC(cudaMemcpy2D(d_results, sizeof(uint32_t)*mark.gpu(chunk).width, g_results, pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(), cudaMemcpyDeviceToHost));
-		LOGEXEC(cudaMemcpy2D(dh_results, sizeof(uint32_t)*mark.gpu(chunk).width, gh_results, h_pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(),cudaMemcpyDeviceToHost));
-		LOGEXEC(debugCover(d_results, mark.gpu(chunk).width, mark.height(), cfile));
-		LOGEXEC(debugCover(dh_results, mark.gpu(chunk).width, mark.height(), chfile));
-		LOGEXEC(free(d_results));
-		LOGEXEC(free(dh_results));
+//		LOGEXEC(cudaMemcpy2D(d_results, sizeof(uint32_t)*mark.gpu(chunk).width, g_results, pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(), cudaMemcpyDeviceToHost));
+//		LOGEXEC(cudaMemcpy2D(dh_results, sizeof(uint32_t)*mark.gpu(chunk).width, gh_results, h_pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(),cudaMemcpyDeviceToHost));
+//		LOGEXEC(debugCover(d_results, mark.gpu(chunk).width, mark.height(), cfile));
+//		LOGEXEC(debugCover(dh_results, mark.gpu(chunk).width, mark.height(), chfile));
+//		LOGEXEC(free(d_results));
+//		LOGEXEC(free(dh_results));
 	cudaFree(g_results); // clean up.
 	cudaFree(gh_results); // clean up
 	}
