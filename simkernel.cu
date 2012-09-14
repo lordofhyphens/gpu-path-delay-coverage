@@ -142,10 +142,10 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 					levelsize = 0;
 				}
 			} while (levelsize > 0); 
-			cudaDeviceSynchronize();
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
 		startPattern += results.gpu(chunk).width;
+		cudaDeviceSynchronize();
 	}
 	// We're done simulating at this point.
 #ifndef NTIMING

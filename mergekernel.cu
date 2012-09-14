@@ -141,7 +141,6 @@ float gpuMergeHistory(GPU_Data& input, GPU_Data& sim, void** mergeid) {
 		size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		do {
 			dim3 blocks(block_x, block_y);
-			DPRINT("%s:%d - Merging lines %lu to %lu\n",__FILE__,__LINE__, count, count+block_y);
 			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, sim.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count, startPattern);
 			cudaDeviceSynchronize();
 

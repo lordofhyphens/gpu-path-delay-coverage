@@ -106,7 +106,7 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(AndOutChainLUT,cuAndOutChain,channelDesc));
 	HANDLE_ERROR(cudaBindTextureToArray(AndInChainLUT,cuAndInChain,channelDesc));
 }
-__device__ uint8_t markeval_out (uint8_t f1, uint8_t f2, int type) {
+__device__ uint8_t markeval_out (const uint8_t f1, const uint8_t f2, const int type) {
 	switch(type) {
 		case AND:
 		case NAND:
@@ -120,7 +120,7 @@ __device__ uint8_t markeval_out (uint8_t f1, uint8_t f2, int type) {
 	}
 	return 0xff;
 }
-__device__ uint8_t markeval_in (uint8_t f1, uint8_t f2, int type) {
+__device__ uint8_t markeval_in (const uint8_t f1, const uint8_t f2, const int type) {
 	switch(type) {
 		case AND:
 		case NAND:
@@ -252,11 +252,11 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt) {
 				} else {
 					levelsize = 0;
 				}
-				cudaDeviceSynchronize();
 			} while (levelsize > 0);
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
 		startPattern += input.gpu(chunk).width;
+		cudaDeviceSynchronize();
 	}
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);

@@ -165,7 +165,6 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 				} else {
 					levelsize = 0;
 				}
-				cudaDeviceSynchronize();
 			} while (levelsize > 0);
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			if (i == 0) {
@@ -190,6 +189,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 #endif // LOGEXEC
 		cudaFree(g_results); // clean up.
 		cudaFree(gh_results); // clean up
+		cudaDeviceSynchronize();
 	}
 	cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
 	cudaFree(finalcoverage);
