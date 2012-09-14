@@ -12,6 +12,7 @@
 #include <iostream>
 #include <fstream>
 #define MAX_PATTERNS simul_patterns
+#undef LOGEXEC
 int main(int argc, char ** argv) {
 	selectGPU();
 	GPU_Circuit ckt;
@@ -68,7 +69,9 @@ int main(int argc, char ** argv) {
 		std::clog << "..complete." << std::endl;
 		gpu += sim1;
 		std::cerr << "Simulation: " << sim1 << " ms" << std::endl;
+#ifdef LOGEXEC
 		debugSimulationOutput(sim_results, "gpusim-p2.log");
+#endif //LOGEXEC
 		// don't need the input vectors anymore, so remove.
 		delete vec;
 		GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS);
@@ -76,15 +79,17 @@ int main(int argc, char ** argv) {
 		gpu += mark;
 		std::cerr << "     Mark: " << mark << " ms" << std::endl;
 		//std::cerr << sim_results->debug();
+#ifdef LOGEXEC
 		debugMarkOutput(mark_results, "gpumark.log");
-//		debugSimulationOutput(mark_results, "gpusim-mark.log");
+#endif //LOGEXEC
 		void* merge_ids;
 		//std::cerr << mark_results->debug();
 		merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids);  
 		gpu += merge;
 		std::cerr << " Merge: " << merge << " ms" << std::endl;
+#ifdef LOGEXEC
 		debugMergeOutput(ckt.size(), merge_ids, "gpumerge.log");
-		
+#endif //LOGEXEC
 		delete sim_results;
 		cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
 
@@ -94,8 +99,8 @@ int main(int argc, char ** argv) {
 		gpu += cover;
 
 		std::cerr << "   GPU: " << gpu << " ms" <<std::endl;
-		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << gpu << "_" << sim1 
-			      <<  "_" << mark << "_"<< merge << "_" << cover << "," << *coverage << std::endl;
+		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << gpu << ";" << sim1 
+			      <<  ";" << mark << ";"<< merge << ";" << cover << ";" << *coverage << std::endl;
 		delete coverage;
 	}
 	return 0;

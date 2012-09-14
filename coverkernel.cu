@@ -1,11 +1,17 @@
 #include "coverkernel.h"
-#include <cuda.h> 
+#include <cuda.h>
+#include "util/g_utility.h"
+#undef LOGEXEC
+
+#define BLOCK_SIZE 1024
 void HandleCoverError( cudaError_t err, const char *file, uint32_t line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
         exit( EXIT_FAILURE );
     }
 }
+
+#define HANDLE_ERROR( err ) (HandleCoverError( err, __FILE__, __LINE__ ))
 template <uint16_t blockSize>
 __device__ void warpReduce(volatile uint32_t* sdata, uint16_t tid) {
 	if (blockSize >= 64) sdata[tid] += sdata[tid + 32];
@@ -16,8 +22,6 @@ __device__ void warpReduce(volatile uint32_t* sdata, uint16_t tid) {
 	if (blockSize >= 2) sdata[tid] += sdata[tid + 1];
 }
 
-#define SUM(A, B, DATA) (DATA[A]+DATA[B])
-#define BLOCK_SIZE 1024
 __global__ void kernSumSingle(GPUNODE* ckt, size_t size, uint32_t* input, size_t height, size_t pitch, uint64_t* meta) {
 	__shared__ uint32_t sdata[BLOCK_SIZE];
 	uint16_t tid = threadIdx.x;
@@ -27,7 +31,7 @@ __global__ void kernSumSingle(GPUNODE* ckt, size_t size, uint32_t* input, size_t
 		for (size_t j = 0; j < height; j+=BLOCK_SIZE) { // unrolled to handle reductions of up to BLOCK_SIZE in parallel
 			sdata[tid] = 0; // reset shared data segment to 0.
 			if (tid+j < height) {
-				sdata[tid] = REF2D(uint32_t, input, pitch, tid+j, i);
+				sdata[tid] = REF2D(uint32_t, input, pitch, tid+j, i); __syncthreads();
 //				printf("thread %hu - sdata[%hu] = %u = %u\n", tid, tid,  REF2D(uint32_t, input, pitch, tid+j, i));
 			}
 			if (BLOCK_SIZE >= 1024) { if (tid < 512) { sdata[tid] += sdata[tid + 512]; } __syncthreads(); }
@@ -45,22 +49,16 @@ __global__ void kernSumSingle(GPUNODE* ckt, size_t size, uint32_t* input, size_t
 	}
 }
 
-__device__ inline int32_t subCktFan(uint32_t* subckt, uint32_t subckt_size, uint32_t tgt) {
-	// scan through the subckt list looking for tgt
-	for (uint32_t i = 0; i < subckt_size; i++) { if (subckt[i] == tgt) { return i;} }
-	return -1;
-}
-#define HANDLE_ERROR( err ) (HandleCoverError( err, __FILE__, __LINE__ ))
 
 __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_pitch, int2* history,  uint32_t* cover,const size_t cover_pitch, uint32_t* hist_cover,const size_t hcover_pitch,const uint32_t start_offset,const uint32_t pattern_count,const uint32_t start_pattern, uint32_t* offsets) { //, uint32_t* subckt, size_t subckt_size) {
     // cover is the coverage ints we're working with for this pass.
-    // mark is the fresh marks
-    // hist is the history of the mark status of all lines.
+	// mark is the fresh marks
+	// hist is the history of the mark status of all lines.
 	const uint32_t tid = (blockIdx.y * COVER_BLOCK) + threadIdx.x;
 	const int32_t pid = tid + start_pattern; 
 	const uint32_t g = blockIdx.x+start_offset;
 	const GPUNODE& gate = ckt[g];
-	
+
 	if (tid < pattern_count) {
 		const uint8_t cache = REF2D(uint8_t,mark,mark_pitch,tid, g); // cache the current node's marked status.
 		// shorthand references to current coverage and history count.
@@ -68,8 +66,8 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 
 		if (gate.po == 1) {
 			c = 0;
-            h = (cache > 0); // set history = 1 if this line is marked.
-        } else {
+			h = (cache > 0); // set history = 1 if this line is marked.
+		} else {
 			c = REF2D(uint32_t, cover     , cover_pitch , tid, g);
 			h = REF2D(uint32_t, hist_cover, hcover_pitch, tid, g);
 		}
@@ -77,23 +75,25 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 		if (gate.nfo > 1) { // cycle through the fanouts of this node and add their coverage values to the current node's coverage
 			uint32_t resultCache = 0, histCache = 0;
 			for (uint32_t i = 0; i < gate.nfo; i++) {
-				resultCache += REF2D(uint32_t,     cover, cover_pitch, tid, FIN(offsets,gate.offset,gate.nfi+i)); // add this fanout's path count to this node.
-				histCache   += REF2D(uint32_t,hist_cover,hcover_pitch, tid, FIN(offsets,gate.offset,gate.nfi+i)); // add this fanout's history path count to this node.
+				const uint32_t fot = FIN(offsets,gate.offset,gate.nfi+i);
+				resultCache += REF2D(uint32_t,     cover, cover_pitch, tid, fot); // add this fanout's path count to this node.
+				histCache   += REF2D(uint32_t,hist_cover,hcover_pitch, tid, fot); // add this fanout's history path count to this node.
 			}
 			c = resultCache;
 			h = histCache;
 		}
 		if (gate.type != FROM) { // FROM nodes always take the value of their fan-outs
 			// c equals c+h if either history[g] >= pid and line is marked
-			c = (c + h)*(cache > 0)*(history[g].x >= pid || history[g].y >= pid);
+			c = (c + h)*(cache > 0)*((history[g].x == pid) + (history[g].y == pid));
 			// h equals 0 if neither history[g] >= pid, else h if this line is marked;
-			h = h*(cache > 0)*((history[g].x < pid) && (history[g].y < pid));
+			h = h*(cache > 0)*((history[g].x != pid)*(history[g].y != pid));
 
-        }
+		}
 		// Cycle through the fanins of this node and assign them the current value
 		for (uint32_t i = 0; i < gate.nfi; i++) {
-			REF2D(uint32_t,cover,cover_pitch,tid, FIN(offsets,gate.offset,i)) = c; 
-			REF2D(uint32_t,hist_cover,hcover_pitch,tid,FIN(offsets,gate.offset,i)) = h; 
+			const uint32_t fin = FIN(offsets,gate.offset,i);
+			REF2D(uint32_t,     cover,cover_pitch ,tid, fin) = c; 
+			REF2D(uint32_t,hist_cover,hcover_pitch,tid, fin) = h; 
 		}
 		REF2D(uint32_t, cover     , cover_pitch , tid, g) = c;
 		REF2D(uint32_t, hist_cover, hcover_pitch, tid, g) = h;
@@ -102,14 +102,18 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 }
 
 
-float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, uint64_t* coverage) {
+float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
+		uint64_t* coverage) {
+
 	int2* merges = (int2*)merge;
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure there aren't any errors going into function.
 
 	std::ofstream cfile("gpucover.log", std::ios::out);
 	std::ofstream chfile("gpuhcover.log", std::ios::out);
 	uint32_t *g_results, *gh_results;
+#ifdef LOGEXEC
 	uint32_t *d_results, *dh_results; // debug results 
+#endif //LOGEXEC
 	uint64_t *finalcoverage;
 	*coverage = 0;
 	uint32_t startGate;
@@ -128,13 +132,15 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, u
 #endif
 	uint32_t pcount = 0;
 	for (size_t chunk = 0; chunk < mark.size(); chunk++) {
+		DPRINT("Allocating for chunk %lu \n", chunk);
 		cudaMallocPitch(&g_results,&pitch, sizeof(uint32_t)*mark.block_width(),mark.height());
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
 		cudaMallocPitch(&gh_results,&h_pitch,sizeof(uint32_t)*mark.block_width(),mark.height());
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
-
-		LOGEXEC(d_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height()));
-		LOGEXEC(dh_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height()));
+#ifdef LOGEXEC
+		d_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
+		dh_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
+#endif // LOGEXEC
 		cudaMemset(g_results, 0, mark.height()*pitch);
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
 		cudaMemset(gh_results, 0, mark.height()*h_pitch);
@@ -164,21 +170,26 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, u
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			if (i == 0) {
 				// Sum for all gates and patterns
-				kernSumSingle<<<1,BLOCK_SIZE>>>(ckt.gpu_graph(), ckt.size(), g_results, mark.gpu(chunk).width, pitch, finalcoverage); // multithreaded, single block GPU add.
+				kernSumSingle<<<1,BLOCK_SIZE>>>(ckt.gpu_graph(), ckt.levelsize(0), g_results, mark.gpu(chunk).width, pitch, finalcoverage); // multithreaded, single block GPU add.
+				cudaDeviceSynchronize();
 				cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
+				cudaDeviceSynchronize();
 			}
 		}
 		startPattern += mark.gpu(chunk).width;
 		assert(startGate == 0);
 		// dump to file for debugging.
-//		LOGEXEC(cudaMemcpy2D(d_results, sizeof(uint32_t)*mark.gpu(chunk).width, g_results, pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(), cudaMemcpyDeviceToHost));
-//		LOGEXEC(cudaMemcpy2D(dh_results, sizeof(uint32_t)*mark.gpu(chunk).width, gh_results, h_pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(),cudaMemcpyDeviceToHost));
-//		LOGEXEC(debugCover(d_results, mark.gpu(chunk).width, mark.height(), cfile));
-//		LOGEXEC(debugCover(dh_results, mark.gpu(chunk).width, mark.height(), chfile));
-//		LOGEXEC(free(d_results));
-//		LOGEXEC(free(dh_results));
-	cudaFree(g_results); // clean up.
-	cudaFree(gh_results); // clean up
+
+#ifdef LOGEXEC
+		cudaMemcpy2D(d_results, sizeof(uint32_t)*mark.gpu(chunk).width, g_results, pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(), cudaMemcpyDeviceToHost);
+		cudaMemcpy2D(dh_results, sizeof(uint32_t)*mark.gpu(chunk).width, gh_results, h_pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(),cudaMemcpyDeviceToHost);
+		debugCover(ckt, d_results, mark.gpu(chunk).width, mark.height(), cfile);
+		debugCover(ckt, dh_results, mark.gpu(chunk).width, mark.height(), chfile);
+		free(d_results);
+		free(dh_results);
+#endif // LOGEXEC
+		cudaFree(g_results); // clean up.
+		cudaFree(gh_results); // clean up
 	}
 	cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
 	cudaFree(finalcoverage);
@@ -186,24 +197,29 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, u
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
 #endif
-	LOGEXEC(cfile.close());
-	LOGEXEC(chfile.close());
+
+#ifdef LOGEXEC
+	cfile.close();
+	chfile.close();
+#endif
 #ifndef NTIMING
 	return elapsed;
 #else 
 	return 0.0;
 #endif
 }
-void debugCover(uint32_t *cover, size_t patterns, size_t lines, std::ofstream& ofile) {
+void debugCover(const Circuit& ckt, uint32_t *cover, size_t patterns, size_t lines, std::ofstream& ofile) {
 #ifndef NDEBUG
 	std::cerr << "Patterns: " << patterns << "; Lines: " << lines << std::endl;
 	for (uint32_t r = 0; r < patterns; r++) {
 		ofile << "Vector " << r << ":\t";
 		for (uint32_t i = 0; i < lines; i++) {
-			const uint32_t z = REF2D(uint32_t, cover, sizeof(uint32_t)*patterns, r, i);
-			ofile << std::setw(OUTJUST) << z << " ";
+			if (ckt.at(i).typ == INPT) {
+				const uint32_t z = REF2D(uint32_t, cover, sizeof(uint32_t)*patterns, r, i);
+				ofile << std::setw(OUTJUST) << z << " ";
+			}
 		}
-		ofile << std::endl;
+		ofile << "\n";
 	}
 #endif
 }
