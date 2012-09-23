@@ -1,6 +1,5 @@
 #include <cuda.h>
 #include "simkernel.h"
-
 void HandleSimError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -151,6 +150,11 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
+#endif // NTIMING
+#ifdef LOGEXEC
+		debugSimulationOutput(&results, "gpusim-p2.log");
+#endif //LOGEXEC
+#ifndef NTIMING
 	return elapsed;
 #else 
 	return 0.0;

@@ -69,9 +69,6 @@ int main(int argc, char ** argv) {
 		std::clog << "..complete." << std::endl;
 		gpu += sim1;
 		std::cerr << "Simulation: " << sim1 << " ms" << std::endl;
-#ifdef LOGEXEC
-		debugSimulationOutput(sim_results, "gpusim-p2.log");
-#endif //LOGEXEC
 		// don't need the input vectors anymore, so remove.
 		delete vec;
 		GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS);
@@ -79,9 +76,6 @@ int main(int argc, char ** argv) {
 		gpu += mark;
 		std::cerr << "     Mark: " << mark << " ms" << std::endl;
 		//std::cerr << sim_results->debug();
-#ifdef LOGEXEC
-		debugMarkOutput(mark_results, "gpumark.log");
-#endif //LOGEXEC
 		void* merge_ids;
 		//std::cerr << mark_results->debug();
 		merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids);  
