@@ -1,5 +1,8 @@
 #include <cuda.h>
 #include "simkernel.h"
+#undef LOGEXEC
+#undef SIM_BLOCK 
+#define SIM_BLOCK 768
 void HandleSimError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -28,14 +31,14 @@ __device__ uint8_t simLUT(int type, uint8_t val, uint8_t r) {
 			return 0;
 	}
 }
-__global__ void kernSimulateP1(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch, size_t pi_offset, uint8_t* output_data, size_t pitch, size_t pattern_count, uint32_t* fanout_index, int start_offset, int startPattern) {
+__global__ void kernSimulateP1(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch, size_t pi_offset, uint8_t* output_data, size_t pitch, size_t max_patterns, size_t pattern_count, uint32_t* fanout_index, int start_offset, int startPattern) {
 	int tid = (blockIdx.y * SIM_BLOCK) + threadIdx.x;
 	int gid = blockIdx.x+start_offset;
 	int pid = tid + startPattern;
 	int pid2 = (tid+startPattern == pattern_count -1 ? 0: tid+startPattern+1);
 	uint8_t *row, r, val;
 	int goffset, nfi, j,type;
-	if (pid < pattern_count)  {
+	if (tid < max_patterns && pid < pattern_count )  {
 		row = ((uint8_t*)output_data + gid*pitch)+tid; // get the line row for the current gate
 		goffset = graph[gid].offset;
 		nfi = graph[gid].nfi;
@@ -114,7 +117,6 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	loadSimLUTs(); // set up our lookup tables for simulation.
 	int startGate;
-	int blockcount_y = (int)(results.gpu().width/SIM_BLOCK) + ((results.gpu().width%SIM_BLOCK) > 0);
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
@@ -122,6 +124,7 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 #endif // NTIMING
 	size_t startPattern = 0;
 	for (unsigned int chunk = 0; chunk < results.size(); chunk++) {
+		const int blockcount_y = (int)(results.gpu(chunk).width/SIM_BLOCK) + ((results.gpu(chunk).width%SIM_BLOCK) > 0);
 		startGate = 0;
 		//DPRINT("Patterns to process in block %u: %lu\n", chunk, results.gpu(chunk).width);
 		for (uint32_t i = 0; i <= ckt.levels(); i++) {
@@ -129,10 +132,11 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 			do { 
 				int simblocks = min(MAX_BLOCKS, levelsize);
 				dim3 numBlocks(simblocks,blockcount_y);
+			//	DPRINT("Working on %lu patterns, %d gates in level %d\n",  results.gpu(chunk).width, simblocks, i);
 
 				kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(), inputs.gpu().data, inputs.gpu().pitch,
 						0, results.gpu(chunk).data, results.gpu(chunk).pitch, 
-						inputs.block_width(), ckt.offset(), startGate, startPattern);
+						results.gpu(chunk).width, inputs.block_width(), ckt.offset(), startGate, startPattern);
 
 				startGate += simblocks;
 				if (levelsize > MAX_BLOCKS) {

@@ -133,9 +133,9 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 	uint32_t pcount = 0;
 	for (size_t chunk = 0; chunk < mark.size(); chunk++) {
 		DPRINT("Allocating for chunk %lu \n", chunk);
-		cudaMallocPitch(&g_results,&pitch, sizeof(uint32_t)*mark.block_width(),mark.height());
+		cudaMallocPitch(&g_results,&pitch, sizeof(uint32_t)*mark.gpu(chunk).width,mark.height());
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
-		cudaMallocPitch(&gh_results,&h_pitch,sizeof(uint32_t)*mark.block_width(),mark.height());
+		cudaMallocPitch(&gh_results,&h_pitch,sizeof(uint32_t)*mark.gpu(chunk).width,mark.height());
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
 #ifdef LOGEXEC
 		d_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());

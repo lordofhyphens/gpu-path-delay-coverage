@@ -1,5 +1,6 @@
 #include "markkernel.h"
 #include <cuda.h>
+#undef LOGEXEC
 void HandleMarkError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );

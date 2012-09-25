@@ -1,6 +1,7 @@
 #include "mergekernel.h"
 #include <cuda.h>
 
+#define MERGE_SIZE 1024
 void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -64,7 +65,7 @@ __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t height, si
 
 		// at this point, we have the position of the lowest. Correct by 1 to compensate for above.
 
-		if (threadIdx.x == 0) { sdata[0].x -= 1; sdata[0].y -= 1; REF2D(int2,meta,mpitch,blockIdx.x,gid) = sdata[0]; }
+		if (threadIdx.x == 0) { sdata[0].x -= 1; sdata[0].y -= 1; REF2D(int2,meta,mpitch,blockIdx.x,blockIdx.y) = sdata[0]; }
 		__syncthreads();
 
 	}
@@ -75,18 +76,18 @@ __global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, 
 	// scan sequentially until a thread ID is discovered;
 	int32_t i = 0;
 	int32_t j = 0;
-	while (REF2D(int2, intermediate, i_pitch, i, gid).x < 0 && i < length && g_odata[gid].x == -1) {
+	while (REF2D(int2, intermediate, i_pitch, i, blockIdx.y).x < 0 && i < length && g_odata[gid].x == -1) {
 		i++;
 	}
-	while (REF2D(int2, intermediate, i_pitch, j, gid).y < 0 && j < length && g_odata[gid].y == -1) {
+	while (REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y < 0 && j < length && g_odata[gid].y == -1) {
 		j++;
 	}
 
 	if (i < length) {
 		if (chunk > 0) {
-			i = MIN_GEN(REF2D(int2, intermediate, i_pitch, i, gid).x + startPattern, g_odata[gid].x);
+			i = MIN_GEN(REF2D(int2, intermediate, i_pitch, i, blockIdx.y).x + startPattern, g_odata[gid].x);
 		} else {
-			i = REF2D(int2, intermediate, i_pitch, i, gid).x;
+			i = REF2D(int2, intermediate, i_pitch, i, blockIdx.y).x;
 		}
 	} else {
 		if (chunk == 0) {
@@ -97,9 +98,9 @@ __global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, 
 	}
 	if (j < length) {
 		if (chunk > 0) {
-			j = MIN_GEN(REF2D(int2, intermediate, i_pitch, j, gid).y + startPattern, g_odata[gid].y);
+			j = MIN_GEN(REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y + startPattern, g_odata[gid].y);
 		} else {
-			j = REF2D(int2, intermediate, i_pitch, j, gid).y;
+			j = REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y;
 		}
 	} else {
 		if (chunk == 0) {
@@ -117,13 +118,9 @@ float gpuMergeHistory(GPU_Data& input, GPU_Data& sim, void** mergeid) {
 
 	cudaMalloc(mergeid, sizeof(int2)*input.height());
 	int2 *mergeids = (int2*)*mergeid;
-	size_t remaining_blocks = input.height();
-
-	size_t maxblock = (input.width() / MERGE_SIZE) + ((input.width() % MERGE_SIZE) > 0);
 	size_t count = 0;
 	int2* temparray;
 	size_t pitch;
-	cudaMallocPitch(&temparray, &pitch, sizeof(int2)*maxblock, remaining_blocks);
 
 //	uint32_t* debug = (uint32_t*)malloc(sizeof(uint32_t)*input.height());
 //	uint32_t* debugt = (uint32_t*)malloc(sizeof(uint32_t)*input.height()*maxblock);
@@ -133,29 +130,27 @@ float gpuMergeHistory(GPU_Data& input, GPU_Data& sim, void** mergeid) {
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	uint32_t startPattern = 0;
+	// assume that the 0th entry is the widest, which is true given the chunking method.
+	cudaMallocPitch(&temparray, &pitch, sizeof(int2)*((input.gpu(0).width / MERGE_SIZE) + ((input.gpu(0).width % MERGE_SIZE) > 0)), 65535);
+	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting on memory allocation
 #endif // NTIMING
 	for ( uint32_t chunk = 0; chunk < input.size(); chunk++) {
 		count = 0;
 		size_t remaining_blocks = input.height();
-		size_t block_x = (input.gpu(chunk).width / MERGE_SIZE) + ((input.gpu(chunk).width % MERGE_SIZE) > 0);
+		const size_t block_x = (input.gpu(chunk).width / MERGE_SIZE) + ((input.gpu(chunk).width % MERGE_SIZE) > 0);
 		size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		do {
 			dim3 blocks(block_x, block_y);
 			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, sim.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count, startPattern);
-			cudaDeviceSynchronize();
-
-			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
-			
 			dim3 blocksmin(1, block_y);
 			kernSetMin<<<blocksmin, 1>>>(mergeids, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count, startPattern,chunk);
-			cudaDeviceSynchronize();
-			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			count+=65535;
 			if (remaining_blocks < 65535) { remaining_blocks = 0;}
 			if (remaining_blocks > 65535) { remaining_blocks -= 65535; }
 			block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		} while (remaining_blocks > 0);
 		startPattern += input.gpu(chunk).width;
+		cudaDeviceSynchronize();
 	}
 	cudaFree(temparray);
 #ifndef NTIMING
