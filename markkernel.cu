@@ -1,6 +1,8 @@
 #include "markkernel.h"
 #include <cuda.h>
 #undef LOGEXEC
+#define MARK_BLOCK 512
+
 void HandleMarkError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -80,6 +82,7 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 				break;
 			case FROM: // For FROM, it's equal to its fan-in
 			case BUFF:
+			case DFF:
 				// For inverter and buffer gates, mark if and only if a fan-in is marked.
 			case NOT: resultCache = REF2D(uint8_t,mark,pitch,tid,FIN(fans,gate.offset,0)); break;
 			case OR:  // For the normal gates, set the fan-out based on the fan-ins. 

@@ -1,7 +1,6 @@
 #include <cuda.h>
 #include "simkernel.h"
 #undef LOGEXEC
-#undef SIM_BLOCK 
 #define SIM_BLOCK 768
 void HandleSimError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
@@ -46,6 +45,8 @@ __global__ void kernSimulateP1(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch
 		__syncthreads();
 		switch (type) {
 			case INPT: val = tex2D(stableLUT,REF2D(uint8_t, pi_data, pi_pitch, pid+pi_offset, gid),REF2D(uint8_t, pi_data, pi_pitch, pid2+pi_offset, gid)); break;
+			case DFF:
+			case BUFF:
 			case FROM: val = REF2D(uint8_t, output_data, pitch, tid, FIN(fanout_index, goffset, 0)); break;
 			default: 
 					// we're guaranteed at least one fanin per 

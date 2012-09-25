@@ -4,6 +4,7 @@
 #undef LOGEXEC
 
 #define BLOCK_SIZE 1024
+#define COVER_BLOCK 768
 void HandleCoverError( cudaError_t err, const char *file, uint32_t line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
