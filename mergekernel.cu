@@ -1,7 +1,7 @@
 #include "mergekernel.h"
 #include <cuda.h>
 
-#define MERGE_SIZE 1024
+#define MERGE_SIZE 512
 void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -26,23 +26,23 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 		((R) > 0)*((R) < (L))*(R) )
 
 
-__global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t height, size_t pitch, int2* meta, uint32_t mpitch, uint32_t startGate, uint32_t startPattern) {
+__global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch, size_t height, size_t pitch, int2* meta, uint32_t mpitch, uint32_t startGate, uint32_t startPattern) {
 	uint32_t tid = threadIdx.x;
 	uint32_t gid = blockIdx.y+startGate;
 	__shared__ int2 sdata[MERGE_SIZE];
 	uint8_t* row = input + pitch*gid;
-	uint8_t* sim = sim_input + pitch*gid;
+	uint8_t* sim = sim_input + sim_pitch*gid;
 	uint32_t i = blockIdx.x*(MERGE_SIZE*2)+tid;
 	sdata[tid] = make_int2(0,0);
 
 	// Put the lower of pid and pid+MERGE_SIZE for which row[i] == 1
 	// Minimum ID given by this is 1.
-	if (i < height) {
+	if (i < height-1) {
 		if (i+MERGE_SIZE > height) { // correcting for blocks smaller than MERGE_SIZE
 			sdata[tid] = make_int2((sim[i] == T0)*(row[i] == 1)*(i+1),(sim[i] == T1)*(row[i] == 1)*(i+1));
 		} else {
-			sdata[tid] = make_int2(MIN((sim[i] == T0)*(row[i] == 1)*(i+1), (sim[i+MERGE_SIZE] == T0)*(row[i+MERGE_SIZE] == 1)*(i+MERGE_SIZE+1)), 
-					               MIN((sim[i] == T1)*(row[i] == 1)*(i+1), (sim[i+MERGE_SIZE] == T1)*(row[i+MERGE_SIZE] == 1)*(i+MERGE_SIZE+1)));
+			sdata[tid].x = MIN((sim[i] == T0)*(row[i] == 1)*(i+1), (sim[i+MERGE_SIZE] == T0)*(row[i+MERGE_SIZE] == 1)*(i+MERGE_SIZE+1));
+			sdata[tid].y = MIN((sim[i] == T1)*(row[i] == 1)*(i+1), (sim[i+MERGE_SIZE] == T1)*(row[i+MERGE_SIZE] == 1)*(i+MERGE_SIZE+1));
 		}
 		__syncthreads();
 
@@ -141,9 +141,9 @@ float gpuMergeHistory(GPU_Data& input, GPU_Data& sim, void** mergeid) {
 		size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
 		do {
 			dim3 blocks(block_x, block_y);
-			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, sim.gpu(chunk).data, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count, startPattern);
+			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, sim.gpu(chunk).data, sim.gpu(chunk).pitch, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count, startPattern);
 			dim3 blocksmin(1, block_y);
-			kernSetMin<<<blocksmin, 1>>>(mergeids, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count, startPattern,chunk);
+			kernSetMin<<<blocksmin, 1>>>(mergeids, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count, startPattern, chunk);
 			count+=65535;
 			if (remaining_blocks < 65535) { remaining_blocks = 0;}
 			if (remaining_blocks > 65535) { remaining_blocks -= 65535; }
@@ -151,6 +151,7 @@ float gpuMergeHistory(GPU_Data& input, GPU_Data& sim, void** mergeid) {
 		} while (remaining_blocks > 0);
 		startPattern += input.gpu(chunk).width;
 		cudaDeviceSynchronize();
+		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 	}
 	cudaFree(temparray);
 #ifndef NTIMING

@@ -14,7 +14,7 @@
 #define MAX_PATTERNS simul_patterns
 #undef LOGEXEC
 int main(int argc, char ** argv) {
-	selectGPU();
+	uint8_t device = selectGPU();
 	GPU_Circuit ckt;
 	timespec start, stop;
 	float elapsed = 0.0,mark=0.0,merge =0.0,cover = 0.0,sim1 = 0.0,gpu =0.0;
@@ -47,12 +47,12 @@ int main(int argc, char ** argv) {
 		std::pair<size_t,size_t> vecdim = get_vector_dim(argv[i]);
 		std::cerr << "Vector size: " << vecdim.first << "x"<<vecdim.second << std::endl;
 		GPU_Data *vec = new GPU_Data(vecdim.first,vecdim.second, vecdim.first);
+		uint32_t simul_patterns = gpuCalculateSimulPatterns(ckt.size(), vecdim.first, device);
 		std::cerr << "Reading vector file....";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		read_vectors(*vec, argv[i], vec->block_width());
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
-		uint32_t simul_patterns = gpuCalculateSimulPatterns(ckt.size(), vecdim.first);
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 		std::clog << "Maximum patterns per pass: " << simul_patterns << std::endl;
 		
@@ -84,7 +84,9 @@ int main(int argc, char ** argv) {
 #ifdef LOGEXEC
 		debugMergeOutput(ckt.size(), merge_ids, "gpumerge.log");
 #endif //LOGEXEC
+		gpuCheckMemory();
 		delete sim_results;
+		gpuCheckMemory();
 		cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
 
 		std::cerr << " Cover: " << cover << " ms" << std::endl;

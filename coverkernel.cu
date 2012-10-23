@@ -3,8 +3,7 @@
 #include "util/g_utility.h"
 #undef LOGEXEC
 
-#define BLOCK_SIZE 1024
-#define COVER_BLOCK 768
+#define BLOCK_SIZE 512
 void HandleCoverError( cudaError_t err, const char *file, uint32_t line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -23,8 +22,8 @@ __device__ void warpReduce(volatile uint32_t* sdata, uint16_t tid) {
 	if (blockSize >= 2) sdata[tid] += sdata[tid + 1];
 }
 
-__global__ void kernSumSingle(GPUNODE* ckt, size_t size, uint32_t* input, size_t height, size_t pitch, uint64_t* meta) {
-	__shared__ uint32_t sdata[BLOCK_SIZE];
+__global__ void kernSumSingle(GPUNODE* ckt, size_t size, int32_t* input, size_t height, size_t pitch, uint64_t* meta) {
+	__shared__ uint32_t sdata[BLOCK_SIZE]; // only add positive #s
 	uint16_t tid = threadIdx.x;
 	for (size_t i = 0; i < size; i++) { // iterate over everything in the circuit
 		if (ckt[i].type != INPT) 
@@ -51,7 +50,7 @@ __global__ void kernSumSingle(GPUNODE* ckt, size_t size, uint32_t* input, size_t
 }
 
 
-__global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_pitch, int2* history,  uint32_t* cover,const size_t cover_pitch, uint32_t* hist_cover,const size_t hcover_pitch,const uint32_t start_offset,const uint32_t pattern_count,const uint32_t start_pattern, uint32_t* offsets) { //, uint32_t* subckt, size_t subckt_size) {
+__global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_pitch, int2* history,  int32_t* cover,const size_t cover_pitch, const uint32_t start_offset,const uint32_t pattern_count,const uint32_t start_pattern, uint32_t* offsets) { //, uint32_t* subckt, size_t subckt_size) {
     // cover is the coverage ints we're working with for this pass.
 	// mark is the fresh marks
 	// hist is the history of the mark status of all lines.
@@ -94,7 +93,6 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 			h = h*(cache > 0)*((history[g].x != pid)*(history[g].y != pid)) * -1;
 		} else {
 			h *= -1;
-
 		}
 		assert(h <= 0);
 		// Cycle through the fanins of this node and assign them the current value
@@ -117,14 +115,14 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 
 	std::ofstream cfile("gpucover.log", std::ios::out);
 	std::ofstream chfile("gpuhcover.log", std::ios::out);
-	uint32_t *g_results, *gh_results;
+	int32_t *g_results;
 #ifdef LOGEXEC
 	uint32_t *d_results, *dh_results; // debug results 
 #endif //LOGEXEC
 	uint64_t *finalcoverage;
 	*coverage = 0;
 	uint32_t startGate;
-	size_t pitch, h_pitch;
+	size_t pitch;
 	uint32_t startPattern = 0;
 //	const size_t summedPatterns = (mark.width() / (MERGE_SIZE*2)) + ((mark.width() % (MERGE_SIZE*2)) > 0);
 
@@ -139,18 +137,17 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 #endif
 	uint32_t pcount = 0;
 	for (size_t chunk = 0; chunk < mark.size(); chunk++) {
+		gpuCheckMemory();
 		DPRINT("Allocating for chunk %lu \n", chunk);
-		cudaMallocPitch(&g_results,&pitch, sizeof(uint32_t)*mark.gpu(chunk).width,mark.height());
-		HANDLE_ERROR(cudaGetLastError()); // checking last function
-		cudaMallocPitch(&gh_results,&h_pitch,sizeof(uint32_t)*mark.gpu(chunk).width,mark.height());
+		DPRINT("Allocating %lu bytes for results... ",sizeof(uint32_t)*mark.gpu(chunk).width*mark.height());
+		cudaMallocPitch(&g_results,&pitch, sizeof(int32_t)*mark.gpu(chunk).width,mark.height());
+		DPRINT("Allocated %lu bytes for results.\n",pitch*mark.height());
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
 #ifdef LOGEXEC
 		d_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
 		dh_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
 #endif // LOGEXEC
 		cudaMemset(g_results, 0, mark.height()*pitch);
-		HANDLE_ERROR(cudaGetLastError()); // checking last function
-		cudaMemset(gh_results, 0, mark.height()*h_pitch);
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
 
 		pcount += mark.gpu(chunk).width;
@@ -165,7 +162,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 				startGate -= simblocks;
 				assert((uint32_t)startGate + simblocks <= ckt.size());
 				kernCover<<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(), mark.gpu(chunk).data, mark.gpu(chunk).pitch,
-						merges, g_results,pitch, gh_results, h_pitch, startGate, 
+						merges, g_results,pitch, startGate, 
 						mark.gpu(chunk).width, startPattern, ckt.offset());
 				if (levelsize > MAX_BLOCKS) {
 					levelsize -= simblocks;
@@ -173,13 +170,13 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 					levelsize = 0;
 				}
 			} while (levelsize > 0);
-			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			if (i == 0) {
 				// Sum for all gates and patterns
 				kernSumSingle<<<1,BLOCK_SIZE>>>(ckt.gpu_graph(), ckt.levelsize(0), g_results, mark.gpu(chunk).width, pitch, finalcoverage); // multithreaded, single block GPU add.
 				cudaDeviceSynchronize();
 				cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
 				cudaDeviceSynchronize();
+				HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 			}
 		}
 		startPattern += mark.gpu(chunk).width;
@@ -195,8 +192,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 		free(dh_results);
 #endif // LOGEXEC
 		cudaFree(g_results); // clean up.
-		cudaFree(gh_results); // clean up
 		cudaDeviceSynchronize();
+		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}
 	cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
 	cudaFree(finalcoverage);

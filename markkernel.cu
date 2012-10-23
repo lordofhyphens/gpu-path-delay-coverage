@@ -112,7 +112,7 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 			default: break;
 		}
 		// stick the contents of resultCache into the mark array
-		REF2D(uint8_t,mark,pitch,tid,gid) = resultCache;
+		REF2D(uint8_t,mark,pitch,tid,gid) = resultCache*rowCache;
 	}
 }
 
