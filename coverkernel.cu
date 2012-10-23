@@ -32,7 +32,7 @@ __global__ void kernSumSingle(GPUNODE* ckt, size_t size, uint32_t* input, size_t
 		for (size_t j = 0; j < height; j+=BLOCK_SIZE) { // unrolled to handle reductions of up to BLOCK_SIZE in parallel
 			sdata[tid] = 0; // reset shared data segment to 0.
 			if (tid+j < height) {
-				sdata[tid] = REF2D(uint32_t, input, pitch, tid+j, i); __syncthreads();
+				sdata[tid] = REF2D(int32_t, input, pitch, tid+j, i)*(REF2D(int32_t, input, pitch, tid+j, i) >= 0); __syncthreads();
 //				printf("thread %hu - sdata[%hu] = %u = %u\n", tid, tid,  REF2D(uint32_t, input, pitch, tid+j, i));
 			}
 			if (BLOCK_SIZE >= 1024) { if (tid < 512) { sdata[tid] += sdata[tid + 512]; } __syncthreads(); }
@@ -63,42 +63,48 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 	if (tid < pattern_count) {
 		const uint8_t cache = REF2D(uint8_t,mark,mark_pitch,tid, g); // cache the current node's marked status.
 		// shorthand references to current coverage and history count.
-		uint32_t c = 0, h = 0;
+		int32_t c = 0, h = 0;
 
 		if (gate.po == 1) {
 			c = 0;
 			h = (cache > 0); // set history = 1 if this line is marked.
 		} else {
-			c = REF2D(uint32_t, cover     , cover_pitch , tid, g);
-			h = REF2D(uint32_t, hist_cover, hcover_pitch, tid, g);
+			const uint8_t is_hist = REF2D(int32_t, cover, cover_pitch, tid, g) < 0;
+			c = REF2D(int32_t, cover, cover_pitch, tid, g) * (1-is_hist);
+			h = REF2D(int32_t, cover, cover_pitch, tid, g) * (-is_hist);
 		}
 
 		if (gate.nfo > 1) { // cycle through the fanouts of this node and add their coverage values to the current node's coverage
-			uint32_t resultCache = 0, histCache = 0;
+			int32_t resultCache = 0, histCache = 0;
 			for (uint32_t i = 0; i < gate.nfo; i++) {
 				const uint32_t fot = FIN(offsets,gate.offset,gate.nfi+i);
-				resultCache += REF2D(uint32_t,     cover, cover_pitch, tid, fot); // add this fanout's path count to this node.
-				histCache   += REF2D(uint32_t,hist_cover,hcover_pitch, tid, fot); // add this fanout's history path count to this node.
+				const uint8_t is_hist = REF2D(int32_t, cover, cover_pitch, tid, fot) < 0;
+				resultCache += (REF2D(int32_t, cover, cover_pitch, tid, fot) * (1-is_hist)); // add this fanout's path count to this node.
+				histCache   += (REF2D(int32_t, cover, cover_pitch, tid, fot) * (-is_hist)); // add this fanout's history path count to this node.
 			}
 			c = resultCache;
 			h = histCache;
 		}
+		assert(c >= 0);
+		assert(h >= 0);
 		if (gate.type != FROM) { // FROM nodes always take the value of their fan-outs
 			// c equals c+h if either history[g] >= pid and line is marked
 			c = (c + h)*(cache > 0)*((history[g].x == pid) + (history[g].y == pid));
 			// h equals 0 if neither history[g] >= pid, else h if this line is marked;
-			h = h*(cache > 0)*((history[g].x != pid)*(history[g].y != pid));
+			h = h*(cache > 0)*((history[g].x != pid)*(history[g].y != pid)) * -1;
+		} else {
+			h *= -1;
 
 		}
+		assert(h <= 0);
 		// Cycle through the fanins of this node and assign them the current value
 		for (uint32_t i = 0; i < gate.nfi; i++) {
 			const uint32_t fin = FIN(offsets,gate.offset,i);
-			REF2D(uint32_t,     cover,cover_pitch ,tid, fin) = c; 
-			REF2D(uint32_t,hist_cover,hcover_pitch,tid, fin) = h; 
+			REF2D(int32_t, cover,cover_pitch ,tid, fin) = c + h; 
 		}
-		REF2D(uint32_t, cover     , cover_pitch , tid, g) = c;
-		REF2D(uint32_t, hist_cover, hcover_pitch, tid, g) = h;
-
+		REF2D(int32_t, cover     , cover_pitch , tid, g) = c + h;
+		if (c > 0) { assert (h == 0); }
+		if (h < 0) { assert (c == 0); }
 	}
 }
 
