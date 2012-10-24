@@ -1,7 +1,7 @@
 #include "mergekernel.h"
 #include <cuda.h>
-
-#define MERGE_SIZE 512
+#undef MERGE_SIZE
+#define MERGE_SIZE 1024
 void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -28,45 +28,42 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 
 __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch, size_t height, size_t pitch, int2* meta, uint32_t mpitch, uint32_t startGate, uint32_t startPattern) {
 	uint32_t tid = threadIdx.x;
+	uint32_t pid = tid + startPattern;
 	uint32_t gid = blockIdx.y+startGate;
-	__shared__ int2 sdata[MERGE_SIZE];
+	int2 sdata;
+	__shared__ int mx[32];
+	__shared__ int my[32];
 	uint8_t* row = input + pitch*gid;
 	uint8_t* sim = sim_input + sim_pitch*gid;
-	uint32_t i = blockIdx.x*(MERGE_SIZE*2)+tid;
-	sdata[tid] = make_int2(0,0);
+	uint32_t i = pid;// blockIdx.x*(MERGE_SIZE*2)+tid;
+	sdata = make_int2(0,0);
 
 	// Put the lower of pid and pid+MERGE_SIZE for which row[i] == 1
 	// Minimum ID given by this is 1.
 	if (i < height-1) {
-		if (i+MERGE_SIZE > height) { // correcting for blocks smaller than MERGE_SIZE
-			sdata[tid] = make_int2((sim[i] == T0)*(row[i] == 1)*(i+1),(sim[i] == T1)*(row[i] == 1)*(i+1));
-		} else {
-			sdata[tid].x = MIN((sim[i] == T0)*(row[i] == 1)*(i+1), (sim[i+MERGE_SIZE] == T0)*(row[i+MERGE_SIZE] == 1)*(i+MERGE_SIZE+1));
-			sdata[tid].y = MIN((sim[i] == T1)*(row[i] == 1)*(i+1), (sim[i+MERGE_SIZE] == T1)*(row[i+MERGE_SIZE] == 1)*(i+MERGE_SIZE+1));
-		}
+		int low_x = -1, low_y = -1;
+		const uint8_t warp_id = threadIdx.x / (blockDim.x / 32); 
+		sdata = make_int2((sim[i] == T0)*(row[i] == 1)*(i+1),(sim[i] == T1)*(row[i] == 1)*(i+1));
 		__syncthreads();
+		unsigned int pred_x = (sdata.x >= 1), pred_y = (sdata.y >= 1);
+		low_x = __ffs(__ballot(pred_x)) - 1;
+		low_y = __ffs(__ballot(pred_y)) - 1;
+		mx[warp_id] = (low_x >= 0 ? low_x + (int32_t)startPattern + (warp_id * 32) : -1);
+		my[warp_id] = (low_y >= 0 ? low_y + (int32_t)startPattern + (warp_id * 32) : -1);
+		// at this point, we have the position of the lowest.
 
-		// this is loop unrolling
-		// do reduction in shared mem, comparisons against MERGE_SIZE are done at compile time.
-		if (MERGE_SIZE >= 1024) { if (tid < 512 && tid+512 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 512].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 512].y); } __syncthreads(); }
-		if (MERGE_SIZE >= 512) { if (tid < 256 && tid+256 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 256].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 256].y); } __syncthreads(); }
-		if (MERGE_SIZE >= 256) { if (tid < 128 && tid+128 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 128].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 128].y); } __syncthreads(); }
-		if (MERGE_SIZE >= 128) { if (tid <  64 && tid+64 < height) { sdata[tid].x = MIN(sdata[tid].x,sdata[tid + 64].x); sdata[tid].y = MIN(sdata[tid].y,sdata[tid + 64].y); } __syncthreads(); }
+		__syncthreads();
 		if (tid < 32) {
-			// Within a warp,  don't need __syncthreads();
-			volatile int2* s_ptr = sdata;
-			if (MERGE_SIZE >=  64) { if (tid+32 < height) { s_ptr[tid].x = MIN(s_ptr[tid].x,s_ptr[tid + 32].x); s_ptr[tid].y = MIN(s_ptr[tid].y,s_ptr[tid + 32].y); } }
-			if (MERGE_SIZE >=  32) { if (tid+16 < height) { s_ptr[tid].x = MIN(s_ptr[tid].x,s_ptr[tid + 16].x); s_ptr[tid].y = MIN(s_ptr[tid].y,s_ptr[tid + 16].y); } }
-			if (MERGE_SIZE >=  16) { if (tid+8 < height) { s_ptr[tid].x = MIN(s_ptr[tid].x,s_ptr[tid + 8].x); s_ptr[tid].y = MIN(s_ptr[tid].y,s_ptr[tid + 8].y);} }
-			if (MERGE_SIZE >=   8) { if (tid+4 < height) { s_ptr[tid].x = MIN(s_ptr[tid].x,s_ptr[tid + 4].x); s_ptr[tid].y = MIN(s_ptr[tid].y,s_ptr[tid + 4].y);} }
-			if (MERGE_SIZE >=   4) { if (tid+2 < height) { s_ptr[tid].x = MIN(s_ptr[tid].x,s_ptr[tid + 2].x); s_ptr[tid].y = MIN(s_ptr[tid].y,s_ptr[tid + 2].y);} }
-			if (MERGE_SIZE >=   2) { if (tid+1 < height) { s_ptr[tid].x = MIN(s_ptr[tid].x,s_ptr[tid + 1].x); s_ptr[tid].y = MIN(s_ptr[tid].y,s_ptr[tid + 1].y);} }
+			pred_x = mx[tid] >= 0;
+			pred_y = my[tid] >= 0;
+			low_x = __ffs(__ballot(pred_x)) - 1;
+			low_y = __ffs(__ballot(pred_y)) - 1;
+			if (threadIdx.x == 0) {
+				sdata.x = (low_x >= 0 ? mx[low_x] : -1);
+				sdata.y = (low_y >= 0 ? my[low_y] : -1);
+				REF2D(int2,meta,mpitch,blockIdx.x,blockIdx.y) = sdata; 
+			}
 		}
-
-		// at this point, we have the position of the lowest. Correct by 1 to compensate for above.
-
-		if (threadIdx.x == 0) { sdata[0].x -= 1; sdata[0].y -= 1; REF2D(int2,meta,mpitch,blockIdx.x,blockIdx.y) = sdata[0]; }
-		__syncthreads();
 
 	}
 }
@@ -142,6 +139,8 @@ float gpuMergeHistory(GPU_Data& input, GPU_Data& sim, void** mergeid) {
 		do {
 			dim3 blocks(block_x, block_y);
 			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, sim.gpu(chunk).data, sim.gpu(chunk).pitch, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count, startPattern);
+			cudaDeviceSynchronize();
+			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 			dim3 blocksmin(1, block_y);
 			kernSetMin<<<blocksmin, 1>>>(mergeids, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count, startPattern, chunk);
 			count+=65535;
