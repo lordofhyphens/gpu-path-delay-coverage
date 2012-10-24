@@ -73,17 +73,15 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 			h = REF2D(int32_t, cover, cover_pitch, tid, g) * (-is_hist);
 		}
 
-		if (gate.nfo > 1) { // cycle through the fanouts of this node and add their coverage values to the current node's coverage
-			int32_t resultCache = 0, histCache = 0;
-			for (uint32_t i = 0; i < gate.nfo; i++) {
-				const uint32_t fot = FIN(offsets,gate.offset,gate.nfi+i);
-				const uint8_t is_hist = REF2D(int32_t, cover, cover_pitch, tid, fot) < 0;
-				resultCache += (REF2D(int32_t, cover, cover_pitch, tid, fot) * (1-is_hist)); // add this fanout's path count to this node.
-				histCache   += (REF2D(int32_t, cover, cover_pitch, tid, fot) * (-is_hist)); // add this fanout's history path count to this node.
-			}
-			c = resultCache;
-			h = histCache;
+		int32_t resultCache = 0, histCache = 0;
+		for (uint32_t i = 0; i < gate.nfo; i++) {
+			const uint32_t fot = FIN(offsets,gate.offset,gate.nfi+i);
+			const uint8_t is_hist = REF2D(int32_t, cover, cover_pitch, tid, fot) < 0;
+			resultCache += (REF2D(int32_t, cover, cover_pitch, tid, fot) * (1-is_hist)); // add this fanout's path count to this node.
+			histCache   += (REF2D(int32_t, cover, cover_pitch, tid, fot) * (-is_hist)); // add this fanout's history path count to this node.
 		}
+		c += resultCache;
+		h += histCache;
 		assert(c >= 0);
 		assert(h >= 0);
 		if (gate.type != FROM) { // FROM nodes always take the value of their fan-outs
@@ -96,10 +94,6 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 		}
 		assert(h <= 0);
 		// Cycle through the fanins of this node and assign them the current value
-		for (uint32_t i = 0; i < gate.nfi; i++) {
-			const uint32_t fin = FIN(offsets,gate.offset,i);
-			REF2D(int32_t, cover,cover_pitch ,tid, fin) = c + h; 
-		}
 		REF2D(int32_t, cover     , cover_pitch , tid, g) = c + h;
 		if (c > 0) { assert (h == 0); }
 		if (h < 0) { assert (c == 0); }
