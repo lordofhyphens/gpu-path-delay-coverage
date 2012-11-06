@@ -25,7 +25,6 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 		((L) > 0)*((L) < (R))*(L) + \
 		((R) > 0)*((R) < (L))*(R) )
 
-
 __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch, size_t height, size_t pitch, int2* meta, uint32_t mpitch, uint32_t startGate, uint32_t startPattern) {
 	uint32_t tid = threadIdx.x;
 	uint32_t pid = tid + startPattern;

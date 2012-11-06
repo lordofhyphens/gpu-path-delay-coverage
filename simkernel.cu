@@ -1,7 +1,9 @@
 #include <cuda.h>
 #include "simkernel.h"
 #undef LOGEXEC
-#define SIM_BLOCK 768
+#undef SIM_BLOCK
+#define SIM_BLOCK 256
+#define BLOCK_PER_KERNEL 6
 void HandleSimError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -18,7 +20,7 @@ texture<uint8_t, 2> xnor2LUT;
 texture<uint8_t, 2> stableLUT;
 texture<uint8_t, 1> notLUT;
 
-__device__ uint8_t simLUT(int type, uint8_t val, uint8_t r) {
+extern "C" __device__ __forceinline__ uint8_t simLUT(uint8_t type, uint8_t val, uint8_t r) {
 	switch(type) {
 		case XOR: return tex2D(xor2LUT, val, r );
 		case XNOR: return tex2D(xnor2LUT, val, r);
@@ -30,7 +32,7 @@ __device__ uint8_t simLUT(int type, uint8_t val, uint8_t r) {
 			return 0;
 	}
 }
-__global__ void kernSimulateP1(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch, size_t pi_offset, uint8_t* output_data, size_t pitch, size_t max_patterns, size_t pattern_count, uint32_t* fanout_index, int start_offset, int startPattern) {
+ extern "C" __launch_bounds__(SIM_BLOCK,BLOCK_PER_KERNEL) __global__ void kernSimulateP1(GPUNODE* graph, uint8_t* pi_data, size_t pi_pitch, size_t pi_offset, uint8_t* output_data, size_t pitch, size_t max_patterns, size_t pattern_count, uint32_t* fanout_index, int start_offset, int startPattern) {
 	int tid = (blockIdx.y * SIM_BLOCK) + threadIdx.x;
 	int gid = blockIdx.x+start_offset;
 	int pid = tid + startPattern;

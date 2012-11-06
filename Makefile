@@ -9,7 +9,7 @@ obj=$(src:.cu=.o) $(main:.cc=.o)
 out=fcount
 CPFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char #-fopenmp -Werror # -DNDEBUG #-DNTIMING
 CFLAGS=${CPFLAGS}
-NVCFLAGS=-arch=sm_20 -G -O2 --compiler-options -I/opt/net/apps/cuda/include --compiler-options -Wall --compiler-options -Werror -ccbin ${CXX} --compiler-options -funsigned-char --compiler-options -fopenmp # --compiler-options -DNDEBUG --ptxas-options=-v #--compiler-options -DNTIMING  
+NVCFLAGS=-arch=sm_20 --profile -O3 -Xcompiler -I/opt/net/apps/cuda/include -Xcompiler -Wall -Xcompiler -Werror -ccbin ${CXX} -Xcompiler -funsigned-char -Xcompiler -fopenmp -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
 PYLIB=_fsim.so
 
 .PHONY: all

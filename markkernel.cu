@@ -1,8 +1,9 @@
 #include "markkernel.h"
 #include <cuda.h>
 #undef LOGEXEC
-#define MARK_BLOCK 512
-
+#undef MARK_BLOCK
+#define MARK_BLOCK 128
+#define BLOCK_PER_KERNEL 8
 void HandleMarkError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -45,7 +46,7 @@ void loadPropLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(or2OutputPropLUT,cuOrOutpProp,channelDesc));
 	HANDLE_ERROR(cudaBindTextureToArray(xor2OutputPropLUT,cuXorOutpProp,channelDesc));
 }
-__device__ inline uint8_t markeval_out (const uint8_t f1, const uint8_t f2, const int type) {
+DEVICE uint8_t markeval_out (const uint8_t f1, const uint8_t f2, const int type) {
 	switch(type) {
 		case AND:
 		case NAND:
@@ -59,7 +60,7 @@ __device__ inline uint8_t markeval_out (const uint8_t f1, const uint8_t f2, cons
 	}
 	return 0xff;
 }
-
+extern "C" __launch_bounds__(MARK_BLOCK,BLOCK_PER_KERNEL) 
 __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* mark, size_t pitch, size_t patterns, GPUNODE* node, uint32_t* fans, int start, int startPattern) {
 	int tid = (blockIdx.y * blockDim.x) + threadIdx.x;
 	int gid = (blockIdx.x) + start;
