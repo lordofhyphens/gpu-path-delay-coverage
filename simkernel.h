@@ -10,9 +10,9 @@
 #include <string>
 #include <algorithm>
 #include <stdint.h>
-float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, uint8_t pass);
+float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, size_t chunk, size_t initial_pattern = 0);
 
 void debugSimulationOutput(ARRAY2D<uint8_t> results, std::string outfile);
-void debugSimulationOutput(GPU_Data* results, std::string outfile);
+void debugSimulationOutput(GPU_Data* results, const GPU_Circuit& ckt, std::string outfile);
 
 #endif

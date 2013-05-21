@@ -13,6 +13,9 @@
 #include <fstream>
 #define MAX_PATTERNS simul_patterns
 #undef LOGEXEC
+using namespace std;
+#undef OUTJUST
+#define OUTJUST 4
 int main(int argc, char ** argv) {
 	uint8_t device = selectGPU();
 	GPU_Circuit ckt;
@@ -65,7 +68,7 @@ int main(int argc, char ** argv) {
 
 		std::cerr << "..complete." << std::endl;
 		std::clog << "Simulation ...";
-		sim1 = gpuRunSimulation(*sim_results, *vec, ckt, 1);
+		sim1 = gpuRunSimulation(*sim_results, *vec, ckt, 0, 0);
 		std::clog << "..complete." << std::endl;
 		gpu += sim1;
 		std::cerr << "Simulation: " << sim1 << " ms" << std::endl;

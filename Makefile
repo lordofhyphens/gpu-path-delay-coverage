@@ -12,7 +12,7 @@ CFLAGS=${CPFLAGS}
 NVCFLAGS=-arch=sm_20 --profile -O3 -Xcompiler -I/opt/net/apps/cuda/include -Xcompiler -Wall -ccbin ${CXX} -Xcompiler -funsigned-char -Xcompiler -fopenmp -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
 PYLIB=_fsim.so
 
-.PHONY: all
+.PHONY: all util
 all: $(out)
 
 .SUFFIXES:
@@ -23,7 +23,7 @@ all: $(out)
 .cu.o:
 	$(GPCXX) -c $(NVCFLAGS) -o $@ $<
 
-util/*.o:
+util:
 	export CFLAGS="$(CFLAGS)" &&  $(MAKE) -C util -e -j4 -w
 	export NVCFLAGS="$(NVCFLAGS)" && $(MAKE) -C util -e -j4 -w gpu
 

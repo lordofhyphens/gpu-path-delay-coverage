@@ -1,9 +1,10 @@
 #include <cuda.h>
 #include "simkernel.h"
-#undef LOGEXEC
 #undef SIM_BLOCK
 #define SIM_BLOCK 256
 #define BLOCK_PER_KERNEL 6
+#undef OUTJUST
+#define OUTJUST 4
 void HandleSimError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -11,6 +12,7 @@ void HandleSimError( cudaError_t err, const char *file, int line ) {
     }
 }
 #define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
+#undef LOGEXEC
 texture<uint8_t, 2> and2LUT;
 texture<uint8_t, 2> nand2LUT;
 texture<uint8_t, 2> or2LUT;
@@ -115,7 +117,7 @@ void loadSimLUTs() {
 	HANDLE_ERROR(cudaBindTextureToArray(notLUT,cuNotArray,channelDesc));
 }
 
-float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, uint8_t pass = 1) {
+float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, size_t chunk, size_t initial_pattern) {
 	cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	loadSimLUTs(); // set up our lookup tables for simulation.
@@ -159,7 +161,7 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 	elapsed = floattime(diff(start, stop));
 #endif // NTIMING
 #ifdef LOGEXEC
-		debugSimulationOutput(&results, "gpusim-p2.log");
+		debugSimulationOutput(&results, ckt, "gpusim-p2.log");
 #endif //LOGEXEC
 #ifndef NTIMING
 	return elapsed;
@@ -167,10 +169,15 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, ui
 	return 0.0;
 #endif // NTIMING
 }
-void debugSimulationOutput(GPU_Data* results, std::string outfile = "simdebug.log") {
+void debugSimulationOutput(GPU_Data* results, const GPU_Circuit& ckt, std::string outfile = "simdebug.log") {
 #ifndef NDEBUG
 	std::ofstream ofile(outfile.c_str());
 	size_t t = 0;
+	ofile << "Gate:     " << "\t";
+	for (uint32_t i = 0; i < ckt.size(); i++) {
+		ofile << std::setw(OUTJUST) << i << " ";
+	}
+	ofile << std::endl;
 	for (size_t chunk = 0; chunk < results->size(); chunk++) {
 		uint8_t *lvalues;
 		lvalues = (uint8_t*)malloc(results->gpu(chunk).height*results->gpu(chunk).pitch);
