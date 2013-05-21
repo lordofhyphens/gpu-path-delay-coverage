@@ -58,7 +58,7 @@ int main(int argc, char ** argv) {
 		elapsed = floattime(diff(start, stop));
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 		std::clog << "Maximum patterns per pass: " << simul_patterns << std::endl;
-		
+
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS); // initializing results array for simulation
@@ -67,36 +67,34 @@ int main(int argc, char ** argv) {
 		gpu += elapsed;
 
 		std::cerr << "..complete." << std::endl;
-		std::clog << "Simulation ...";
-		sim1 = gpuRunSimulation(*sim_results, *vec, ckt, 0, 0);
-		std::clog << "..complete." << std::endl;
-		gpu += sim1;
-		std::cerr << "Simulation: " << sim1 << " ms" << std::endl;
-		// don't need the input vectors anymore, so remove.
-		delete vec;
-		GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS);
-		mark = gpuMarkPaths(*mark_results, *sim_results, ckt);
-		gpu += mark;
-		std::cerr << "     Mark: " << mark << " ms" << std::endl;
-		//std::cerr << sim_results->debug();
-		void* merge_ids;
-		//std::cerr << mark_results->debug();
-		merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids);  
-		gpu += merge;
-		std::cerr << " Merge: " << merge << " ms" << std::endl;
+		size_t startPattern = 0;
+		for (unsigned int chunk = 0; chunk < sim_results->size(); chunk++) {
+			std::clog << "Simulation ...";
+			sim1 = gpuRunSimulation(*sim_results, *vec, ckt, chunk, startPattern);
+			std::clog << "..complete." << std::endl;
+			gpu += sim1;
+			std::cerr << "Simulation: " << sim1 << " ms" << std::endl;
+			// don't need the input vectors anymore, so remove.
+			GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS);
+			mark = gpuMarkPaths(*mark_results, *sim_results, ckt, chunk, startPattern);
+			gpu += mark;
+			std::cerr << "     Mark: " << mark << " ms" << std::endl;
+			//std::cerr << sim_results->debug();
+			void* merge_ids;
+			//std::cerr << mark_results->debug();
+			merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids);  
+			gpu += merge;
+			std::cerr << " Merge: " << merge << " ms" << std::endl;
 #ifdef LOGEXEC
-		debugMergeOutput(ckt.size(), merge_ids, "gpumerge.log");
+			debugMergeOutput(ckt.size(), merge_ids, "gpumerge.log");
 #endif //LOGEXEC
-		gpuCheckMemory();
-		delete sim_results;
-		gpuCheckMemory();
-		cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
+			cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
 
-		std::cerr << " Cover: " << cover << " ms" << std::endl;
-		delete mark_results;
-		std::cerr << "GPU Coverage: " << *coverage << std::endl;
-		gpu += cover;
-
+			std::cerr << " Cover: " << cover << " ms" << std::endl;
+			std::cerr << "GPU Coverage: " << *coverage << std::endl;
+			gpu += cover;
+			startPattern += sim_results->gpu(chunk).width;
+		}
 		std::cerr << "   GPU: " << gpu << " ms" <<std::endl;
 		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << gpu << ";" << sim1 
 			      <<  ";" << mark << ";"<< merge << ";" << cover << ";" << *coverage << std::endl;

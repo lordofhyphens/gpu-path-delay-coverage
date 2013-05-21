@@ -12,7 +12,7 @@ void HandleSimError( cudaError_t err, const char *file, int line ) {
     }
 }
 #define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
-#undef LOGEXEC
+#undef LOGEXEC // Remove logging
 texture<uint8_t, 2> and2LUT;
 texture<uint8_t, 2> nand2LUT;
 texture<uint8_t, 2> or2LUT;
@@ -128,33 +128,31 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, si
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
 	size_t startPattern = 0;
-	for (unsigned int chunk = 0; chunk < results.size(); chunk++) {
-		const int blockcount_y = (int)(results.gpu(chunk).width/SIM_BLOCK) + ((results.gpu(chunk).width%SIM_BLOCK) > 0);
-		startGate = 0;
-		//DPRINT("Patterns to process in block %u: %lu\n", chunk, results.gpu(chunk).width);
-		for (uint32_t i = 0; i <= ckt.levels(); i++) {
-			int levelsize = ckt.levelsize(i);
-			do { 
-				int simblocks = min(MAX_BLOCKS, levelsize);
-				dim3 numBlocks(simblocks,blockcount_y);
+	const int blockcount_y = (int)(results.gpu(chunk).width/SIM_BLOCK) + ((results.gpu(chunk).width%SIM_BLOCK) > 0);
+	startGate = 0;
+	//DPRINT("Patterns to process in block %u: %lu\n", chunk, results.gpu(chunk).width);
+	for (uint32_t i = 0; i <= ckt.levels(); i++) {
+		int levelsize = ckt.levelsize(i);
+		do { 
+			int simblocks = min(MAX_BLOCKS, levelsize);
+			dim3 numBlocks(simblocks,blockcount_y);
 			//	DPRINT("Working on %lu patterns, %d gates in level %d\n",  results.gpu(chunk).width, simblocks, i);
 
-				kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(), inputs.gpu().data, inputs.gpu().pitch,
-						0, results.gpu(chunk).data, results.gpu(chunk).pitch, 
-						results.gpu(chunk).width, inputs.block_width(), ckt.offset(), startGate, startPattern);
+			kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(), inputs.gpu().data, inputs.gpu().pitch,
+					0, results.gpu(chunk).data, results.gpu(chunk).pitch, 
+					results.gpu(chunk).width, inputs.block_width(), ckt.offset(), startGate, startPattern);
 
-				startGate += simblocks;
-				if (levelsize > MAX_BLOCKS) {
-					levelsize -= MAX_BLOCKS;
-				} else {
-					levelsize = 0;
-				}
-			} while (levelsize > 0); 
-			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
-		}
-		startPattern += results.gpu(chunk).width;
-		cudaDeviceSynchronize();
+			startGate += simblocks;
+			if (levelsize > MAX_BLOCKS) {
+				levelsize -= MAX_BLOCKS;
+			} else {
+				levelsize = 0;
+			}
+		} while (levelsize > 0); 
+		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}
+	startPattern += results.gpu(chunk).width;
+	cudaDeviceSynchronize();
 	// We're done simulating at this point.
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
