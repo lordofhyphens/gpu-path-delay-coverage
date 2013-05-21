@@ -22,7 +22,7 @@ __device__ void warpReduce(volatile uint32_t* sdata, uint16_t tid) {
 	if (blockSize >= 2) sdata[tid] += sdata[tid + 1];
 }
 
-__global__ void kernSumSingle(GPUNODE* ckt, size_t size, int32_t* input, size_t height, size_t pitch, uint64_t* meta) {
+__global__ void kernSumSingle(GPUNODE* ckt, size_t size, int16_t* input, size_t height, size_t pitch, uint64_t* meta) {
 	__shared__ uint32_t sdata[BLOCK_SIZE]; // only add positive #s
 	uint16_t tid = threadIdx.x;
 	for (size_t i = 0; i < size; i++) { // iterate over everything in the circuit
@@ -50,7 +50,7 @@ __global__ void kernSumSingle(GPUNODE* ckt, size_t size, int32_t* input, size_t 
 }
 
 
-__global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_pitch, int2* history,  int32_t* cover,const size_t cover_pitch, const uint32_t start_offset,const uint32_t pattern_count,const uint32_t start_pattern, uint32_t* offsets) { //, uint32_t* subckt, size_t subckt_size) {
+__global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_pitch, int2* history,  int16_t* cover,const size_t cover_pitch, const uint32_t start_offset,const uint32_t pattern_count,const uint32_t start_pattern, uint32_t* offsets) { //, uint32_t* subckt, size_t subckt_size) {
     // cover is the coverage ints we're working with for this pass.
 	// mark is the fresh marks
 	// hist is the history of the mark status of all lines.
@@ -102,22 +102,20 @@ __global__ void kernCover(const GPUNODE* ckt, uint8_t* mark, const size_t mark_p
 
 
 float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
-		uint64_t* coverage) {
+		uint64_t* coverage, size_t chunk, size_t startPattern) {
 
 	int2* merges = (int2*)merge;
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure there aren't any errors going into function.
 
 	std::ofstream cfile("gpucover.log", std::ios::out);
 	std::ofstream chfile("gpuhcover.log", std::ios::out);
-	int32_t *g_results;
+	int16_t *g_results;
 #ifdef LOGEXEC
 	uint32_t *d_results, *dh_results; // debug results 
 #endif //LOGEXEC
 	uint64_t *finalcoverage;
-	*coverage = 0;
 	uint32_t startGate;
 	size_t pitch;
-	uint32_t startPattern = 0;
 //	const size_t summedPatterns = (mark.width() / (MERGE_SIZE*2)) + ((mark.width() % (MERGE_SIZE*2)) > 0);
 
 	cudaMalloc(&finalcoverage, sizeof(uint64_t));
@@ -130,16 +128,15 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif
 	uint32_t pcount = 0;
-	for (size_t chunk = 0; chunk < mark.size(); chunk++) {
 		gpuCheckMemory();
 		DPRINT("Allocating for chunk %lu \n", chunk);
-		DPRINT("Allocating %lu bytes for results... ",sizeof(uint32_t)*mark.gpu(chunk).width*mark.height());
-		cudaMallocPitch(&g_results,&pitch, sizeof(int32_t)*mark.gpu(chunk).width,mark.height());
+		DPRINT("Allocating %lu bytes for results... ",sizeof(uint16_t)*mark.gpu(chunk).width*mark.height());
+		cudaMallocPitch(&g_results,&pitch, sizeof(int16_t)*mark.gpu(chunk).width,mark.height());
 		DPRINT("Allocated %lu bytes for results.\n",pitch*mark.height());
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
 #ifdef LOGEXEC
-		d_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
-		dh_results = (uint32_t*)malloc(sizeof(uint32_t)*mark.block_width()*mark.height());
+		d_results = (uint16_t*)malloc(sizeof(uint16_t)*mark.block_width()*mark.height());
+		dh_results = (uint16_t*)malloc(sizeof(uint16_t)*mark.block_width()*mark.height());
 #endif // LOGEXEC
 		cudaMemset(g_results, 0, mark.height()*pitch);
 		HANDLE_ERROR(cudaGetLastError()); // checking last function
@@ -178,8 +175,8 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 		// dump to file for debugging.
 
 #ifdef LOGEXEC
-		cudaMemcpy2D(d_results, sizeof(uint32_t)*mark.gpu(chunk).width, g_results, pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(), cudaMemcpyDeviceToHost);
-		cudaMemcpy2D(dh_results, sizeof(uint32_t)*mark.gpu(chunk).width, gh_results, h_pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(),cudaMemcpyDeviceToHost);
+		cudaMemcpy2D(d_results, sizeof(uint16_t)*mark.gpu(chunk).width, g_results, pitch, sizeof(uint16_t)*mark.gpu(chunk).width, mark.height(), cudaMemcpyDeviceToHost);
+		cudaMemcpy2D(dh_results, sizeof(uint16_t)*mark.gpu(chunk).width, gh_results, h_pitch, sizeof(uint16_t)*mark.gpu(chunk).width, mark.height(),cudaMemcpyDeviceToHost);
 		debugCover(ckt, d_results, mark.gpu(chunk).width, mark.height(), cfile);
 		debugCover(ckt, dh_results, mark.gpu(chunk).width, mark.height(), chfile);
 		free(d_results);
@@ -188,7 +185,6 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 		cudaFree(g_results); // clean up.
 		cudaDeviceSynchronize();
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
-	}
 	cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
 	cudaFree(finalcoverage);
 	#ifndef NTIMING
@@ -206,14 +202,14 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 	return 0.0;
 #endif
 }
-void debugCover(const Circuit& ckt, uint32_t *cover, size_t patterns, size_t lines, std::ofstream& ofile) {
+void debugCover(const Circuit& ckt, uint16_t *cover, size_t patterns, size_t lines, std::ofstream& ofile) {
 #ifndef NDEBUG
 	std::cerr << "Patterns: " << patterns << "; Lines: " << lines << std::endl;
 	for (uint32_t r = 0; r < patterns; r++) {
 		ofile << "Vector " << r << ":\t";
 		for (uint32_t i = 0; i < lines; i++) {
 			if (ckt.at(i).typ == INPT) {
-				const uint32_t z = REF2D(uint32_t, cover, sizeof(uint32_t)*patterns, r, i);
+				const uint16_t z = REF2D(uint16_t, cover, sizeof(uint16_t)*patterns, r, i);
 				ofile << std::setw(OUTJUST) << z << " ";
 			}
 		}

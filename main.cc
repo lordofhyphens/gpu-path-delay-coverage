@@ -45,6 +45,7 @@ int main(int argc, char ** argv) {
 
 	for (int32_t i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
 		uint64_t *coverage = new uint64_t; 
+		*coverage = 0;
 		gpu = 0.0;
 		std::cerr << "Vector set " << argv[i] << std::endl;
 		std::pair<size_t,size_t> vecdim = get_vector_dim(argv[i]);
@@ -88,7 +89,7 @@ int main(int argc, char ** argv) {
 #ifdef LOGEXEC
 			debugMergeOutput(ckt.size(), merge_ids, "gpumerge.log");
 #endif //LOGEXEC
-			cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage);
+			cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage, chunk, startPattern);
 
 			std::cerr << " Cover: " << cover << " ms" << std::endl;
 			std::cerr << "GPU Coverage: " << *coverage << std::endl;
