@@ -9,7 +9,7 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
     }
 }
 #define HANDLE_ERROR( err ) (HandleMergeError( err, __FILE__, __LINE__ ))
-
+#undef LOGEXEC
 #define MIN(A,B,AR) ( \
 		(AR[A] > 0)*(AR[A] < AR[B])*AR[A] + \
 		(AR[B] > 0)*(AR[B] < AR[A])*AR[B] + \
@@ -35,8 +35,11 @@ __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch,
 	uint8_t* row = input + pitch*gid;
 	uint8_t* sim = sim_input + sim_pitch*gid;
 	uint32_t i = pid;// blockIdx.x*(MERGE_SIZE*2)+tid;
-	sdata = make_int2(0,0);
-
+	sdata = make_int2(-1,-1);
+	if (tid < 32) {
+		mx[tid] = -1;
+		my[tid] = -1;
+	}
 	// Put the lower of pid and pid+MERGE_SIZE for which row[i] == 1
 	// Minimum ID given by this is 1.
 	if (i < height-1) {
@@ -51,6 +54,10 @@ __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch,
 		my[warp_id] = (low_y >= 0 ? low_y + (int32_t)startPattern + (warp_id * 32) : -1);
 		// at this point, we have the position of the lowest.
 
+#ifdef LOGEXEC
+		printf("%s, %d: low[%d]: (%d,%d)\n", __FILE__, __LINE__, gid, low_x, low_y);
+#endif
+
 		__syncthreads();
 		if (tid < 32) {
 			pred_x = mx[tid] >= 0;
@@ -60,6 +67,9 @@ __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch,
 			if (threadIdx.x == 0) {
 				sdata.x = (low_x >= 0 ? mx[low_x] : -1);
 				sdata.y = (low_y >= 0 ? my[low_y] : -1);
+#ifdef LOGEXEC
+				printf("%s, %d: low[%d]: (%d,%d)\n", __FILE__, __LINE__, gid, sdata.x, sdata.y);
+#endif
 				REF2D(int2,meta,mpitch,blockIdx.x,blockIdx.y) = sdata; 
 			}
 		}
@@ -78,7 +88,6 @@ __global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, 
 	while (REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y < 0 && j < length && g_odata[gid].y == -1) {
 		j++;
 	}
-
 	if (i < length) {
 		if (chunk > 0) {
 			i = MIN_GEN(REF2D(int2, intermediate, i_pitch, i, blockIdx.y).x + startPattern, g_odata[gid].x);
@@ -92,6 +101,9 @@ __global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, 
 			i = g_odata[gid].x;
 		}
 	}
+#ifdef LOGEXEC
+	printf("%s, %d: g_odata[%d]: (%d,%d)\n", __FILE__, __LINE__, gid,i, j);
+#endif
 	if (j < length) {
 		if (chunk > 0) {
 			j = MIN_GEN(REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y + startPattern, g_odata[gid].y);
@@ -105,14 +117,17 @@ __global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, 
 			j = g_odata[gid].y;
 		}
 	}
+
+#ifdef LOGEXEC
+	printf("%s, %d: g_odata[%d]: (%d,%d)\n", __FILE__, __LINE__, gid,i, j);
+#endif
 	g_odata[gid].x = i;
 	g_odata[gid].y = j;
 
 }
-// scan through input until the first 1 is found, save the identifier and memset all indicies above that.
-float gpuMergeHistory(GPU_Data& input, GPU_Data& sim, void** mergeid) {
-
-	cudaMalloc(mergeid, sizeof(int2)*input.height());
+// scan through input until the first 1 is found, save the identifier and set all indicies above that.
+float gpuMergeHistory(GPU_Data& input, GPU_Data& sim, void** mergeid, size_t chunk, uint32_t startPattern) {
+	if (*mergeid == NULL) { cudaMalloc(mergeid, sizeof(int2)*input.height()); } // only allocate a merge table on the first pass
 	int2 *mergeids = (int2*)*mergeid;
 	size_t count = 0;
 	int2* temparray;
@@ -125,32 +140,28 @@ float gpuMergeHistory(GPU_Data& input, GPU_Data& sim, void** mergeid) {
 	float elapsed;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-	uint32_t startPattern = 0;
 	// assume that the 0th entry is the widest, which is true given the chunking method.
 	cudaMallocPitch(&temparray, &pitch, sizeof(int2)*((input.gpu(0).width / MERGE_SIZE) + ((input.gpu(0).width % MERGE_SIZE) > 0)), 65535);
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting on memory allocation
 #endif // NTIMING
-	for ( uint32_t chunk = 0; chunk < input.size(); chunk++) {
-		count = 0;
-		size_t remaining_blocks = input.height();
-		const size_t block_x = (input.gpu(chunk).width / MERGE_SIZE) + ((input.gpu(chunk).width % MERGE_SIZE) > 0);
-		size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
-		do {
-			dim3 blocks(block_x, block_y);
-			kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, sim.gpu(chunk).data, sim.gpu(chunk).pitch, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count, startPattern);
-			cudaDeviceSynchronize();
-			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
-			dim3 blocksmin(1, block_y);
-			kernSetMin<<<blocksmin, 1>>>(mergeids, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count, startPattern, chunk);
-			count+=65535;
-			if (remaining_blocks < 65535) { remaining_blocks = 0;}
-			if (remaining_blocks > 65535) { remaining_blocks -= 65535; }
-			block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
-		} while (remaining_blocks > 0);
-		startPattern += input.gpu(chunk).width;
+	count = 0;
+	size_t remaining_blocks = input.height();
+	const size_t block_x = (input.gpu(chunk).width / MERGE_SIZE) + ((input.gpu(chunk).width % MERGE_SIZE) > 0);
+	size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
+	do {
+		dim3 blocks(block_x, block_y);
+		kernReduce<<<blocks, MERGE_SIZE>>>(input.gpu(chunk).data, sim.gpu(chunk).data, sim.gpu(chunk).pitch, input.gpu(chunk).width, input.gpu(chunk).pitch, temparray, pitch, count, startPattern);
 		cudaDeviceSynchronize();
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
-	}
+		dim3 blocksmin(1, block_y);
+		kernSetMin<<<blocksmin, 1>>>(mergeids, temparray,  pitch, (block_x/2) + (block_x/2 == 0), count, startPattern, chunk);
+		count+=65535;
+		if (remaining_blocks < 65535) { remaining_blocks = 0;}
+		if (remaining_blocks > 65535) { remaining_blocks -= 65535; }
+		block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
+	} while (remaining_blocks > 0);
+	cudaDeviceSynchronize();
+	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 	cudaFree(temparray);
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);

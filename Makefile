@@ -7,9 +7,9 @@ main=main.cc
 src=simkernel.cu markkernel.cu mergekernel.cu coverkernel.cu
 obj=$(src:.cu=.o) $(main:.cc=.o)
 out=fcount
-CPFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char #-fopenmp -Werror # -DNDEBUG #-DNTIMING
+CPFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -fopenmp #-Werror # -DNDEBUG #-DNTIMING
 CFLAGS=${CPFLAGS}
-NVCFLAGS=-arch=sm_20 --profile -O3 -Xcompiler -I/opt/net/apps/cuda/include -Xcompiler -Wall -ccbin ${CXX} -Xcompiler -funsigned-char -Xcompiler -fopenmp -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
+NVCFLAGS=-arch=sm_20 --profile -O2 -Xcompiler -I/opt/net/apps/cuda/include -Xcompiler -Wall -ccbin ${CXX} -Xcompiler -funsigned-char -Xcompiler -fopenmp -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
 PYLIB=_fsim.so
 
 .PHONY: all util
@@ -27,8 +27,8 @@ util:
 	export CFLAGS="$(CFLAGS)" &&  $(MAKE) -C util -e -j4 -w
 	export NVCFLAGS="$(NVCFLAGS)" && $(MAKE) -C util -e -j4 -w gpu
 
-${out}: $(obj) util/*.o 
-	${GPCXX} $(NVCFLAGS) -o ${out} $+
+${out}: $(obj) util 
+	${GPCXX} $(NVCFLAGS) -o ${out} $(obj) util/*.o
 
 clean:
 	$(MAKE) -C util clean

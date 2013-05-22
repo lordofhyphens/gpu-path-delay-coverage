@@ -12,11 +12,10 @@
 #include <iostream>
 #include <fstream>
 #define MAX_PATTERNS simul_patterns
-#undef LOGEXEC
 using namespace std;
 #undef OUTJUST
 #define OUTJUST 4
-int main(int argc, char ** argv) {
+int main(int argc, const char* argv[]) {
 	uint8_t device = selectGPU();
 	GPU_Circuit ckt;
 	timespec start, stop;
@@ -45,10 +44,12 @@ int main(int argc, char ** argv) {
 
 	for (int32_t i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
 		uint64_t *coverage = new uint64_t; 
+		std::string vector_file(argv[i]);
 		*coverage = 0;
 		gpu = 0.0;
-		std::cerr << "Vector set " << argv[i] << std::endl;
+		std::cerr << "Vector set " << vector_file << std::endl;
 		std::pair<size_t,size_t> vecdim = get_vector_dim(argv[i]);
+		assert(vecdim.first > 0);
 		std::cerr << "Vector size: " << vecdim.first << "x"<<vecdim.second << std::endl;
 		GPU_Data *vec = new GPU_Data(vecdim.first,vecdim.second, vecdim.first);
 		uint32_t simul_patterns = gpuCalculateSimulPatterns(ckt.size(), vecdim.first, device);
@@ -69,6 +70,8 @@ int main(int argc, char ** argv) {
 
 		std::cerr << "..complete." << std::endl;
 		size_t startPattern = 0;
+		void* merge_ids;
+		merge_ids = NULL;
 		for (unsigned int chunk = 0; chunk < sim_results->size(); chunk++) {
 			std::clog << "Simulation ...";
 			sim1 = gpuRunSimulation(*sim_results, *vec, ckt, chunk, startPattern);
@@ -77,13 +80,14 @@ int main(int argc, char ** argv) {
 			std::cerr << "Simulation: " << sim1 << " ms" << std::endl;
 			// don't need the input vectors anymore, so remove.
 			GPU_Data *mark_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS);
+			// quick test of clear code
 			mark = gpuMarkPaths(*mark_results, *sim_results, ckt, chunk, startPattern);
 			gpu += mark;
 			std::cerr << "     Mark: " << mark << " ms" << std::endl;
 			//std::cerr << sim_results->debug();
-			void* merge_ids;
 			//std::cerr << mark_results->debug();
-			merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids);  
+			merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids, chunk, startPattern);  
+			sim_results->unload();
 			gpu += merge;
 			std::cerr << " Merge: " << merge << " ms" << std::endl;
 #ifdef LOGEXEC
