@@ -12,7 +12,6 @@ void HandleSimError( cudaError_t err, const char *file, int line ) {
     }
 }
 #define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
-#undef LOGEXEC // Remove logging
 texture<uint8_t, 2> and2LUT;
 texture<uint8_t, 2> nand2LUT;
 texture<uint8_t, 2> or2LUT;
@@ -38,7 +37,7 @@ extern "C" __device__ __forceinline__ uint8_t simLUT(uint8_t type, uint8_t val, 
 	int tid = (blockIdx.y * SIM_BLOCK) + threadIdx.x;
 	int gid = blockIdx.x+start_offset;
 	int pid = tid + startPattern;
-	int pid2 = (tid+startPattern == pattern_count -1 ? 0: tid+startPattern+1);
+	int pid2 = (pid == pattern_count-1 ? 0: pid+1);
 	uint8_t *row, r, val;
 	int goffset, nfi, j,type;
 	if (tid < max_patterns && pid < pattern_count )  {
@@ -151,7 +150,6 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, si
 		} while (levelsize > 0); 
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}
-	startPattern += results.gpu(chunk).width;
 	cudaDeviceSynchronize();
 	// We're done simulating at this point.
 #ifndef NTIMING

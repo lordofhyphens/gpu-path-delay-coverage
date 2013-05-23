@@ -42,7 +42,7 @@ __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch,
 	}
 	// Put the lower of pid and pid+MERGE_SIZE for which row[i] == 1
 	// Minimum ID given by this is 1.
-	if (i < height-1) {
+	if (i <= height-1) {
 		int low_x = -1, low_y = -1;
 		const uint8_t warp_id = threadIdx.x / (blockDim.x / 32); 
 		sdata = make_int2((sim[i] == T0)*(row[i] == 1)*(i+1),(sim[i] == T1)*(row[i] == 1)*(i+1));

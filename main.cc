@@ -55,7 +55,8 @@ int main(int argc, const char* argv[]) {
 		uint32_t simul_patterns = gpuCalculateSimulPatterns(ckt.size(), vecdim.first, device);
 		std::cerr << "Reading vector file....";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-		read_vectors(*vec, argv[i], vec->block_width());
+		read_vectors(*vec, argv[i], vec->block_width(), vecdim.first);
+		debugDataOutput(vec->gpu(), "vecout.log");
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
