@@ -43,9 +43,9 @@ int main(int argc, const char* argv[]) {
 
 
 	for (int32_t i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
-		uint64_t *coverage = new uint64_t; 
+		uint64_t *totals = new uint64_t; 
 		std::string vector_file(argv[i]);
-		*coverage = 0;
+		*totals = 0;
 		gpu = 0.0;
 		std::cerr << "Vector set " << vector_file << std::endl;
 		std::pair<size_t,size_t> vecdim = get_vector_dim(argv[i]);
@@ -56,7 +56,7 @@ int main(int argc, const char* argv[]) {
 		std::cerr << "Reading vector file....";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		read_vectors(*vec, argv[i], vec->block_width(), vecdim.first);
-		debugDataOutput(vec->gpu(), "vecout.log");
+		debugDataOutput(*vec, "vecout.log");
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
@@ -74,6 +74,8 @@ int main(int argc, const char* argv[]) {
 		void* merge_ids;
 		merge_ids = NULL;
 		for (unsigned int chunk = 0; chunk < sim_results->size(); chunk++) {
+			uint64_t *coverage = new uint64_t; 
+			*coverage = 0;
 			std::clog << "Simulation ...";
 			sim1 = gpuRunSimulation(*sim_results, *vec, ckt, chunk, startPattern);
 			std::clog << "..complete." << std::endl;
@@ -88,23 +90,23 @@ int main(int argc, const char* argv[]) {
 			//std::cerr << sim_results->debug();
 			//std::cerr << mark_results->debug();
 			merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids, chunk, startPattern);  
-			sim_results->unload();
 			gpu += merge;
 			std::cerr << " Merge: " << merge << " ms" << std::endl;
 #ifdef LOGEXEC
 			debugMergeOutput(ckt.size(), merge_ids, "gpumerge.log");
 #endif //LOGEXEC
+			sim_results->unload();
 			cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage, chunk, startPattern);
-
+			*totals += *coverage;
 			std::cerr << " Cover: " << cover << " ms" << std::endl;
-			std::cerr << "GPU Coverage: " << *coverage << std::endl;
+			std::cerr << "GPU Coverage: " << *coverage << ", total: "<< *totals << std::endl;
 			gpu += cover;
 			startPattern += sim_results->gpu(chunk).width;
+			delete coverage;
 		}
 		std::cerr << "   GPU: " << gpu << " ms" <<std::endl;
 		std::cout << argv[i] << ":" << vecdim.first << "," << ckt.size() <<  ";" << gpu << ";" << sim1 
-			      <<  ";" << mark << ";"<< merge << ";" << cover << ";" << *coverage << std::endl;
-		delete coverage;
+			      <<  ";" << mark << ";"<< merge << ";" << cover << ";" << *totals << std::endl;
 	}
 	return 0;
 }
