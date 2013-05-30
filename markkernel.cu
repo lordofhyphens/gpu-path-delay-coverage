@@ -5,6 +5,7 @@
 #undef OUTJUST
 #define OUTJUST 4
 #define BLOCK_PER_KERNEL 8
+#undef LOGEXEC
 void HandleMarkError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -130,7 +131,7 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt, size_t 
 	}
 	// do a backwards traversal to ensure that invalid marks are cleared.
 #ifdef LOGEXEC
-	debugMarkOutput(&results, ckt, "gpumark-full.log");
+	debugMarkOutput(&results, ckt, chunk, startPattern, "gpumark-full.log");
 #endif // LOGEXEC
 	startGate=ckt.size();
 	for (uint32_t i2 = 0; i2 <= ckt.levels(); i2++) {
@@ -155,7 +156,7 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt, size_t 
 	elapsed = floattime(diff(start, stop));
 #endif // NTIMING
 #ifdef LOGEXEC
-	debugMarkOutput(&results, ckt, "gpumark.log");
+	debugMarkOutput(&results, ckt, chunk, startPattern, "gpumark.log");
 #endif // LOGEXEC
 #ifndef NTIMING
 	return elapsed;
@@ -164,21 +165,26 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt, size_t 
 #endif // NTIMING
 }
 
-void debugMarkOutput(GPU_Data* results, const GPU_Circuit& ckt,std::string outfile = "simdebug.log") {
+void debugMarkOutput(GPU_Data* results, const GPU_Circuit& ckt,const size_t chunk, const size_t startPattern,std::string outfile = "simdebug.log") {
 #ifndef NDEBUG
-	std::ofstream ofile(outfile.c_str());
+	std::ofstream ofile;
 	size_t t = 0;
-	ofile << "Gate:     " << "\t";
-	for (uint32_t i = 0; i < ckt.size(); i++) {
-		ofile << std::setw(OUTJUST) << i << " ";
+	if (chunk == 0) {
+		ofile.open(outfile.c_str(), std::ios::out);
+		ofile << "Gate:     " << "\t";
+		for (uint32_t i = 0; i < ckt.size(); i++) {
+			ofile << std::setw(OUTJUST) << i << " ";
+		}
+		ofile << "\n";
+	} else {
+		ofile.open(outfile.c_str(), std::ios::app);
 	}
-	ofile << std::endl;
-	for (size_t chunk = 0; chunk < results->size(); chunk++) {
+
 		uint8_t *lvalues;
 		lvalues = (uint8_t*)malloc(results->gpu(chunk).height*results->gpu(chunk).pitch);
 		cudaMemcpy2D(lvalues,results->gpu().pitch,results->gpu(chunk).data,results->gpu(chunk).pitch,results->gpu(chunk).width,results->gpu(chunk).height,cudaMemcpyDeviceToHost);
 		for (unsigned int r = 0;r < results->gpu(chunk).width; r++) {
-			ofile << "Vector " << t << ":\t";
+			ofile << "Vector " << t+startPattern << ":\t";
 			for (unsigned int i = 0; i < results->gpu(chunk).height; i++) {
 				uint8_t z = REF2D(uint8_t, lvalues, results->gpu(chunk).pitch, r, i);
 				switch(z) {
@@ -190,11 +196,10 @@ void debugMarkOutput(GPU_Data* results, const GPU_Circuit& ckt,std::string outfi
 						ofile << std::setw(OUTJUST) << (int)z << " "; break;
 				}
 			}
-			ofile << std::endl;
+			ofile << "\n";
 			t++;
 		}
 		free(lvalues);
-	}
 	ofile.close();
 #endif
 

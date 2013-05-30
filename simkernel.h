@@ -13,6 +13,6 @@
 float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, size_t chunk, size_t startPattern = 0);
 
 void debugSimulationOutput(ARRAY2D<uint8_t> results, std::string outfile);
-void debugSimulationOutput(GPU_Data* results, const GPU_Circuit& ckt, std::string outfile);
+void debugSimulationOutput(GPU_Data* results, const GPU_Circuit& ckt, const size_t chunk, const size_t startPattern,std::string outfile);
 
 #endif

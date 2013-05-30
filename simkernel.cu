@@ -1,5 +1,6 @@
 #include <cuda.h>
 #include "simkernel.h"
+#undef LOGEXEC
 #undef SIM_BLOCK
 #define SIM_BLOCK 256
 #define BLOCK_PER_KERNEL 6
@@ -126,7 +127,6 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, si
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 #endif // NTIMING
-	size_t startPattern = 0;
 	const int blockcount_y = (int)(results.gpu(chunk).width/SIM_BLOCK) + ((results.gpu(chunk).width%SIM_BLOCK) > 0);
 	startGate = 0;
 	//DPRINT("Patterns to process in block %u: %lu\n", chunk, results.gpu(chunk).width);
@@ -139,7 +139,7 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, si
 
 			kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(ckt.gpu_graph(), inputs.gpu().data, inputs.gpu().pitch,
 					0, results.gpu(chunk).data, results.gpu(chunk).pitch, 
-					results.gpu(chunk).width, inputs.block_width(), ckt.offset(), startGate, startPattern);
+					results.gpu(chunk).width, inputs.block_width(), ckt.offset(), startGate, initial_pattern);
 
 			startGate += simblocks;
 			if (levelsize > MAX_BLOCKS) {
@@ -157,7 +157,7 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, si
 	elapsed = floattime(diff(start, stop));
 #endif // NTIMING
 #ifdef LOGEXEC
-		debugSimulationOutput(&results, ckt, "gpusim-p2.log");
+		debugSimulationOutput(&results, ckt, chunk, initial_pattern, "gpusim-p2.log");
 #endif //LOGEXEC
 #ifndef NTIMING
 	return elapsed;
@@ -165,24 +165,29 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, si
 	return 0.0;
 #endif // NTIMING
 }
-void debugSimulationOutput(GPU_Data* results, const GPU_Circuit& ckt, std::string outfile = "simdebug.log") {
+void debugSimulationOutput(GPU_Data* results, const GPU_Circuit& ckt, const size_t chunk, const size_t startPattern, std::string outfile = "simdebug.log") {
 #ifndef NDEBUG
-	std::ofstream ofile(outfile.c_str());
 	size_t t = 0;
-	ofile << "Gate:     " << "\t";
-	for (uint32_t i = 0; i < ckt.size(); i++) {
-		ofile << std::setw(OUTJUST) << i << " ";
+	std::ofstream ofile;
+	if (chunk == 0) {
+		ofile.open(outfile.c_str(), std::ios::out);
+		ofile << "Gate:     " << "\t";
+		for (uint32_t i = 0; i < ckt.size(); i++) {
+			ofile << std::setw(OUTJUST) << i << " ";
+		}
+		ofile << "\n";
+	} else {
+		ofile.open(outfile.c_str(), std::ios::out | std::ios::app);
 	}
-	ofile << std::endl;
-	for (size_t chunk = 0; chunk < results->size(); chunk++) {
-		uint8_t *lvalues;
-		lvalues = (uint8_t*)malloc(results->gpu(chunk).height*results->gpu(chunk).pitch);
-		cudaMemcpy2D(lvalues,results->gpu().pitch,results->gpu(chunk).data,results->gpu(chunk).pitch,results->gpu(chunk).width,results->gpu(chunk).height,cudaMemcpyDeviceToHost);
-		for (unsigned int r = 0;r < results->gpu(chunk).width; r++) {
-			ofile << "Vector " << t << ":\t";
-			for (unsigned int i = 0; i < results->gpu(chunk).height; i++) {
-				uint8_t z = REF2D(uint8_t, lvalues, results->gpu(chunk).pitch, r, i);
-				switch(z) {
+	DPRINT("%s, %d: Printing GPU Data chunk %lu size %lux%lu to %s.\n",__FILE__,__LINE__, chunk, results->gpu(chunk).width, results->gpu(chunk).height, outfile.c_str());
+	uint8_t *lvalues;
+	lvalues = (uint8_t*)malloc(results->gpu(chunk).height*results->gpu(chunk).pitch);
+	cudaMemcpy2D(lvalues,results->gpu().pitch,results->gpu(chunk).data,results->gpu(chunk).pitch,results->gpu(chunk).width,results->gpu(chunk).height,cudaMemcpyDeviceToHost);
+	for (unsigned int r = 0;r < results->gpu(chunk).width; r++) {
+		ofile << "Vector " << t+startPattern << ":\t";
+		for (unsigned int i = 0; i < results->gpu(chunk).height; i++) {
+			uint8_t z = REF2D(uint8_t, lvalues, results->gpu(chunk).pitch, r, i);
+			switch(z) {
 				case S0:
 					ofile  << std::setw(OUTJUST+1) << "S0 "; break;
 				case S1:
@@ -193,14 +198,15 @@ void debugSimulationOutput(GPU_Data* results, const GPU_Circuit& ckt, std::strin
 					ofile  << std::setw(OUTJUST+1) << "T1 "; break;
 				default:
 					ofile << std::setw(OUTJUST) << (int)z << " "; break;
-				}
-
 			}
-			ofile << std::endl;
-			t++;
+
 		}
-		free(lvalues);
+		ofile << "\n";
+		t++;
 	}
+	free(lvalues);
+
+	ofile.flush();
 	ofile.close();
 #endif
 
@@ -228,7 +234,7 @@ void debugSimulationOutput(ARRAY2D<uint8_t> results, std::string outfile = "simd
 					ofile << std::setw(OUTJUST) << (int)z << " "; break;
 			}
 		}
-		ofile << std::endl;
+		ofile << "\n";
 	}
 	free(lvalues);
 	ofile.close();

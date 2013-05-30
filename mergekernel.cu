@@ -34,7 +34,7 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch, size_t height, size_t pitch, int2* meta, uint32_t mpitch, uint32_t startGate, uint32_t startPattern) {
 	uint32_t tid = threadIdx.x;
 	startPattern += blockIdx.x*blockDim.x;
-	uint32_t pid = tid+ startPattern;
+	uint32_t pid = tid + blockIdx.x*blockDim.x;
 	uint32_t gid = blockIdx.y+startGate;
 	int2 sdata;
 	__shared__ int mx[32];
@@ -48,16 +48,14 @@ __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch,
 	}
 	// Put the lower of pid and pid+MERGE_SIZE for which row[i] == 1
 	// Minimum ID given by this is 1.
-	if (threadIdx.x < height) {
+	if (pid < height) {
 		int low_x = -1, low_y = -1;
 		const uint8_t warp_id = threadIdx.x / (blockDim.x / 32); 
-		sdata = make_int2((sim[pid] == T0)*(row[pid] == 1)*(pid+1),(sim[pid] == T1)*(row[pid] == 1)*(pid+1));
-		__syncthreads();
-		unsigned int pred_x = (sdata.x >= 1), pred_y = (sdata.y >= 1);
-		low_x = __ffs(__ballot(pred_x)) - 1;
-		low_y = __ffs(__ballot(pred_y)) - 1;
-		mx[warp_id] = (low_x >= 0 ? low_x + (int32_t)startPattern + (warp_id * 32) : -1);
-		my[warp_id] = (low_y >= 0 ? low_y + (int32_t)startPattern + (warp_id * 32) : -1);
+		unsigned int pred_x = (sim[pid] == T0)&&row[pid], pred_y = (sim[pid] == T1)&&row[pid];
+		low_x = __ffs(__ballot(pred_x));
+		low_y = __ffs(__ballot(pred_y));
+		mx[warp_id] = (low_x > 0 ? low_x + (int32_t)startPattern + (warp_id * 32) : -1);
+		my[warp_id] = (low_y > 0 ? low_y + (int32_t)startPattern + (warp_id * 32) : -1);
 		// at this point, we have the position of the lowest.
 
 #ifdef GPU_DEBUG
@@ -72,14 +70,11 @@ __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch,
 			low_y = __ffs(__ballot(pred_y)) - 1;
 
 			if (threadIdx.x == 0) {
-				sdata.x = (low_x >= 0 ? mx[low_x] : -1);
-				sdata.y = (low_y >= 0 ? my[low_y] : -1);
+				sdata.x = (low_x >= 0 ? mx[low_x] : -1)-1;
+				sdata.y = (low_y >= 0 ? my[low_y] : -1)-1;
 #ifdef GPU_DEBUG
 				printf("%s, %d: low[%d]: (%d,%d)\n", __FILE__, __LINE__, gid, sdata.x, sdata.y);
 #endif
-				if (gid == 129 && (sdata.x > 0 || sdata.y > 0)) {
-					printf("%s, %d: %d low[%d]: (%d,%d)\n", __FILE__, __LINE__, tid, gid, sdata.x, sdata.y);
-				}
 				REF2D(int2,meta,mpitch,blockIdx.x,blockIdx.y) = sdata; 
 			}
 		}
@@ -100,7 +95,7 @@ __global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, 
 	}
 	if (i < length) {
 		if (chunk > 0) {
-			i = MIN_GEN(REF2D(int2, intermediate, i_pitch, i, blockIdx.y).x + startPattern, g_odata[gid].x);
+			i = (g_odata[gid].x == -1 ? REF2D(int2, intermediate, i_pitch, i, blockIdx.y).x : g_odata[gid].x);
 		} else {
 			i = REF2D(int2, intermediate, i_pitch, i, blockIdx.y).x;
 		}
@@ -116,7 +111,11 @@ __global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, 
 #endif
 	if (j < length) {
 		if (chunk > 0) {
-			j = MIN_GEN(REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y + startPattern, g_odata[gid].y);
+			if (g_odata[gid].y >= 0) {
+				j = g_odata[gid].y;
+			} else {
+				j = REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y;
+			}
 		} else {
 					j = REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y;
 		}

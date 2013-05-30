@@ -87,8 +87,7 @@ int main(int argc, const char* argv[]) {
 			mark = gpuMarkPaths(*mark_results, *sim_results, ckt, chunk, startPattern);
 			gpu += mark;
 			std::cerr << "     Mark: " << mark << " ms" << std::endl;
-			//std::cerr << sim_results->debug();
-			//std::cerr << mark_results->debug();
+			
 			merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids, chunk, startPattern);  
 			gpu += merge;
 			std::cerr << " Merge: " << merge << " ms" << std::endl;
@@ -101,7 +100,8 @@ int main(int argc, const char* argv[]) {
 			std::cerr << " Cover: " << cover << " ms" << std::endl;
 			std::cerr << "GPU Coverage: " << *coverage << ", total: "<< *totals << std::endl;
 			gpu += cover;
-			startPattern += sim_results->gpu(chunk).width;
+			startPattern += mark_results->gpu(chunk).width;
+			mark_results->unload();
 			delete coverage;
 		}
 		std::cerr << "   GPU: " << gpu << " ms" <<std::endl;

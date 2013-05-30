@@ -4,14 +4,14 @@
 
 #undef OUTJUST
 #define OUTJUST 4
-#define BLOCK_SIZE 512
+#define BLOCK_SIZE 1024
 void HandleCoverError( cudaError_t err, const char *file, uint32_t line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
         exit( EXIT_FAILURE );
     }
 }
-
+#undef LOGEXEC
 #define HANDLE_ERROR( err ) (HandleCoverError( err, __FILE__, __LINE__ ))
 
 // bit masks for packing, trying to reduce # of fetches.
@@ -31,28 +31,28 @@ __device__ void warpReduce(volatile uint32_t* sdata, uint16_t tid) {
 __global__ void kernSumSingle(GPUNODE* ckt, size_t size, uint32_t* input, size_t height, size_t pitch, uint64_t* meta) {
 	__shared__ uint32_t sdata[BLOCK_SIZE]; // only add positive #s
 	uint16_t tid = threadIdx.x;
+	sdata[tid] = 0; // reset shared data segment to 0.
 	for (size_t i = 0; i < size; i++) { // iterate over everything in the circuit
 		if (ckt[i].type != INPT) 
 			continue; // short-circuit for non-PIs
 		for (size_t j = 0; j < height; j+=BLOCK_SIZE) { // unrolled to handle reductions of up to BLOCK_SIZE in parallel
-			sdata[tid] = 0; // reset shared data segment to 0.
 			if (tid+j < height) {
-				sdata[tid] = GET_C(REF2D(uint32_t, input, pitch, tid+j, i)); __syncthreads();
+				sdata[tid] += GET_C(REF2D(uint32_t, input, pitch, tid+j, i)); __syncthreads();
 //				printf("thread %hu - sdata[%hu] = %u = %u\n", tid, tid,  REF2D(uint32_t, input, pitch, tid+j, i));
 			}
-			if (BLOCK_SIZE >= 1024) { if (tid < 512) { sdata[tid] += sdata[tid + 512]; } __syncthreads(); }
-			if (BLOCK_SIZE >= 512) { if (tid < 256) { sdata[tid] += sdata[tid + 256];  } __syncthreads(); }
-			if (BLOCK_SIZE >= 256) { if (tid < 128) { sdata[tid] += sdata[tid + 128];  }  __syncthreads();}
-			if (BLOCK_SIZE >= 128) { if (tid < 64) { sdata[tid] += sdata[tid + 64];  } __syncthreads();}
-			if (tid < 32) { warpReduce<BLOCK_SIZE>(sdata, tid); } 
-			__syncthreads();
-			if (threadIdx.x == 0) {
-//				printf("Adding %u to total %lu for line %lu pattern %lu/%lu\n", sdata[0], *meta, i, j,height);
-				*meta += sdata[0];
-			}
-			__syncthreads();
 		}
 	}
+	if (BLOCK_SIZE >= 1024) { if (tid < 512) { sdata[tid] += sdata[tid + 512]; } __syncthreads(); }
+	if (BLOCK_SIZE >= 512) { if (tid < 256) { sdata[tid] += sdata[tid + 256];  } __syncthreads(); }
+	if (BLOCK_SIZE >= 256) { if (tid < 128) { sdata[tid] += sdata[tid + 128];  } __syncthreads(); }
+	if (BLOCK_SIZE >= 128) { if (tid < 64) { sdata[tid] += sdata[tid + 64];    } __syncthreads();}
+	if (tid < 32) { warpReduce<BLOCK_SIZE>(sdata, tid); } 
+	__syncthreads();
+	if (threadIdx.x == 0) {
+		*meta += sdata[0];
+	}
+	__syncthreads();
+
 }
 
 
@@ -111,7 +111,12 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 	int2* merges = (int2*)merge;
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure there aren't any errors going into function.
 
-	std::ofstream cfile("gpucover.log", std::ios::out);
+	std::ofstream cfile;
+	if (chunk == 0) {
+		cfile.open("gpucover.log", std::ios::out);
+	} else {
+		cfile.open("gpucover.log", std::ios::out | std::ios::app);
+	}
 	uint32_t *g_results;
 #ifdef LOGEXEC
 	uint32_t *d_results; // debug results 
@@ -172,17 +177,17 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 			HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 		}
 	}
-	startPattern += mark.gpu(chunk).width;
 	assert(startGate == 0);
 	// dump to file for debugging.
 
 #ifdef LOGEXEC
 	cudaMemcpy2D(d_results, sizeof(uint32_t)*mark.gpu(chunk).width, g_results, pitch, sizeof(uint32_t)*mark.gpu(chunk).width, mark.height(), cudaMemcpyDeviceToHost);
-	debugCover(ckt, d_results, mark.gpu(chunk).width, mark.height(), cfile);
+	debugCover(ckt, d_results, mark.gpu(chunk).width, mark.height(), cfile, chunk, startPattern);
 	free(d_results);
 #endif // LOGEXEC
 	cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
-	cudaFree(finalcoverage);	cudaFree(g_results); // clean up.
+	cudaFree(finalcoverage);
+	cudaFree(g_results); // clean up.
 	cudaDeviceSynchronize();
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 
@@ -201,17 +206,19 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge,
 	return 0.0;
 #endif
 }
-void debugCover(const Circuit& ckt, uint32_t *cover, size_t patterns, size_t lines, std::ofstream& ofile) {
+void debugCover(const Circuit& ckt, uint32_t *cover, size_t patterns, size_t lines, std::ofstream& ofile, size_t chunk = 0, size_t startPattern = 0) {
 #ifndef NDEBUG
-	std::cerr << "Patterns: " << patterns << "; Lines: " << lines << std::endl;
-	ofile << "Gate:   \t";
-	int i = 0;
-	while (ckt.at(i).typ == INPT) {
-		ofile << std::setw(OUTJUST) << i++ << " ";
+	if (chunk == 0) {
+		std::cerr << "Patterns: " << patterns << "; Lines: " << lines << std::endl;
+		ofile << "Gate:   \t";
+		int i = 0;
+		while (ckt.at(i).typ == INPT) {
+			ofile << std::setw(OUTJUST) << i++ << " ";
+		}
+		ofile << "\n";
 	}
-	ofile << "\n";
 	for (uint32_t r = 0; r < patterns; r++) {
-		ofile << "Vector " << r << ":\t";
+		ofile << "Vector " << r+startPattern << ":\t";
 		for (uint32_t i = 0; i < lines; i++) {
 			if (ckt.at(i).typ == INPT) {
 				const uint32_t z = GET_C(REF2D(uint32_t, cover, sizeof(uint32_t)*patterns, r, i));
