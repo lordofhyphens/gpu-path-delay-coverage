@@ -1,15 +1,16 @@
-CXX=g++-4.4
+CXX=g++-4.6
+CUDA_DIR=/opt/net/apps/cuda-5.0
 CTAG_FLAGS=--langmap=C++:+.cu --append=yes
-GPCXX=/opt/net/apps/cuda/bin/nvcc
+GPCXX=${CUDA_DIR}/bin/nvcc
 header= simkernel.h markkernel.h coverkernel.h mergekernel.h 
 logfile=log.txt
 main=main.cc
 src=simkernel.cu markkernel.cu mergekernel.cu coverkernel.cu
 obj=$(src:.cu=.o) $(main:.cc=.o)
 out=fcount
-CPFLAGS=-I/opt/net/apps/cuda/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -fopenmp #-Werror # -DNDEBUG #-DNTIMING
+CPFLAGS=-I${CUDA_DIR}/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -fopenmp #-Werror # -DNDEBUG #-DNTIMING
 CFLAGS=${CPFLAGS}
-NVCFLAGS=-arch=sm_20 --profile -O2 -Xcompiler -I/opt/net/apps/cuda/include -Xcompiler -Wall -ccbin ${CXX} -Xcompiler -funsigned-char -Xcompiler -fopenmp -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
+NVCFLAGS= -L${CUDA_DIR}/lib:${CUDA_DIR}/lib64 -Xcompiler -R${CUDA_DIR}/lib:${CUDA_DIR}/lib64 -arch=sm_20 -lcudart --profile -O2 -Xcompiler -I${CUDA_DIR}/include  -ccbin ${CXX} -Xcompiler -funsigned-char -Xcompiler -fopenmp -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
 PYLIB=_fsim.so
 
 .PHONY: all util
@@ -24,8 +25,8 @@ all: $(out)
 	$(GPCXX) -c $(NVCFLAGS) -o $@ $<
 
 util:
-	export CFLAGS="$(CFLAGS)" &&  $(MAKE) -C util -e -j4 -w
-	export NVCFLAGS="$(NVCFLAGS)" && $(MAKE) -C util -e -j4 -w gpu
+	export CUDA_DIR="$(CUDA_DIR)" CFLAGS="$(CFLAGS)" &&  $(MAKE) -C util -e -j4 -w
+	export CUDA_DIR="$(CUDA_DIR)" NVCFLAGS="$(NVCFLAGS)" && $(MAKE) -C util -e -j4 -w gpu
 
 ${out}: $(obj) util 
 	${GPCXX} $(NVCFLAGS) -o ${out} $(obj) util/*.o
