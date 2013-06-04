@@ -8,9 +8,9 @@ main=main.cc
 src=simkernel.cu markkernel.cu mergekernel.cu coverkernel.cu
 obj=$(src:.cu=.o) $(main:.cc=.o)
 out=fcount
-CPFLAGS=-I${CUDA_DIR}/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -fopenmp #-Werror # -DNDEBUG #-DNTIMING
+CPFLAGS=-I${CUDA_DIR}/include -lrt -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -fopenmp #-Werror # -DNDEBUG #-DNTIMING
 CFLAGS=${CPFLAGS}
-NVCFLAGS= -L${CUDA_DIR}/lib:${CUDA_DIR}/lib64 -Xcompiler -R${CUDA_DIR}/lib:${CUDA_DIR}/lib64 -arch=sm_20 -lcudart --profile -O2 -Xcompiler -I${CUDA_DIR}/include  -ccbin ${CXX} -Xcompiler -funsigned-char -Xcompiler -fopenmp -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
+NVCFLAGS=-arch=sm_20 --profile -O2 $(CPFLAGS:%=-Xcompiler %) -ccbin ${CXX} -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
 PYLIB=_fsim.so
 
 .PHONY: all util
