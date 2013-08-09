@@ -1,5 +1,6 @@
 #include "mergekernel.h"
 #include <cuda.h>
+#include "util/segment.h"
 #undef MERGE_SIZE
 #undef LOGEXEC
 #define MERGE_SIZE 1024
@@ -26,11 +27,16 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 		((R) > 0)*((R) < (L))*(R) )
 #undef GPU_DEBUG
 
+template <int N>
+__global__ void kernSegmentReduce(uint32_t startGate) {
+	// Initial gate, used to mark off of others
+	uint32_t gid = blockIdx.y+startGate;
+}
+
 /* Reduction strategy - X/1024 pattern blocks, Y blocks of lines/gates. Each
  * block gets the minimum ID within the block and places it into a temporary
  * location [BLOCK_X,BLOCK_Y] 
 */
-
 __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch, size_t height, size_t pitch, int2* meta, uint32_t mpitch, uint32_t startGate, uint32_t startPattern) {
 	uint32_t tid = threadIdx.x;
 	startPattern += blockIdx.x*blockDim.x;
@@ -39,6 +45,7 @@ __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch,
 	int2 sdata;
 	__shared__ int mx[32];
 	__shared__ int my[32];
+	__shared__ int segment_max[32];
 	uint8_t* row = input + pitch*gid;
 	uint8_t* sim = sim_input + sim_pitch*gid;
 	sdata = make_int2(-1,-1);
@@ -49,6 +56,9 @@ __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch,
 	// Put the lower of pid and pid+MERGE_SIZE for which row[i] == 1
 	// Minimum ID given by this is 1.
 	if (pid < height) {
+
+		// TODO: Run traverse_segments here for this segment, check to see if a segment has been marked for this block of threads. If not, abort. 
+
 		int low_x = -1, low_y = -1;
 		const uint8_t warp_id = threadIdx.x / (blockDim.x / 32); 
 		unsigned int pred_x = (sim[pid] == T0)&&row[pid], pred_y = (sim[pid] == T1)&&row[pid];
