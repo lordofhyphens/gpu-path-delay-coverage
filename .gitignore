@@ -13,3 +13,4 @@ _fsim.so
 log.txt
 *.o
 *.gch
+*.log
