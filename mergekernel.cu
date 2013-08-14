@@ -1,6 +1,8 @@
 #include "mergekernel.h"
 #include <cuda.h>
 #include "util/segment.h"
+#include "util/gpuckt.h"
+#include "util/gpudata.h"
 #undef MERGE_SIZE
 #undef LOGEXEC
 #define MERGE_SIZE 1024
@@ -27,10 +29,52 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 		((R) > 0)*((R) < (L))*(R) )
 #undef GPU_DEBUG
 
+// For a single block, determine the lowest tid for high/low, and return it.
+__device__ int2 devSingleReduce(uint32_t pred_x, uint32_t pred_y, const uint32_t& startPattern, const uint32_t& pid) {
+	int2 test = make_int2(-1,-1);
+	return test;
+
+}
+template <int N>  
+__device__ void devSegmentRecurse(segment_t<N>& result, uint8_t level, uint32_t start_gid, const g_GPU_DATA& sim_info, const g_GPU_DATA& mark_info, const GPUCKT& ckt, const uint32_t& pid, bool cont, uint32_t x, uint32_t y, const uint32_t& startPattern) {
+	if (level < N) {
+		const GPUNODE& g = ckt.graph[start_gid];
+		const uint8_t* row = mark_info.data + mark_info.pitch*start_gid;
+		const uint8_t* sim = sim_info.data + sim_info.pitch*start_gid;
+		uint32_t pred_x = (sim[pid] == T0)&&row[pid], pred_y = (sim[pid] == T1)&&row[pid];
+		result.key.k[level] = start_gid;
+		for (uint16_t i = 0; i < g.nfo; i++) { // traverse over the NFOs, recursing
+			devSegmentRecurse(result, level+1, 
+			FIN(ckt.fanout,g.offset,g.nfi+i), sim_info, mark_info, ckt, pid, cont && (__any(pred_x) || __any(pred_y)), pred_x, pred_y, startPattern);
+		}
+		if (g.po == 1) { 
+			level = N; 
+			devSegmentRecurse(result, N, start_gid, sim_info, mark_info, ckt, pid, cont && (__any(pred_x) || __any(pred_y)), pred_x, pred_y, startPattern);
+		} // if this is a PO, not going any further
+	} else {
+		// reduce and place into hashmap if cont == true
+		result.pid = devSingleReduce(x,y, startPattern, pid);
+
+		// it's stored now, so reset local pid value before returning.
+		result.pid.x = -1;
+		result.pid.y = -1;
+	}
+	result.key.k[level] = 0; // unwinding stack, so need to reset.
+}
 template <int N>
-__global__ void kernSegmentReduce(uint32_t startGate) {
+__global__ void kernSegmentReduce(const g_GPU_DATA sim, const g_GPU_DATA mark, uint32_t startGate, const GPUCKT ckt, uint32_t startPattern) {
 	// Initial gate, used to mark off of others
 	uint32_t gid = blockIdx.y+startGate;
+	uint32_t pid = threadIdx.x + (blockIdx.x*blockDim.x);
+	__shared__ int mx[32];
+	__shared__ int my[32];
+	if (pid < sim.width) { // TODO: Ensure that this is the correct dimension
+		segment_t<N> a;
+		a.pid.x = -1;
+		a.pid.y = -1;
+		// recurse
+		devSegmentRecurse(a, 0, gid, sim, mark, ckt, pid, true, 0, 0, startPattern);
+	}
 }
 
 /* Reduction strategy - X/1024 pattern blocks, Y blocks of lines/gates. Each
