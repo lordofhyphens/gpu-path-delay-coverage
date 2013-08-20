@@ -8,6 +8,7 @@
 #include "mergekernel.h"
 #include "coverkernel.h"
 #include "util/subckt.h"
+#include "gpu_hashmap.cu.h"
 #include <utility>
 #include <iostream>
 #include <fstream>
@@ -42,7 +43,14 @@ int main(int argc, const char* argv[]) {
 	std::clog << "Circuit size is: " << ckt.size() << "Levels: " << ckt.levels() << std::endl;
 
 
+	uint32_t h[HASHLENGTH];
+	for (int i = 0;i < HASHLENGTH; i++) {
+		h[i] = rand();
+	}
+	hashfuncs hashlist = make_hashfuncs(NULL,h,HASHLENGTH, HASHLENGTH);
+
 	for (int32_t i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
+		
 		uint64_t *totals = new uint64_t; 
 		std::string vector_file(argv[i]);
 		*totals = 0;
@@ -73,6 +81,8 @@ int main(int argc, const char* argv[]) {
 		size_t startPattern = 0;
 		void* merge_ids;
 		merge_ids = NULL;
+		void *dc_segs = NULL;
+		
 		for (unsigned int chunk = 0; chunk < sim_results->size(); chunk++) {
 			uint64_t *coverage = new uint64_t; 
 			*coverage = 0;
@@ -88,7 +98,8 @@ int main(int argc, const char* argv[]) {
 			gpu += mark;
 			std::cerr << "     Mark: " << mark << " ms" << std::endl;
 			
-			merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids, chunk, startPattern);  
+			//merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids, chunk, startPattern);  
+			merge = gpuMergeSegments(*mark_results, *sim_results, ckt, chunk, startPattern, hashlist, &dc_segs, 21);
 			gpu += merge;
 			std::cerr << " Merge: " << merge << " ms" << std::endl;
 #ifdef LOGEXEC

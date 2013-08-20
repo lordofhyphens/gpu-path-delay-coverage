@@ -1,12 +1,11 @@
 #include "mergekernel.h"
 #include <cuda.h>
-#include "util/segment.h"
 #include "util/gpuckt.h"
 #include "util/gpudata.h"
 #include "util/lookup.h"
 #undef MERGE_SIZE
 #undef LOGEXEC
-#define MERGE_SIZE 1024
+#define MERGE_SIZE 512
 void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -29,42 +28,10 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 		((L) > 0)*((L) < (R))*(L) + \
 		((R) > 0)*((R) < (L))*(R) )
 #undef GPU_DEBUG
+
+// "optimized" for single-threaded access,
 template <int N>
-__device__ __host__ inline uint32_t getHash(const segment_t<N>& I, const uint32_t seed, uint8_t bits) {
-	return hashlittle(I.key.h,sizeof(uint32_t)*N, seed) & hashmask(bits);
-}
-template <int N>
-__device__ __host__ inline uint32_t getHash(const hashkey<N>& I, const uint32_t seed, uint8_t bits) {
-	return hashlittle(I.h,sizeof(uint32_t)*N, seed) & hashmask(bits);
-}
-template <int N>
-__device__ __host__ inline bool operator==(const hashkey<N>& lhs, const hashkey<N>&rhs) {
-	bool tmp = true;
-	#pragma unroll 2
-	for (int i = 0; i < N; i++)
-		tmp = tmp && (lhs.k[i] == rhs.k[i]);
-	return tmp;
-}
-template <int N>
-__device__ __host__ inline bool operator==(const hashkey<N>& lhs, const int &rhs) {
-	bool tmp = true;
-	#pragma unroll 2
-	for (int i = 0; i < N; i++)
-		tmp = tmp && (lhs.k[i] == rhs);
-	return tmp;
-}
-template <int N>
-__device__ __host__ inline bool operator!=(const hashkey<N>& lhs, const hashkey<N>&rhs) {
-	return !(lhs == rhs);
-}
-typedef struct hashfuncs_t { uint32_t *hashlist, max, slots; } hashfuncs;
-__device__ __host__ hashfuncs make_hashfuncs(uint32_t* hashlist, int max, int slots) { hashfuncs a; a.hashlist = hashlist, a.max = max, a.slots = slots; return a;}
-template <int N>
-__device__ bool isLegal(const segment_t<N>& segment) {
-	return (segment.key == 0);
-}
-template <int N>
-__device__ void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc, const uint32_t slots, hashkey<N> key, int2 data) {
+__device__ void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc,  hashkey<N> key, int2 data) {
 	uint8_t hashes = 0;
 	segment_t<N> evict; // hopefully we won't need this.
 	evict.key.k[0] = 1;
@@ -74,7 +41,7 @@ __device__ void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc, 
 	// If there is a collision, evict and try again with the next hash.
 	int pred = 1;
 	while (evict.key.k[0] != 0) {
-		uint32_t hash = getHash<N>(key,hashfunc.hashlist[hashes],hashfunc.slots);
+		uint32_t hash = getHash<N>(key,hashfunc.g_hashlist[hashes],hashfunc.slots);
 		while (pred && hashes < hashfunc.max) {
 			pred = 1;
 			while (pred != 0) // spinlock, hate it but what can we do?
@@ -151,7 +118,7 @@ __device__ int2 devSingleReduce(uint32_t pred_x, uint32_t pred_y, const uint32_t
 }
 
 template <int N>  
-__device__ void devSegmentRecurse(segment_t<N>& result, uint8_t level, uint32_t start_gid, const g_GPU_DATA& sim_info, const g_GPU_DATA& mark_info, const GPUCKT& ckt, const uint32_t& pid, bool cont, uint32_t x, uint32_t y, const uint32_t& startPattern, volatile int* mx, volatile int* my, segment_t<N>* hashmap, const hashfuncs& hashfunc, const uint32_t& slots) {
+__device__ void devSegmentRecurse(segment_t<N>& result, uint8_t level, uint32_t start_gid, const g_GPU_DATA& sim_info, const g_GPU_DATA& mark_info, const GPUCKT& ckt, const uint32_t& pid, bool cont, uint32_t x, uint32_t y, const uint32_t& startPattern, volatile int* mx, volatile int* my, segment_t<N>* hashmap, const hashfuncs& hashfunc) {
 	if (level < N) {
 		const GPUNODE& g = ckt.graph[start_gid];
 		const uint8_t* row = mark_info.data + mark_info.pitch*start_gid;
@@ -161,26 +128,27 @@ __device__ void devSegmentRecurse(segment_t<N>& result, uint8_t level, uint32_t 
 
 		for (uint16_t i = 0; i < g.nfo; i++) { // traverse over the NFOs, recursing
 			devSegmentRecurse(result, level+1, 
-			FIN(ckt.fanout,g.offset,g.nfi+i), sim_info, mark_info, ckt, pid, cont && (__any(pred_x) || __any(pred_y)), pred_x, pred_y, startPattern, mx, my, hashmap, hashfunc,slots);
+			FIN(ckt.fanout,g.offset,g.nfi+i), sim_info, mark_info, ckt, pid, cont && (__any(pred_x) || __any(pred_y)), pred_x, pred_y, startPattern, mx, my, hashmap, hashfunc);
 		}
 		if (g.po == 1) { 
 			level = N; 
-			devSegmentRecurse(result, N, start_gid, sim_info, mark_info, ckt, pid, cont && (__any(pred_x) || __any(pred_y)), pred_x, pred_y, startPattern, mx, my, hashmap,hashfunc,slots);
+			devSegmentRecurse(result, N, start_gid, sim_info, mark_info, ckt, pid, cont && (__any(pred_x) || __any(pred_y)), pred_x, pred_y, startPattern, mx, my, hashmap,hashfunc);
 		} // if this is a PO, not going any further
 	} else {
 		// reduce and place into hashmap if cont == true
 		result.pid = devSingleReduce(x,y, startPattern, pid, mx, my);
 		// only thread 0 of this block has the correct pid.
 		if (threadIdx.x == 0) 
-			insertIntoHash<N>(hashmap, hashfunc, slots, result.key, result.pid);
+			insertIntoHash<N>(hashmap, hashfunc, result.key, result.pid);
 		// it's stored now, so reset local pid value before returning.
 		result.pid.x = -1;
 		result.pid.y = -1;
 	}
 	result.key.k[level] = 0; // unwinding stack, so need to reset.
 }
+
 template <int N>
-__global__ void kernSegmentReduce(const g_GPU_DATA sim, const g_GPU_DATA mark, uint32_t startGate, const GPUCKT ckt, uint32_t startPattern, segment_t<N>* hashmap, const hashfuncs& hashfunc, const uint32_t slots) {
+__global__ void kernSegmentReduce(const g_GPU_DATA sim, const g_GPU_DATA mark, uint32_t startGate, const GPUCKT ckt, uint32_t startPattern, segment_t<N>* hashmap, const hashfuncs hashfunc) {
 	// Initial gate, used to mark off of others
 	uint32_t gid = blockIdx.y+startGate;
 	uint32_t pid = threadIdx.x + (blockIdx.x*blockDim.x);
@@ -191,7 +159,7 @@ __global__ void kernSegmentReduce(const g_GPU_DATA sim, const g_GPU_DATA mark, u
 		a.pid.x = -1;
 		a.pid.y = -1;
 		// recurse
-		devSegmentRecurse(a, 0, gid, sim, mark, ckt, pid, true, 0, 0, startPattern, mx, my, hashmap, hashfunc, slots);
+		devSegmentRecurse(a, 0, gid, sim, mark, ckt, pid, true, 0, 0, startPattern, mx, my, hashmap, hashfunc);
 	}
 }
 
@@ -305,34 +273,40 @@ __global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, 
 
 }
 
-float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t chunk, uint32_t ext_startPattern) {
+float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t chunk, uint32_t ext_startPattern, hashfuncs& dc_h, void** hash, uint32_t hashsize) {
 #ifndef NTIMING
 	float elapsed;
+	uint32_t startPattern = ext_startPattern;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	// assume that the 0th entry is the widest, which is true given the chunking method.
 #endif // NTIMING
-	count = 0;
+	// if g_hashlist == NULL, copy the hash list to the GPU
+	if (dc_h.g_hashlist == NULL) {
+		cudaMalloc(&(dc_h.g_hashlist),sizeof(uint32_t)*dc_h.max);
+		cudaMemcpy(dc_h.g_hashlist, dc_h.h_hashlist, sizeof(uint32_t)*dc_h.max,cudaMemcpyHostToDevice);
+	}
+	if (*hash == NULL) 
+		cudaMalloc(hash, sizeof(segment_t<2>)*hashsize(21));
+	segment_t<2>* hashmap = (segment_t<2>*)hash;
+	uint32_t count = 0;
 	size_t remaining_blocks = mark.height();
 	const size_t block_x = (mark.gpu(chunk).width / MERGE_SIZE) + ((mark.gpu(chunk).width % MERGE_SIZE) > 0);
 	size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
-	cudaMallocPitch(&temparray, &pitch, sizeof(int2)*block_x, 65535);
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting on memory allocation
 	do {
 		dim3 blocks(block_x, block_y);
-		kernReduce<<<blocks, MERGE_SIZE>>>(mark.gpu(chunk).data, sim.gpu(chunk).data, sim.gpu(chunk).pitch, mark.gpu(chunk).width, mark.gpu(chunk).pitch, temparray, pitch, count, startPattern);
-		cudaDeviceSynchronize();
+		kernSegmentReduce<2><<<blocks, MERGE_SIZE>>>(toPod(sim), toPod(mark), count, toPod(ckt), startPattern, hashmap, dc_h);
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 		dim3 blocksmin(1, block_y);
-		kernSetMin<<<blocksmin, 1>>>(mergeids, temparray,  pitch, block_x, count, startPattern, chunk);
 		count+=65535;
 		if (remaining_blocks < 65535) { remaining_blocks = 0;}
 		if (remaining_blocks > 65535) { remaining_blocks -= 65535; }
 		block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
+		cudaDeviceSynchronize();
 	} while (remaining_blocks > 0);
 	cudaDeviceSynchronize();
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
-	cudaFree(temparray);
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
