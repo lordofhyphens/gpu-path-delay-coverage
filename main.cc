@@ -18,6 +18,7 @@ using namespace std;
 #define OUTJUST 4
 int main(int argc, const char* argv[]) {
 	uint8_t device = selectGPU();
+	resetGPU();
 	GPU_Circuit ckt;
 	timespec start, stop;
 	float elapsed = 0.0,mark=0.0,merge =0.0,cover = 0.0,sim1 = 0.0,gpu =0.0;

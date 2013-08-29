@@ -28,7 +28,9 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 		((L) > 0)*((L) < (R))*(L) + \
 		((R) > 0)*((R) < (L))*(R) )
 #undef GPU_DEBUG
-
+__host__ __device__ inline uchar2 operator*=(const uchar2 &lhs, const bool &rhs) {
+	return make_uchar2(lhs.x*rhs, lhs.y*rhs);
+}
 // "optimized" for single-threaded access,
 template <int N>
 __device__ void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc,  hashkey<N> key, int2 data) {
@@ -44,8 +46,10 @@ __device__ void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc, 
 		uint32_t hash = getHash<N>(key,hashfunc.g_hashlist[hashes],hashfunc.slots);
 		while (pred && hashes < hashfunc.max) {
 			pred = 1;
-			while (pred != 0) // spinlock, hate it but what can we do?
+			while (pred != 0) { // spinlock, hate it but what can we do?
+				printf("Trying to set mutex for position %d, (%d, %d), in hashmap, which is currnetly %d\n",hash, key.k[0], key.k[1], storage[hash].mutex );
 				pred = atomicCAS(&(storage[hash].mutex), 0, 1) != 0;
+			}
 			if (key != storage[hash].key && isLegal<N>(storage[hash].key)) { // divergence possibility here.
 				hashes++; // try another hash function.
 			}
@@ -86,12 +90,14 @@ __device__ void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc, 
 		}
 	}
 }
+template <int N> 
+__device__ inline void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc, segment_t<N> tgt) { insertIntoHash(storage,hashfunc,tgt.key, tgt.pid);}
 // For a single block, determine the lowest tid for high/low, and return it.
-__device__ int2 devSingleReduce(uint32_t pred_x, uint32_t pred_y, const uint32_t& startPattern, const uint32_t& pid, volatile int* mx, volatile int* my) {
+__device__ int2 devSingleReduce(uchar2 pred, const uint32_t& startPattern, const uint32_t& pid, volatile int* mx, volatile int* my) {
 	int2 sdata = make_int2(-1,-1);
 
-	int32_t low_x = __ffs(__ballot(pred_x));
-	int32_t low_y = __ffs(__ballot(pred_y));
+	int32_t low_x = __ffs(__ballot(pred.x));
+	int32_t low_y = __ffs(__ballot(pred.y));
 	const uint8_t warp_id = threadIdx.x / (blockDim.x / 32); 
 
 	// place lowest valid ID for x/y 
@@ -100,10 +106,10 @@ __device__ int2 devSingleReduce(uint32_t pred_x, uint32_t pred_y, const uint32_t
 	// at this point, we have the position of the lowest in the local warp.
 	__syncthreads(); // should be safe.
 	if (threadIdx.x < 32) {
-		pred_x = mx[threadIdx.x] >= 0;
-		pred_y = my[threadIdx.x] >= 0;
-		low_x = __ffs(__ballot(pred_x)) - 1;
-		low_y = __ffs(__ballot(pred_y)) - 1;
+		pred.x = mx[threadIdx.x] >= 0;
+		pred.y = my[threadIdx.x] >= 0;
+		low_x = __ffs(__ballot(pred.x)) - 1;
+		low_y = __ffs(__ballot(pred.y)) - 1;
 
 		if (threadIdx.x == 0) {
 			sdata.x = (low_x >= 0 ? mx[low_x] : -1)-1;
@@ -112,7 +118,8 @@ __device__ int2 devSingleReduce(uint32_t pred_x, uint32_t pred_y, const uint32_t
 		mx[threadIdx.x] = -1;
 		my[threadIdx.x] = -1;
 	}
-
+	if (threadIdx.x == 0) 
+		printf("Reached end of reduction.\n");
 	return sdata;
 
 }
@@ -132,9 +139,8 @@ Array of int2.
 	Possible optimization: 
 		skip tree if current gate is not marked. Requires a broadcast to all other nodes.
 */
-
 template <int N>
-__global__ void kernSegmentReduce(const g_GPU_DATA sim, const g_GPU_DATA mark, uint32_t startGate, const GPUCKT ckt, uint32_t startPattern, segment_t<N>* hashmap, const hashfuncs hashfunc) {
+__global__ void kernSegmentReduce(const g_GPU_DATA sim, const  g_GPU_DATA mark, uint32_t startGate, const GPUCKT ckt, uint32_t startPattern, segment_t<N>* hashmap, const hashfuncs hashfunc) {
 	// Initial gate, used to mark off of others
 	uint32_t gid = blockIdx.y+startGate;
 	uint32_t pid = threadIdx.x + (blockIdx.x*blockDim.x);
@@ -142,8 +148,9 @@ __global__ void kernSegmentReduce(const g_GPU_DATA sim, const g_GPU_DATA mark, u
 	__shared__ int my[32];
 	__shared__ int2 stck[N];
 	__shared__ int skip;
-	const GPUNODE& base = ckt.graph[gid];
 	int level = 0; 
+	uchar2 pred = make_uchar2(0,0);
+
 	if (pid < sim.width) { // TODO: Ensure that this is the correct dimension
 		if (threadIdx.x == 0)
 			printf("Starting on gid %d, level %d\n",gid, level);
@@ -154,23 +161,41 @@ __global__ void kernSegmentReduce(const g_GPU_DATA sim, const g_GPU_DATA mark, u
 		while (level >= 0) {
 			// get current graph reference
 			const GPUNODE& g = ckt.graph[gid];
-			if (stck[level].x >= g.po) {
+			if (level == 0) {
+				// figure out whether or not to start at the first or second
+				pred.x = (REF2D(uint8_t, mark.data, mark.pitch, pid, gid) > 0 && REF2D(uint8_t, sim.data, sim.pitch, pid, gid) == T0);
+				pred.y = (REF2D(uint8_t, mark.data, mark.pitch, pid, gid) > 0 && REF2D(uint8_t, sim.data, sim.pitch, pid, gid) == T1);
+			}
+			if (stck[level].x >= g.nfo) {
+				if (threadIdx.x == 0)
+					printf("Not a legal NFO. Aborting.\n");
 				level--;
 				continue;
+			}	
+			if (threadIdx.x == 0) {
+				stck[level].y = FIN(ckt.fanout,g.offset,stck[level].x+g.nfi);
+				printf("Working on gate %d, level %d. (%d,%d); NFO[%d]: %d\n",gid,level,stck[level].x,stck[level].y, gid,g.nfo);
 			}
-			if (threadIdx.x == 0)
-				printf("Working on gate %d, level %d. (%d,%d)\n",gid,level,stck[level].x,stck[level].y);
-			stck[level].y = FIN(ckt.fanout,g.offset,stck[level].x+g.nfi);
 			__syncthreads();
+			
+			// place current gid in possible segment, current level.
 			scratch.key.k[level] = gid;
 			// end of segment
 			// criteria: current g is a po, or the current level
 			// is N-1 (counting from 0, so segment of length 2 would have
 			// levels 0, 1).
+			pred *= (REF2D(uint8_t, mark.data, mark.pitch, pid, gid) > 0);
 			if (g.po == 1 || level >= N-1 || skip == 1) {
 				// reduce and put into hash.
-				// TODO: include reduction
-				// we know to roll back a level if we are on the highest valid ID
+				// TODO: include reduction step
+				if (!skip) {
+					scratch.pid = devSingleReduce(pred,startPattern,pid,mx,my);				// we know to roll back a level if we are on the highest valid ID
+					if (threadIdx.x == 0) { // only thread 0 has the lowest value here
+						// place the scratch value into hash IFF it has a lower value than something else with the same key.
+						insertIntoHash<N>(hashmap,hashfunc,scratch);
+					}
+
+				}
 				// for NFOs (counting from 0). 
 				if (threadIdx.x == 0)
 					stck[level].x += 1;
@@ -187,18 +212,21 @@ __global__ void kernSegmentReduce(const g_GPU_DATA sim, const g_GPU_DATA mark, u
 					if (threadIdx.x == 0)
 						printf("Decrementing level from %d\n", level);
 					level--;
+					// retrieve previous cached GID and increment NFO count.
+					if (level >= 0)
+						gid = stck[level].y; // retrieve the GID cached that refers to the parent.
 					if (threadIdx.x == 0) {
-						stck[level].x += 1;
-						stck[level].y = FIN(ckt.fanout,g.offset,stck[level].x+g.nfi);
+						stck[level].x += 1; // increment the previous level's nfo pointer
 					}
 					__syncthreads();
-					gid = stck[level].y;
 					continue;
 					// normal case, 
 				}
 				__syncthreads();
 			}
-			gid = stck[level].y;
+			uint32_t tmp_gid = gid; // cache current GID.
+			gid = stck[level].y; // set gid to the next 
+			stck[level].y = tmp_gid;
 			if (g.po != 1 && level < N-1) {
 				level++;
 			}
@@ -318,6 +346,7 @@ __global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, 
 float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t chunk, uint32_t ext_startPattern, hashfuncs& dc_h, void** hash, uint32_t hashsize) {
 #ifndef NTIMING
 	float elapsed;
+	void* tmp_hash = *hash;
 	uint32_t startPattern = ext_startPattern;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
@@ -328,14 +357,16 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 		cudaMalloc(&(dc_h.g_hashlist),sizeof(uint32_t)*dc_h.max);
 		cudaMemcpy(dc_h.g_hashlist, dc_h.h_hashlist, sizeof(uint32_t)*dc_h.max,cudaMemcpyHostToDevice);
 	}
-	if (*hash == NULL) 
-		cudaMalloc(hash, sizeof(segment_t<2>)*hashsize(21));
-	segment_t<2>* hashmap = (segment_t<2>*)hash;
+	if (*hash == NULL) { 
+		cudaMalloc(&tmp_hash, sizeof(segment_t<2>)*hashsize(21));
+		std::cerr << "Allocating hashmap space of " << hashsize(21) << ".\n";
+	}
+	segment_t<2>* hashmap = (segment_t<2>*)tmp_hash;
 	uint32_t count = 0;
 	size_t remaining_blocks = mark.height();
 	const size_t block_x = (mark.gpu(chunk).width / MERGE_SIZE) + ((mark.gpu(chunk).width % MERGE_SIZE) > 0);
 	size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
-	block_y = 1; // only do one gid for testing
+//	block_y = 1; // only do one gid for testing
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting on memory allocation
 	do {
 		dim3 blocks(block_x, block_y);
