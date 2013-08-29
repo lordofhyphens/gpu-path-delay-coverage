@@ -1,5 +1,5 @@
 CXX=g++-4.6
-CUDA_DIR=/opt/net/apps/cuda-5.0
+CUDA_DIR=/opt/net/apps/cuda-5.5
 CTAG_FLAGS=--langmap=C++:+.cu --append=yes
 GPCXX=${CUDA_DIR}/bin/nvcc
 header= simkernel.h markkernel.h coverkernel.h mergekernel.h 

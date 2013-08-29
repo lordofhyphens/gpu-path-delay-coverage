@@ -117,35 +117,21 @@ __device__ int2 devSingleReduce(uint32_t pred_x, uint32_t pred_y, const uint32_t
 
 }
 
-template <int N>  
-__device__ void devSegmentRecurse(segment_t<N>& result, uint8_t level, uint32_t start_gid, const g_GPU_DATA& sim_info, const g_GPU_DATA& mark_info, const GPUCKT& ckt, const uint32_t& pid, bool cont, uint32_t x, uint32_t y, const uint32_t& startPattern, volatile int* mx, volatile int* my, segment_t<N>* hashmap, const hashfuncs& hashfunc) {
-	if (level < N) {
-		const GPUNODE& g = ckt.graph[start_gid];
-		const uint8_t* row = mark_info.data + mark_info.pitch*start_gid;
-		const uint8_t* sim = sim_info.data + sim_info.pitch*start_gid;
-		uint32_t pred_x = (sim[pid] == T0)&&row[pid], pred_y = (sim[pid] == T1)&&row[pid];
-		result.key.k[level] = start_gid;
-
-		for (uint16_t i = 0; i < g.nfo; i++) { // traverse over the NFOs, recursing
-			devSegmentRecurse(result, level+1, 
-			FIN(ckt.fanout,g.offset,g.nfi+i), sim_info, mark_info, ckt, pid, cont && (__any(pred_x) || __any(pred_y)), pred_x, pred_y, startPattern, mx, my, hashmap, hashfunc);
-		}
-		if (g.po == 1) { 
-			level = N; 
-			devSegmentRecurse(result, N, start_gid, sim_info, mark_info, ckt, pid, cont && (__any(pred_x) || __any(pred_y)), pred_x, pred_y, startPattern, mx, my, hashmap,hashfunc);
-		} // if this is a PO, not going any further
-	} else {
-		// reduce and place into hashmap if cont == true
-		result.pid = devSingleReduce(x,y, startPattern, pid, mx, my);
-		// only thread 0 of this block has the correct pid.
-		if (threadIdx.x == 0) 
-			insertIntoHash<N>(hashmap, hashfunc, result.key, result.pid);
-		// it's stored now, so reset local pid value before returning.
-		result.pid.x = -1;
-		result.pid.y = -1;
-	}
-	result.key.k[level] = 0; // unwinding stack, so need to reset.
-}
+/* 
+Stack storage for recursive function
+Array of int2. 
+	x=>the relative fanout for that level
+	y=>ID of that fanout
+	So stck[0].x points to the next level used of the 0th gate in the stack, and stck[0].y is the unique ID for thate gate.
+	Tree descent:
+		Move to next NFO immediately if available and not at end of segment.
+		if at segment end, reduce, write segment, modify stack pointer
+	
+	Modify stack pointer:
+		If pointer for current level is at end of available NFOs, reset current pointer to 0, decrement level
+	Possible optimization: 
+		skip tree if current gate is not marked. Requires a broadcast to all other nodes.
+*/
 
 template <int N>
 __global__ void kernSegmentReduce(const g_GPU_DATA sim, const g_GPU_DATA mark, uint32_t startGate, const GPUCKT ckt, uint32_t startPattern, segment_t<N>* hashmap, const hashfuncs hashfunc) {
@@ -154,15 +140,71 @@ __global__ void kernSegmentReduce(const g_GPU_DATA sim, const g_GPU_DATA mark, u
 	uint32_t pid = threadIdx.x + (blockIdx.x*blockDim.x);
 	__shared__ int mx[32];
 	__shared__ int my[32];
+	__shared__ int2 stck[N];
+	__shared__ int skip;
+	const GPUNODE& base = ckt.graph[gid];
+	int level = 0; 
 	if (pid < sim.width) { // TODO: Ensure that this is the correct dimension
-		segment_t<N> a;
-		a.pid.x = -1;
-		a.pid.y = -1;
-		// recurse
-		devSegmentRecurse(a, 0, gid, sim, mark, ckt, pid, true, 0, 0, startPattern, mx, my, hashmap, hashfunc);
+		if (threadIdx.x == 0)
+			printf("Starting on gid %d, level %d\n",gid, level);
+		segment_t<N> scratch;
+		// end once the pointer moves past the NFOs 
+		stck[level].x = 0;
+		__syncthreads();
+		while (level >= 0) {
+			// get current graph reference
+			const GPUNODE& g = ckt.graph[gid];
+			if (stck[level].x >= g.po) {
+				level--;
+				continue;
+			}
+			if (threadIdx.x == 0)
+				printf("Working on gate %d, level %d. (%d,%d)\n",gid,level,stck[level].x,stck[level].y);
+			stck[level].y = FIN(ckt.fanout,g.offset,stck[level].x+g.nfi);
+			__syncthreads();
+			scratch.key.k[level] = gid;
+			// end of segment
+			// criteria: current g is a po, or the current level
+			// is N-1 (counting from 0, so segment of length 2 would have
+			// levels 0, 1).
+			if (g.po == 1 || level >= N-1 || skip == 1) {
+				// reduce and put into hash.
+				// TODO: include reduction
+				// we know to roll back a level if we are on the highest valid ID
+				// for NFOs (counting from 0). 
+				if (threadIdx.x == 0)
+					stck[level].x += 1;
+				__syncthreads();
+				if (stck[level].x < g.nfo && skip == 0) {
+					// everyone writes the same value
+					stck[level].y = FIN(ckt.fanout,g.offset,g.nfi+stck[level].x);
+				} else { 
+					// rolling back a level
+					// reset "stack pointer" to 0 for current level.
+					stck[level].x = 0;
+					stck[level].y = 0;
+					// move back to previous level
+					if (threadIdx.x == 0)
+						printf("Decrementing level from %d\n", level);
+					level--;
+					if (threadIdx.x == 0) {
+						stck[level].x += 1;
+						stck[level].y = FIN(ckt.fanout,g.offset,stck[level].x+g.nfi);
+					}
+					__syncthreads();
+					gid = stck[level].y;
+					continue;
+					// normal case, 
+				}
+				__syncthreads();
+			}
+			gid = stck[level].y;
+			if (g.po != 1 && level < N-1) {
+				level++;
+			}
+		}
 	}
 }
-
 /* Reduction strategy - X/1024 pattern blocks, Y blocks of lines/gates. Each
  * block gets the minimum ID within the block and places it into a temporary
  * location [BLOCK_X,BLOCK_Y] 
@@ -293,6 +335,7 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 	size_t remaining_blocks = mark.height();
 	const size_t block_x = (mark.gpu(chunk).width / MERGE_SIZE) + ((mark.gpu(chunk).width % MERGE_SIZE) > 0);
 	size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
+	block_y = 1; // only do one gid for testing
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting on memory allocation
 	do {
 		dim3 blocks(block_x, block_y);
