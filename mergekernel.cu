@@ -33,7 +33,7 @@ __host__ __device__ inline uchar2 operator*=(const uchar2 &lhs, const bool &rhs)
 }
 // "optimized" for single-threaded access,
 template <int N>
-__device__ void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc,  hashkey<N> key, int2 data) {
+__device__ inline void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc,  hashkey<N> key, int2 data) {
 	uint8_t hashes = 0;
 	segment_t<N> evict; // hopefully we won't need this.
 	evict.key.k[0] = 1;
@@ -44,10 +44,10 @@ __device__ void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc, 
 	int pred = 1;
 	while (evict.key.k[0] != 0) {
 		uint32_t hash = getHash<N>(key,hashfunc.g_hashlist[hashes],hashfunc.slots);
-		//printf("Trying to set mutex for position %d, (%d, %d), in hashmap, which is currnetly %d\n",hash, key.k[0], key.k[1], storage[hash].mutex );
+		printf("Trying to set mutex for position %d, (%d, %d), in hashmap, which is currnetly %d\n",hash, key.k[0], key.k[1], storage[hash].mutex );
 		while (pred && hashes < hashfunc.max) {
 			pred = 1;
-			while (pred != 0) { // spinlock, hate it but what can we do?
+			while (pred != 0) { // spinlock to avoid collisions
 				pred = atomicCAS(&(storage[hash].mutex), 0, 1) != 0;
 			}
 			if (key != storage[hash].key && isLegal<N>(storage[hash].key)) { // divergence possibility here.
@@ -93,7 +93,7 @@ __device__ void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc, 
 template <int N> 
 __device__ inline void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc, segment_t<N> tgt) { insertIntoHash(storage,hashfunc,tgt.key, tgt.pid);}
 // For a single block, determine the lowest tid for high/low, and return it.
-__device__ int2 devSingleReduce(uchar2 pred, const uint32_t& startPattern, const uint32_t& pid, volatile int* mx, volatile int* my) {
+__device__ inline int2 devSingleReduce(const uchar2 pred, const uint32_t& startPattern, const uint32_t& pid, volatile int* mx, volatile int* my) {
 	int2 sdata = make_int2(-1,-1);
 
 	int32_t low_x = __ffs(__ballot(pred.x));
@@ -106,10 +106,8 @@ __device__ int2 devSingleReduce(uchar2 pred, const uint32_t& startPattern, const
 	// at this point, we have the position of the lowest in the local warp.
 	__syncthreads(); // should be safe.
 	if (threadIdx.x < 32) {
-		pred.x = mx[threadIdx.x] >= 0;
-		pred.y = my[threadIdx.x] >= 0;
-		low_x = __ffs(__ballot(pred.x)) - 1;
-		low_y = __ffs(__ballot(pred.y)) - 1;
+		low_x = __ffs(__ballot(mx[threadIdx.x] >= 0)) - 1;
+		low_y = __ffs(__ballot(my[threadIdx.x] >= 0)) - 1;
 
 		if (threadIdx.x == 0) {
 			sdata.x = (low_x >= 0 ? mx[low_x] : -1)-1;
@@ -118,8 +116,6 @@ __device__ int2 devSingleReduce(uchar2 pred, const uint32_t& startPattern, const
 		mx[threadIdx.x] = -1;
 		my[threadIdx.x] = -1;
 	}
-	if (threadIdx.x == 0) 
-		printf("Reached end of reduction.\n");
 	return sdata;
 
 }
@@ -167,8 +163,8 @@ __global__ void kernSegmentReduce(const g_GPU_DATA sim, const  g_GPU_DATA mark, 
 				pred.y = (REF2D(uint8_t, mark.data, mark.pitch, pid, gid) > 0 && REF2D(uint8_t, sim.data, sim.pitch, pid, gid) == T1);
 			}
 			if (stck[level].x >= g.nfo) {
-				if (threadIdx.x == 0)
-					printf("Not a legal NFO. Aborting.\n");
+			//	if (threadIdx.x == 0)
+			//		printf("Not a legal NFO. Aborting.\n");
 				level--;
 				continue;
 			}	
@@ -189,10 +185,10 @@ __global__ void kernSegmentReduce(const g_GPU_DATA sim, const  g_GPU_DATA mark, 
 				// reduce and put into hash.
 				// TODO: include reduction step
 				if (!skip) {
-					scratch.pid = devSingleReduce(pred,startPattern,pid,mx,my);				// we know to roll back a level if we are on the highest valid ID
+					//scratch.pid = devSingleReduce(pred,startPattern,pid,mx,my);				// we know to roll back a level if we are on the highest valid ID
 					if (threadIdx.x == 0) { // only thread 0 has the lowest value here
 						// place the scratch value into hash IFF it has a lower value than something else with the same key.
-						printf("Inserting segment (%d,%d) into hashmap\n", scratch.key.k[0],scratch.key.k[1]);
+						//printf("Inserting segment (%d,%d) into hashmap\n", scratch.key.k[0],scratch.key.k[1]);
 						insertIntoHash<N>(hashmap,hashfunc,scratch);
 					}
 
@@ -341,7 +337,7 @@ __global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, 
 	g_odata[gid].y = j;
 
 }
-
+#define BLOCK_STEP 1
 float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t chunk, uint32_t ext_startPattern, hashfuncs& dc_h, void** hash, uint32_t hashsize) {
 #ifndef NTIMING
 	float elapsed;
@@ -356,6 +352,7 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 		cudaMalloc(&(dc_h.g_hashlist),sizeof(uint32_t)*dc_h.max);
 		cudaMemcpy(dc_h.g_hashlist, dc_h.h_hashlist, sizeof(uint32_t)*dc_h.max,cudaMemcpyHostToDevice);
 	}
+	ckt.print();
 	if (*hash == NULL) { 
 		cudaMalloc(&tmp_hash, sizeof(segment_t<2>)*hashsize(21));
 		cudaMemset(tmp_hash, 0, sizeof(segment_t<2>)*hashsize(21));
@@ -365,7 +362,7 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 	uint32_t count = 0;
 	size_t remaining_blocks = mark.height();
 	const size_t block_x = (mark.gpu(chunk).width / MERGE_SIZE) + ((mark.gpu(chunk).width % MERGE_SIZE) > 0);
-	size_t block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
+	size_t block_y = (remaining_blocks > BLOCK_STEP ? BLOCK_STEP : remaining_blocks);
 //	block_y = 1; // only do one gid for testing
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting on memory allocation
 	do {
@@ -373,10 +370,10 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 		kernSegmentReduce<2><<<blocks, MERGE_SIZE>>>(toPod(sim), toPod(mark), count, toPod(ckt), startPattern, hashmap, dc_h);
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 		dim3 blocksmin(1, block_y);
-		count+=65535;
-		if (remaining_blocks < 65535) { remaining_blocks = 0;}
-		if (remaining_blocks > 65535) { remaining_blocks -= 65535; }
-		block_y = (remaining_blocks > 65535 ? 65535 : remaining_blocks);
+		count+=BLOCK_STEP;
+		if (remaining_blocks < BLOCK_STEP) { remaining_blocks = 0;}
+		if (remaining_blocks > BLOCK_STEP) { remaining_blocks -= BLOCK_STEP; }
+		block_y = (remaining_blocks > BLOCK_STEP ? BLOCK_STEP : remaining_blocks);
 		cudaDeviceSynchronize();
 	} while (remaining_blocks > 0);
 	cudaDeviceSynchronize();
