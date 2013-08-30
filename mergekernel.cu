@@ -44,10 +44,10 @@ __device__ void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc, 
 	int pred = 1;
 	while (evict.key.k[0] != 0) {
 		uint32_t hash = getHash<N>(key,hashfunc.g_hashlist[hashes],hashfunc.slots);
+		//printf("Trying to set mutex for position %d, (%d, %d), in hashmap, which is currnetly %d\n",hash, key.k[0], key.k[1], storage[hash].mutex );
 		while (pred && hashes < hashfunc.max) {
 			pred = 1;
 			while (pred != 0) { // spinlock, hate it but what can we do?
-				printf("Trying to set mutex for position %d, (%d, %d), in hashmap, which is currnetly %d\n",hash, key.k[0], key.k[1], storage[hash].mutex );
 				pred = atomicCAS(&(storage[hash].mutex), 0, 1) != 0;
 			}
 			if (key != storage[hash].key && isLegal<N>(storage[hash].key)) { // divergence possibility here.
@@ -192,6 +192,7 @@ __global__ void kernSegmentReduce(const g_GPU_DATA sim, const  g_GPU_DATA mark, 
 					scratch.pid = devSingleReduce(pred,startPattern,pid,mx,my);				// we know to roll back a level if we are on the highest valid ID
 					if (threadIdx.x == 0) { // only thread 0 has the lowest value here
 						// place the scratch value into hash IFF it has a lower value than something else with the same key.
+						printf("Inserting segment (%d,%d) into hashmap\n", scratch.key.k[0],scratch.key.k[1]);
 						insertIntoHash<N>(hashmap,hashfunc,scratch);
 					}
 
@@ -209,8 +210,6 @@ __global__ void kernSegmentReduce(const g_GPU_DATA sim, const  g_GPU_DATA mark, 
 					stck[level].x = 0;
 					stck[level].y = 0;
 					// move back to previous level
-					if (threadIdx.x == 0)
-						printf("Decrementing level from %d\n", level);
 					level--;
 					// retrieve previous cached GID and increment NFO count.
 					if (level >= 0)
@@ -359,6 +358,7 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 	}
 	if (*hash == NULL) { 
 		cudaMalloc(&tmp_hash, sizeof(segment_t<2>)*hashsize(21));
+		cudaMemset(tmp_hash, 0, sizeof(segment_t<2>)*hashsize(21));
 		std::cerr << "Allocating hashmap space of " << hashsize(21) << ".\n";
 	}
 	segment_t<2>* hashmap = (segment_t<2>*)tmp_hash;
