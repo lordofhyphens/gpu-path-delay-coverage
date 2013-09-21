@@ -1,3 +1,6 @@
 [submodule "util"]
 	path = util
 	url = ssh://lenox@valkyrie.dynalias.org/shared/backup/research/gpu/util.git
+[submodule "moderngpu"]
+	path = moderngpu
+	url = https://github.com/NVlabs/moderngpu.git

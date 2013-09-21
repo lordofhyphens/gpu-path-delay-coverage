@@ -2,7 +2,8 @@
 #include <cuda.h>
 #include "util/gpuckt.h"
 #include "util/gpudata.h"
-#include "util/lookup.h"
+#include "util/segment.cuh"
+#include "util/utility.cuh"
 #undef MERGE_SIZE
 #undef LOGEXEC
 #define MERGE_SIZE 512
@@ -11,222 +12,74 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
         exit( EXIT_FAILURE );
     }
-}
+ }
 #define HANDLE_ERROR( err ) (HandleMergeError( err, __FILE__, __LINE__ ))
-#define MIN(A,B,AR) ( \
-		(AR[A] > 0)*(AR[A] < AR[B])*AR[A] + \
-		(AR[B] > 0)*(AR[B] < AR[A])*AR[B] + \
-		AR[A]*(AR[B]==0) + \
-		AR[B]*(AR[A]==0) )
-#undef MIN
-#define MIN(A,B) ( \
-		(A > 0)*(A < B)*A + \
-		(B > 0)*(B < A)*B + \
-		A*(B==0) + \
-		B*(A==0) )
-#define MIN_GEN(L,R) ( \
-		((L) > 0)*((L) < (R))*(L) + \
-		((R) > 0)*((R) < (L))*(R) )
-#undef GPU_DEBUG
-__host__ __device__ inline uchar2 operator*=(const uchar2 &lhs, const bool &rhs) {
-	return make_uchar2(lhs.x*rhs, lhs.y*rhs);
+
+__host__ __device__ inline int32_t min_pos(int32_t a, int32_t b) { return min((unsigned)a, (unsigned)b);}
+__host__ __device__ inline int2 min_pos(int2 a, int2 b) { return make_int2(min((unsigned)a.x, (unsigned)b.x),min((unsigned)a.y,(unsigned)b.y));}
+
+template <unsigned int blockSize>
+__device__ void warpReduceMin(volatile int2 * sdata , unsigned int tid) {
+	if (blockSize >= 64) min_pos(sdata[tid], sdata[tid + 32]) ; 
+	if (blockSize >= 32) min_pos(sdata[tid], sdata[tid + 16]) ;
+	if (blockSize >= 16) min_pos(sdata[tid],sdata[tid + 8]);
+	if (blockSize >= 8) min_pos(sdata[tid], sdata[tid + 4]);
+	if (blockSize >= 4) min_pos(sdata[tid], sdata[tid + 2]);
+	if (blockSize >= 2) min_pos(sdata[tid], sdata[tid + 1]);
 }
-// "optimized" for single-threaded access,
-template <int N>
-__device__ inline void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc,  hashkey<N> key, int2 data) {
-	uint8_t hashes = 0;
-	segment_t<N> evict; // hopefully we won't need this.
-	evict.key.k[0] = 1;
-	// repeat the insertion process while the thread still has an item.
-	// Performance will be lower on non-Kepler architectures.
-	// due to less efficient memory atomics.
-	// If there is a collision, evict and try again with the next hash.
-	int pred = 1;
-	while (evict.key.k[0] != 0) {
-		uint32_t hash = getHash<N>(key,hashfunc.g_hashlist[hashes],hashfunc.slots);
-		printf("Trying to set mutex for position %d, (%d, %d), in hashmap, which is currnetly %d\n",hash, key.k[0], key.k[1], storage[hash].mutex );
-		while (pred && hashes < hashfunc.max) {
-			pred = 1;
-			while (pred != 0) { // spinlock to avoid collisions
-				pred = atomicCAS(&(storage[hash].mutex), 0, 1) != 0;
-			}
-			if (key != storage[hash].key && isLegal<N>(storage[hash].key)) { // divergence possibility here.
-				hashes++; // try another hash function.
-			}
-			// Loop until every thread gets a mutex on something,
-			// or we run out of functions.
-		}
-		if (pred) { 
-			// Something is seriously wrong here. It may be possible that the mutexing 
-			// thread will give it up and we'll boot it out eventually.
-			printf("Somehow, we managed to have %d hash collisions with concurrent executions and ran out of hash functions. Trying again.\n", N);
-			hashes = 0;
-			continue;
-		}
-		// Value of hash should be different in different threads. 
-		// We're allowed to write to the structure now.
-		evict = storage[hash]; evict.mutex = 0;
-		if (evict.key == key) {
-			for (int j = 0; j < N; j++) {
-				storage[hash].pid.x = (evict.pid.x >= 0 && data.x >= 0 ? min(evict.pid.x, data.x) : max(evict.pid.x,data.x));
-				storage[hash].pid.y = (evict.pid.y >= 0 && data.y >= 0 ? min(evict.pid.y, data.y) : max(evict.pid.y,data.y));
-			}
-		}
-		else {
-			storage[hash].key = key;
-			storage[hash].pid = data;
-		}
-		atomicExch(&(storage[hash].mutex),0); // reset the mutex on this entry in memory.
-		// check to see whether or not the eviction booted out a legal value that was not this key.
-		// if it has, need to boot it out.
-		if (evict.key != key && isLegal(evict.key)) {
-			key = evict.key; data = evict.pid;
-			hashes++;
-		}
-		if (hashes >= hashfunc.max) {
-		 	// We ran out of hashes, reset? 
-			// Probably a terrible idea.
-			hashes = 0;
-		}
-	}
-}
-template <int N> 
-__device__ inline void insertIntoHash(segment_t<N>* storage, const hashfuncs hashfunc, segment_t<N> tgt) { insertIntoHash(storage,hashfunc,tgt.key, tgt.pid);}
-// For a single block, determine the lowest tid for high/low, and return it.
-__device__ inline int2 devSingleReduce(const uchar2 pred, const uint32_t& startPattern, const uint32_t& pid, volatile int* mx, volatile int* my) {
-	int2 sdata = make_int2(-1,-1);
+ inline uint32_t pred_gate(uint32_t a, uint32_t b) { return (((a) << 31) >> 31)&a; }
+// Read the segment from the entry, determine the earliest pattern that marks it, and then write that (atomically).
+// (likely) RESTRICTION: blockDim.x MUST be a power of 2
+template <int N, int blockSize>
+__global__ void kernSegmentReduce(segment<N>* seglist, const GPU_DATA_type<coalesce_t> mark, const GPU_DATA_type<coalesce_t> sim, uint32_t startSegment, uint32_t startPattern) {
+	__shared__ int2 midWarp[blockSize];
 
-	int32_t low_x = __ffs(__ballot(pred.x));
-	int32_t low_y = __ffs(__ballot(pred.y));
-	const uint8_t warp_id = threadIdx.x / (blockDim.x / 32); 
+	uint32_t pid = threadIdx.x + blockIdx.x*blockDim.x;
+	uint32_t real_pid = pid * 4 + startPattern; // unroll constant for coalesce_t
+	uint32_t sid = blockIdx.y+startSegment;
+	const uint32_t warp_id = (threadIdx.x >> 5);// threadId / 32 should be the warp #. 32 = 2^5. 
+	int2 simple = make_int2(-1,-1);
+	if (pid < mark.height) {
+		startPattern += blockIdx.x*blockDim.x;
+		// In each thread, get 4 results-worth. 
+		// This should unroll, as the trip count is known at compile time.
+		// Get a batch of mark and sim results
+		coalesce_t mark_set = REF2D(mark, threadIdx.x, seglist[sid].key.num[0]);
+		#pragma unroll
+		for (uint8_t i = 1; i < N; i++) {
+			// AND each mark result together.
+			mark_set.packed &= REF2D(mark, threadIdx.x, seglist[sid].key.num[i]).packed;
+		}
+		// check to see which position got marked. This will be one of 4 possible positions:
+		// 1, 9, 17, 25 (as returned by ffs).
+		// Post brev:
+		// 32 = offset 0
+		// 24 = offset 1
+		// 16 = offset 2 // 8 = offset 3
+		int offset = 5 - (__ffs(__brev(mark_set.packed)) >> 3);
+		int this_pid = pred_gate((offset < 5), real_pid + offset); // 
+		// actual PID + 1 we are comparing against or 0 if not found.
+		// Place in shared memory, decrementing to correct real PID.
+		midWarp[threadIdx.x].x = pred_gate((REF2D(sim,threadIdx.x,seglist[sid].key.num[0]).packed & T0 > 0), this_pid) - 1;
+		midWarp[threadIdx.x].y = pred_gate((REF2D(sim,threadIdx.x,seglist[sid].key.num[0]).packed & T1 > 0), this_pid) - 1;
 
-	// place lowest valid ID for x/y 
-	mx[warp_id] = (low_x > 0 ? low_x + (int32_t)startPattern + (warp_id * 32) : -1);
-	my[warp_id] = (low_y > 0 ? low_y + (int32_t)startPattern + (warp_id * 32) : -1);
-	// at this point, we have the position of the lowest in the local warp.
-	__syncthreads(); // should be safe.
-	if (threadIdx.x < 32) {
-		low_x = __ffs(__ballot(mx[threadIdx.x] >= 0)) - 1;
-		low_y = __ffs(__ballot(my[threadIdx.x] >= 0)) - 1;
-
+		// Now do the reduction inside the same warp, looking for min-positive.
+		if (blockSize >= 512) { if (threadIdx.x < 256) { min_pos(midWarp[threadIdx.x], midWarp[threadIdx.x+256]); } __syncthreads();} 
+		if (blockSize >= 256) { if (threadIdx.x < 128) { min_pos(midWarp[threadIdx.x], midWarp[threadIdx.x+128]); } __syncthreads();} 
+		if (blockSize >= 128) { if (threadIdx.x < 64) { min_pos(midWarp[threadIdx.x], midWarp[threadIdx.x+64]); } __syncthreads();} 
+		if (threadIdx.x < 32) warpReduceMin(midWarp,threadIdx.x);
 		if (threadIdx.x == 0) {
-			sdata.x = (low_x >= 0 ? mx[low_x] : -1)-1;
-			sdata.y = (low_y >= 0 ? my[low_y] : -1)-1;
+			// brief loop until we know that the item we wrote with AtomicMin is the correct positive minimum
+			int2 candidate = midWarp[0];
+			int2 evict = make_int2(-1,-1);
+
+			evict.x = atomicMin(&(seglist[sid].pattern.x), (unsigned)(candidate.x));
+			evict.y = atomicMin(&(seglist[sid].pattern.y), (unsigned)(candidate.y));
+
+			printf("Lowest for this block: (%d, %d)", midWarp[0].x, midWarp[0].y);
 		}
-		mx[threadIdx.x] = -1;
-		my[threadIdx.x] = -1;
 	}
-	return sdata;
-
-}
-
-/* 
-Stack storage for recursive function
-Array of int2. 
-	x=>the relative fanout for that level
-	y=>ID of that fanout
-	So stck[0].x points to the next level used of the 0th gate in the stack, and stck[0].y is the unique ID for thate gate.
-	Tree descent:
-		Move to next NFO immediately if available and not at end of segment.
-		if at segment end, reduce, write segment, modify stack pointer
 	
-	Modify stack pointer:
-		If pointer for current level is at end of available NFOs, reset current pointer to 0, decrement level
-	Possible optimization: 
-		skip tree if current gate is not marked. Requires a broadcast to all other nodes.
-*/
-template <int N>
-__global__ void kernSegmentReduce(const g_GPU_DATA sim, const  g_GPU_DATA mark, uint32_t startGate, const GPUCKT ckt, uint32_t startPattern, segment_t<N>* hashmap, const hashfuncs hashfunc) {
-	// Initial gate, used to mark off of others
-	uint32_t gid = blockIdx.y+startGate;
-	uint32_t pid = threadIdx.x + (blockIdx.x*blockDim.x);
-	__shared__ int mx[32];
-	__shared__ int my[32];
-	__shared__ int2 stck[N];
-	__shared__ int skip;
-	int level = 0; 
-	uchar2 pred = make_uchar2(0,0);
-
-	if (pid < sim.width) { // TODO: Ensure that this is the correct dimension
-		if (threadIdx.x == 0)
-			printf("Starting on gid %d, level %d\n",gid, level);
-		segment_t<N> scratch;
-		// end once the pointer moves past the NFOs 
-		stck[level].x = 0;
-		__syncthreads();
-		while (level >= 0) {
-			// get current graph reference
-			const GPUNODE& g = ckt.graph[gid];
-			if (level == 0) {
-				// figure out whether or not to start at the first or second
-				pred.x = (REF2D(uint8_t, mark.data, mark.pitch, pid, gid) > 0 && REF2D(uint8_t, sim.data, sim.pitch, pid, gid) == T0);
-				pred.y = (REF2D(uint8_t, mark.data, mark.pitch, pid, gid) > 0 && REF2D(uint8_t, sim.data, sim.pitch, pid, gid) == T1);
-			}
-			if (stck[level].x >= g.nfo) {
-			//	if (threadIdx.x == 0)
-			//		printf("Not a legal NFO. Aborting.\n");
-				level--;
-				continue;
-			}	
-			if (threadIdx.x == 0) {
-				stck[level].y = FIN(ckt.fanout,g.offset,stck[level].x+g.nfi);
-				printf("Working on gate %d, level %d. (%d,%d); NFO[%d]: %d\n",gid,level,stck[level].x,stck[level].y, gid,g.nfo);
-			}
-			__syncthreads();
-			
-			// place current gid in possible segment, current level.
-			scratch.key.k[level] = gid;
-			// end of segment
-			// criteria: current g is a po, or the current level
-			// is N-1 (counting from 0, so segment of length 2 would have
-			// levels 0, 1).
-			pred *= (REF2D(uint8_t, mark.data, mark.pitch, pid, gid) > 0);
-			if (g.po == 1 || level >= N-1 || skip == 1) {
-				// reduce and put into hash.
-				// TODO: include reduction step
-				if (!skip) {
-					//scratch.pid = devSingleReduce(pred,startPattern,pid,mx,my);				// we know to roll back a level if we are on the highest valid ID
-					if (threadIdx.x == 0) { // only thread 0 has the lowest value here
-						// place the scratch value into hash IFF it has a lower value than something else with the same key.
-						//printf("Inserting segment (%d,%d) into hashmap\n", scratch.key.k[0],scratch.key.k[1]);
-						insertIntoHash<N>(hashmap,hashfunc,scratch);
-					}
-
-				}
-				// for NFOs (counting from 0). 
-				if (threadIdx.x == 0)
-					stck[level].x += 1;
-				__syncthreads();
-				if (stck[level].x < g.nfo && skip == 0) {
-					// everyone writes the same value
-					stck[level].y = FIN(ckt.fanout,g.offset,g.nfi+stck[level].x);
-				} else { 
-					// rolling back a level
-					// reset "stack pointer" to 0 for current level.
-					stck[level].x = 0;
-					stck[level].y = 0;
-					// move back to previous level
-					level--;
-					// retrieve previous cached GID and increment NFO count.
-					if (level >= 0)
-						gid = stck[level].y; // retrieve the GID cached that refers to the parent.
-					if (threadIdx.x == 0) {
-						stck[level].x += 1; // increment the previous level's nfo pointer
-					}
-					__syncthreads();
-					continue;
-					// normal case, 
-				}
-				__syncthreads();
-			}
-			uint32_t tmp_gid = gid; // cache current GID.
-			gid = stck[level].y; // set gid to the next 
-			stck[level].y = tmp_gid;
-			if (g.po != 1 && level < N-1) {
-				level++;
-			}
-		}
-	}
 }
 /* Reduction strategy - X/1024 pattern blocks, Y blocks of lines/gates. Each
  * block gets the minimum ID within the block and places it into a temporary
@@ -279,86 +132,32 @@ __global__ void kernReduce(uint8_t* input, uint8_t* sim_input, size_t sim_pitch,
 #ifdef GPU_DEBUG
 				printf("%s, %d: low[%d]: (%d,%d)\n", __FILE__, __LINE__, gid, sdata.x, sdata.y);
 #endif
-				REF2D(int2,meta,mpitch,blockIdx.x,blockIdx.y) = sdata; 
+				REF2D(meta,mpitch,blockIdx.x,blockIdx.y) = sdata; 
 			}
 		}
 
 	}
 }
 
-__global__ void kernSetMin(int2* g_odata, int2* intermediate, uint32_t i_pitch, uint32_t length, uint32_t startGate, uint32_t startPattern, uint16_t chunk) {
-	 uint32_t gid = blockIdx.y + startGate;
-	// scan sequentially until a thread ID is discovered;
-	int32_t i = 0;
-	int32_t j = 0;
-	while (REF2D(int2, intermediate, i_pitch, i, blockIdx.y).x < 0 && i < length) {
-		i++;
-	}
-	while (REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y < 0 && j < length) {
-		j++;
-	}
-	if (i < length) {
-		if (chunk > 0) {
-			i = (g_odata[gid].x == -1 ? REF2D(int2, intermediate, i_pitch, i, blockIdx.y).x : g_odata[gid].x);
-		} else {
-			i = REF2D(int2, intermediate, i_pitch, i, blockIdx.y).x;
-		}
-	} else {
-		if (chunk == 0) {
-			i = -1;
-		} else {
-			i = g_odata[gid].x;
-		}
-	}
-#ifdef GPU_DEBUG
-	printf("%s, %d: g_odata[%d]: (%d,%d)\n", __FILE__, __LINE__, gid,i, j);
-#endif
-	if (j < length) {
-		if (chunk > 0) {
-			if (g_odata[gid].y >= 0) {
-				j = g_odata[gid].y;
-			} else {
-				j = REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y;
-			}
-		} else {
-					j = REF2D(int2, intermediate, i_pitch, j, blockIdx.y).y;
-		}
-	} else {
-			if (chunk == 0) {
-			j = -1;
-		} else {
-			j = g_odata[gid].y;
-		}
-	}
-#ifdef GPU_DEBUG
-	printf("%s, %d: g_odata[%d]: (%d,%d)\n", __FILE__, __LINE__, gid,i, j);
-#endif
-	g_odata[gid].x = i;
-	g_odata[gid].y = j;
-
-}
 #define BLOCK_STEP 1
-float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t chunk, uint32_t ext_startPattern, hashfuncs& dc_h, void** hash, uint32_t hashsize) {
+float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t chunk, uint32_t ext_startPattern, void** seglist) {
 #ifndef NTIMING
 	float elapsed;
-	void* tmp_hash = *hash;
+	segment<2>* tmp_seglist = (segment<2>*)*seglist;
 	uint32_t startPattern = ext_startPattern;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	// assume that the 0th entry is the widest, which is true given the chunking method.
 #endif // NTIMING
 	// if g_hashlist == NULL, copy the hash list to the GPU
-	if (dc_h.g_hashlist == NULL) {
-		cudaMalloc(&(dc_h.g_hashlist),sizeof(uint32_t)*dc_h.max);
-		cudaMemcpy(dc_h.g_hashlist, dc_h.h_hashlist, sizeof(uint32_t)*dc_h.max,cudaMemcpyHostToDevice);
-	}
 	ckt.print();
-	if (*hash == NULL) { 
-		cudaMalloc(&tmp_hash, sizeof(segment_t<2>)*hashsize(21));
-		cudaMemset(tmp_hash, 0, sizeof(segment_t<2>)*hashsize(21));
-		std::cerr << "Allocating hashmap space of " << hashsize(21) << ".\n";
+	if (*seglist == NULL) { 
+		cudaMalloc(&tmp_seglist, sizeof(segment<2>)*300);
+		cudaMemset(tmp_seglist, 0, sizeof(segment<2>)*300);
+		std::cerr << "Allocating hashmap space of " << 300 << ".\n";
 	}
-	segment_t<2>* hashmap = (segment_t<2>*)tmp_hash;
+	segment<2>* segs = (segment<2>*)tmp_seglist;
+	uint32_t segcount = 0;
 	uint32_t count = 0;
 	size_t remaining_blocks = mark.height();
 	const size_t block_x = (mark.gpu(chunk).width / MERGE_SIZE) + ((mark.gpu(chunk).width % MERGE_SIZE) > 0);
@@ -367,7 +166,7 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting on memory allocation
 	do {
 		dim3 blocks(block_x, block_y);
-		kernSegmentReduce<2><<<blocks, MERGE_SIZE>>>(toPod(sim), toPod(mark), count, toPod(ckt), startPattern, hashmap, dc_h);
+		kernSegmentReduce<2,int2><<<blocks, MERGE_SIZE>>>(segs, toPod<coalesce_t>(sim), toPod<coalesce_t>(mark), segcount, startPattern);
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 		dim3 blocksmin(1, block_y);
 		count+=BLOCK_STEP;

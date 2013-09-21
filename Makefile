@@ -5,10 +5,10 @@ GPCXX=${CUDA_DIR}/bin/nvcc
 header= simkernel.h markkernel.h coverkernel.h mergekernel.h 
 logfile=log.txt
 main=main.cc
-src=simkernel.cu markkernel.cu mergekernel.cu coverkernel.cu gpu_hashmap.cu
+src=simkernel.cu markkernel.cu mergekernel.cu coverkernel.cu
 obj=$(src:.cu=.o) $(main:.cc=.o)
 out=fcount
-CPFLAGS=-I${CUDA_DIR}/include -lrt -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -fopenmp #-Werror # -DNDEBUG #-DNTIMING
+CPFLAGS=-I${CUDA_DIR}/include -lrt -I./moderngpu/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -fopenmp #-Werror # -DNDEBUG #-DNTIMING
 CFLAGS=${CPFLAGS}
 NVCFLAGS=-g -G -arch=sm_20 --profile -O2 $(CPFLAGS:%=-Xcompiler %) -ccbin ${CXX} -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
 PYLIB=_fsim.so
