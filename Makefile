@@ -5,7 +5,7 @@ GPCXX=${CUDA_DIR}/bin/nvcc
 header= simkernel.h markkernel.h coverkernel.h mergekernel.h 
 logfile=log.txt
 main=main.cc
-src=simkernel.cu markkernel.cu mergekernel.cu coverkernel.cu
+src=simkernel.cu markkernel.cu mergekernel.cu #coverkernel.cu
 obj=$(src:.cu=.o) $(main:.cc=.o)
 out=fcount
 CPFLAGS=-I${CUDA_DIR}/include -lrt -I./moderngpu/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -fopenmp #-Werror # -DNDEBUG #-DNTIMING

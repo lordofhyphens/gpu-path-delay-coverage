@@ -6,9 +6,8 @@
 #include "simkernel.h"
 #include "markkernel.h"
 #include "mergekernel.h"
-#include "coverkernel.h"
+//#include "coverkernel.h"
 #include "util/subckt.h"
-#include "gpu_hashmap.cu.h"
 #include <utility>
 #include <iostream>
 #include <fstream>
@@ -43,12 +42,6 @@ int main(int argc, const char* argv[]) {
 	std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 	std::clog << "Circuit size is: " << ckt.size() << "Levels: " << ckt.levels() << std::endl;
 
-
-	uint32_t h[HASHLENGTH];
-	for (int i = 0;i < HASHLENGTH; i++) {
-		h[i] = rand();
-	}
-	hashfuncs hashlist = make_hashfuncs(NULL,h,HASHLENGTH, HASHLENGTH);
 
 	for (int32_t i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
 		
@@ -88,7 +81,7 @@ int main(int argc, const char* argv[]) {
 			uint64_t *coverage = new uint64_t; 
 			*coverage = 0;
 			std::clog << "Simulation ...";
-			sim1 = gpuRunSimulation(*sim_results, *vec, ckt, chunk, startPattern);
+			sim1 = gpuRunSimulation(*sim_results, *vec, ckt, chunk, startPattern, chunk+1 == sim_results->size());
 			std::clog << "..complete." << std::endl;
 			gpu += sim1;
 			std::cerr << "Simulation: " << sim1 << " ms" << std::endl;
@@ -99,15 +92,14 @@ int main(int argc, const char* argv[]) {
 			gpu += mark;
 			std::cerr << "     Mark: " << mark << " ms" << std::endl;
 			
-			//merge = gpuMergeHistory(*mark_results, *sim_results, &merge_ids, chunk, startPattern);  
-			merge = gpuMergeSegments(*mark_results, *sim_results, ckt, chunk, startPattern, hashlist, &dc_segs, 21);
+			merge = gpuMergeSegments(*mark_results, *sim_results, ckt, chunk, startPattern, &dc_segs);
 			gpu += merge;
 			std::cerr << " Merge: " << merge << " ms" << std::endl;
 #ifdef LOGEXEC
 			debugMergeOutput(ckt.size(), merge_ids, "gpumerge.log");
 #endif //LOGEXEC
 			sim_results->unload();
-			cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage, chunk, startPattern);
+//			cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage, chunk, startPattern);
 			*totals += *coverage;
 			std::cerr << " Cover: " << cover << " ms" << std::endl;
 			std::cerr << "GPU Coverage: " << *coverage << ", total: "<< *totals << std::endl;
