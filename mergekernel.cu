@@ -66,7 +66,7 @@ namespace mgpu {
 const unsigned int BLOCK_STEP = 1; // # of SIDs to process at once.
 
 __host__ __device__ inline int32_t min_pos(int32_t a, int32_t b) { return min((unsigned)a, (unsigned)b);}
-__host__ __device__ inline int2 min_pos(int2 a, int2 b) { return make_int2(min((unsigned)a.x, (unsigned)b.x),min((unsigned)a.y,(unsigned)b.y));}
+__host__ __device__ inline int2 min_pos(int2 a, int2 b) { return make_int2(min_pos((unsigned)a.x, (unsigned)b.x),min_pos((unsigned)a.y,(unsigned)b.y));}
 
 template <unsigned int blockSize>
 __device__ void warpReduceMin(volatile int2 * sdata , unsigned int tid) {
@@ -77,13 +77,13 @@ __device__ void warpReduceMin(volatile int2 * sdata , unsigned int tid) {
 	if (blockSize >= 4) min_pos(sdata[tid], sdata[tid + 2]);
 	if (blockSize >= 2) min_pos(sdata[tid], sdata[tid + 1]);
 }
-
-__host__ __device__ inline uint32_t pred_gate(uint32_t a, bool b) { return 0xFFFFFFFFU >> (32-b)&a; }
+__host__ __device__ inline uint32_t pred_gate(uint32_t a, bool b) { return ((unsigned)(0-(!b))) &a; }
 // Read the segment from the entry, determine the earliest pattern that marks it, and then write that (atomically).
 // (likely) RESTRICTION: blockDim.x MUST be a power of 2
 template <int N, unsigned int blockSize>
 __global__ void kernSegmentReduce(segment<N, int2>* seglist, const GPU_DATA_type<coalesce_t> mark, const GPU_DATA_type<coalesce_t> sim, uint32_t startSegment, uint32_t startPattern) {
 	__shared__ int2 midWarp[blockSize];
+	midWarp[threadIdx.x] = make_int2(-1,-1);
 
 	uint32_t pid = threadIdx.x + blockIdx.x*blockDim.x;
 	uint32_t real_pid = pid * 4 + startPattern; // unroll constant for coalesce_t
@@ -107,13 +107,25 @@ __global__ void kernSegmentReduce(segment<N, int2>* seglist, const GPU_DATA_type
 		// 32 = offset 0
 		// 24 = offset 1
 		// 16 = offset 2 // 8 = offset 3
+		// We OR the original set with itself, shifted and then mask off the garbage.
 		mark_set =  (mark_set | (mark_set >> 7) | (mark_set >> 14) | (mark_set >> 20)) & 0x0000000F;
+		// reversing the bits puts the lowest bit first, 
 		mark_set = __brev(mark_set);
+		//which lets us get its position with ffs.
 		unsigned int offset = (32 - __ffs(mark_set));
-		unsigned int sim_type = (REF2D(sim, pred_gate(offset,offset>5)+real_pid, seglist[sid].key.num[0]) & (0x03 << offset*8)) >> (offset * 8);
-		midWarp[threadIdx.x].x = pred_gate((offset+real_pid)+1, sim_type == T0) - 1;
-		midWarp[threadIdx.x].y = pred_gate((offset+real_pid)+1, sim_type == T1) - 1;
-		printf("Single-thread results: (%d, %d) %8x, = %d (%d,%d) %d\n",sid,pid,mark_set,offset,midWarp[threadIdx.x].x,midWarp[threadIdx.x].y,seglist[sid].key.num[0]);
+
+		// Figure out the relevant entry on the simualtion table.
+//		unsigned int sim_type = (REF2D(sim, (pred_gate(offset,offset<5))+real_pid, seglist[sid].key.num[0]));
+// TODO: Need to figure out where on the sim table to pull correct entries. 
+		unsigned int sim_type = 3;
+		// If the simulation results is T0 (or 2), then the real PID needs to be put into shared mem, x location
+		midWarp[threadIdx.x].x = pred_gate((offset+real_pid)+1, offset < 5 && sim_type == T0) - 1;
+		
+		// If the simulation results is T1 (or 3), then the real PID needs to be put into shared mem, x location
+		midWarp[threadIdx.x].y = pred_gate((offset+real_pid)+1, offset < 5 && sim_type == T1) - 1;
+		
+		midWarp[threadIdx.x].x = pred_gate(midWarp[threadIdx.x].x, offset < 5 && sim_type == T0);
+		printf("Single-thread results: (%d, %d) %8x, = %d; %d (%d,%d) ST: %d %d\n",sid,pid,mark_set,offset,real_pid, midWarp[threadIdx.x].x,midWarp[threadIdx.x].y,sim_type, seglist[sid].key.num[0]);
 		// actual PID + 1 we are comparing against or 0 if not found.
 		// Place in shared memory, decrementing to correct real PID.
 
