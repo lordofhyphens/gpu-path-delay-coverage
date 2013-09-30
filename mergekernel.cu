@@ -84,6 +84,7 @@ __host__ __device__ inline uint32_t pred_gate(uint32_t a, uint32_t b) { return (
 template <int N, unsigned int blockSize>
 __global__ void kernSegmentReduce(segment<N, int2>* seglist, const GPU_DATA_type<coalesce_t> mark, const GPU_DATA_type<coalesce_t> sim, uint32_t startSegment, uint32_t startPattern) {
 	__shared__ int2 midWarp[blockSize];
+
 	uint32_t pid = threadIdx.x + blockIdx.x*blockDim.x;
 	uint32_t real_pid = pid * 4 + startPattern; // unroll constant for coalesce_t
 	pid += startPattern;
@@ -96,9 +97,10 @@ __global__ void kernSegmentReduce(segment<N, int2>* seglist, const GPU_DATA_type
 		unsigned int mark_set = 0xffffffff;
 		for (uint8_t i = 0; i < N; i++) {
 			// AND each mark result together.
-			uint32_t z = REF2D(mark, 0, 0).rows[2];// seglist[sid].key.num[i]);
-			printf("(%d,%d) - Raw mark: %8x (%d) for gate %d\n",sid, 0, z, i, seglist[sid].key.num[i]);
-			mark_set &= z;
+			uint32_t z = 0;
+			uint32_t gid = seglist[sid].key.num[i];
+			mark_set &= ((uint32_t*)((unsigned char*)mark.data + (mark.pitch*gid)))[pid];
+			printf("%8x, %d\n",((uint32_t*)((unsigned char*)mark.data + (mark.pitch*gid)))[pid],mark.pitch );
 		}
 
 		// check to see which position got marked. This will be one of 4 possible positions:
@@ -168,11 +170,12 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 	std::cerr << "Working with " << block_y << " / " << remaining_blocks << " sids.\n"; 
 
 	GPU_DATA_type<coalesce_t> marks = toPod<coalesce_t>(mark,chunk);
+	std::cerr << "Podded pitch: " << marks.pitch << "\n";
 	debugMarkOutput(&marks, ckt, chunk, ext_startPattern, "gpumark-test.log");
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting on memory allocation
 	do {
 		dim3 blocks(block_x, block_y);
-		kernSegmentReduce<2,MERGE_SIZE><<<blocks, MERGE_SIZE>>>(dc_seglist, toPod<coalesce_t>(sim,chunk), marks, count, startPattern);
+		kernSegmentReduce<2,MERGE_SIZE><<<blocks, MERGE_SIZE>>>(dc_seglist, marks, toPod<coalesce_t>(sim,chunk),count, startPattern);
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 		dim3 blocksmin(1, block_y);
 		count+=BLOCK_STEP;
