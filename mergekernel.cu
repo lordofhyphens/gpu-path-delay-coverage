@@ -4,13 +4,13 @@
 #include "util/gpudata.h"
 #include "util/segment.cuh"
 #include "util/utility.cuh"
+#include "markkernel.h"
 
 #include <mgpuhost.cuh>
 #include <mgpudevice.cuh>
 #include <device/ctascan.cuh>
 #undef N
 #undef MERGE_SIZE
-#undef LOGEXEC
 #define MERGE_SIZE 512
 void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
     if (err != cudaSuccess) {
@@ -20,6 +20,30 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
  }
 #define HANDLE_ERROR( err ) (HandleMergeError( err, __FILE__, __LINE__ ))
 
+template<int N>
+void debugSegmentList(segment<N,int2>* seglist, const int& size, std::string outfile) {
+	#ifndef NDEBUG
+	segment<N,int2> *lvalues;
+	std::ofstream ofile(outfile.c_str());
+	lvalues = new segment<N,int2>[size];
+	cudaMemcpy(lvalues,seglist,size*sizeof(segment<N,int2>),cudaMemcpyDeviceToHost);
+	for (size_t r = 0;r < size; r++) {
+		ofile << "Segment " << r << "(" ;
+		segment<N,int2> z = lvalues[r];//REF2D(uint8_t, lvalues, results.pitch, r, i);
+		#pragma unroll
+		for (int j = 0; j < N; j++) {
+			ofile << z.key.num[j];
+			if (j != N-1) 
+				ofile << ",";
+		}
+		ofile << "):\t";
+		ofile << std::setw(OUTJUST) << z.pattern.x << "," << z.pattern.y << " ";
+		ofile << std::endl;
+		}
+	delete lvalues;
+	ofile.close();
+#endif
+}
 namespace mgpu {
 	struct ScanOpMinPos {
 		enum { Communative = true};
@@ -39,6 +63,8 @@ namespace mgpu {
 	};
 }
 
+const unsigned int BLOCK_STEP = 1; // # of SIDs to process at once.
+
 __host__ __device__ inline int32_t min_pos(int32_t a, int32_t b) { return min((unsigned)a, (unsigned)b);}
 __host__ __device__ inline int2 min_pos(int2 a, int2 b) { return make_int2(min((unsigned)a.x, (unsigned)b.x),min((unsigned)a.y,(unsigned)b.y));}
 
@@ -51,41 +77,43 @@ __device__ void warpReduceMin(volatile int2 * sdata , unsigned int tid) {
 	if (blockSize >= 4) min_pos(sdata[tid], sdata[tid + 2]);
 	if (blockSize >= 2) min_pos(sdata[tid], sdata[tid + 1]);
 }
+
 __host__ __device__ inline uint32_t pred_gate(uint32_t a, uint32_t b) { return (((a) << 31) >> 31)&a; }
 // Read the segment from the entry, determine the earliest pattern that marks it, and then write that (atomically).
 // (likely) RESTRICTION: blockDim.x MUST be a power of 2
 template <int N, unsigned int blockSize>
-__global__ void kernSegmentReduce(segment<N>* seglist, const GPU_DATA_type<coalesce_t> mark, const GPU_DATA_type<coalesce_t> sim, uint32_t startSegment, uint32_t startPattern) {
+__global__ void kernSegmentReduce(segment<N, int2>* seglist, const GPU_DATA_type<coalesce_t> mark, const GPU_DATA_type<coalesce_t> sim, uint32_t startSegment, uint32_t startPattern) {
 	__shared__ int2 midWarp[blockSize];
-
 	uint32_t pid = threadIdx.x + blockIdx.x*blockDim.x;
 	uint32_t real_pid = pid * 4 + startPattern; // unroll constant for coalesce_t
+	pid += startPattern;
 	uint32_t sid = blockIdx.y+startSegment;
-	const uint32_t warp_id = (threadIdx.x >> 5);// threadId / 32 should be the warp #. 32 = 2^5. 
 	int2 simple = make_int2(-1,-1);
-	if (pid < mark.height) {
-		startPattern += blockIdx.x*blockDim.x;
+	if (real_pid < mark.width) {
 		// In each thread, get 4 results-worth. 
 		// This should unroll, as the trip count is known at compile time.
 		// Get a batch of mark and sim results
-		coalesce_t mark_set = REF2D(mark, threadIdx.x, seglist[sid].key.num[0]);
-		#pragma unroll
-		for (uint8_t i = 1; i < N; i++) {
+		unsigned int mark_set = 0xffffffff;
+		for (uint8_t i = 0; i < N; i++) {
 			// AND each mark result together.
-			mark_set.packed &= REF2D(mark, threadIdx.x, seglist[sid].key.num[i]).packed;
+			uint32_t z = REF2D(mark, 0, 0).rows[2];// seglist[sid].key.num[i]);
+			printf("(%d,%d) - Raw mark: %8x (%d) for gate %d\n",sid, 0, z, i, seglist[sid].key.num[i]);
+			mark_set &= z;
 		}
+
 		// check to see which position got marked. This will be one of 4 possible positions:
 		// 1, 9, 17, 25 (as returned by ffs).
 		// Post brev:
 		// 32 = offset 0
 		// 24 = offset 1
 		// 16 = offset 2 // 8 = offset 3
-		int offset = 5 - (__ffs(__brev(mark_set.packed)) >> 3);
+		int offset = 5 - (__ffs(__brev(mark_set)) >> 3);
 		int this_pid = pred_gate((offset < 5), real_pid + offset); // 
+		printf("%d - %d,%d \n",pid, this_pid-1, offset);
 		// actual PID + 1 we are comparing against or 0 if not found.
 		// Place in shared memory, decrementing to correct real PID.
-		midWarp[threadIdx.x].x = pred_gate((REF2D(sim,threadIdx.x,seglist[sid].key.num[0]).packed & T0 > 0), this_pid) - 1;
-		midWarp[threadIdx.x].y = pred_gate((REF2D(sim,threadIdx.x,seglist[sid].key.num[0]).packed & T1 > 0), this_pid) - 1;
+		midWarp[threadIdx.x].x = pred_gate((vectAND(REF2D(sim,threadIdx.x,seglist[sid].key.num[0]), T0) > 0), this_pid) - 1;
+		midWarp[threadIdx.x].y = pred_gate((vectAND(REF2D(sim,threadIdx.x,seglist[sid].key.num[0]), T1) > 0), this_pid) - 1;
 
 		// Now do the reduction inside the same warp, looking for min-positive.
 		if (blockSize >= 512) { if (threadIdx.x < 256) { min_pos(midWarp[threadIdx.x], midWarp[threadIdx.x+256]); } __syncthreads();} 
@@ -100,7 +128,7 @@ __global__ void kernSegmentReduce(segment<N>* seglist, const GPU_DATA_type<coale
 			evict.x = atomicMin(&(seglist[sid].pattern.x), (unsigned)(candidate.x));
 			evict.y = atomicMin(&(seglist[sid].pattern.y), (unsigned)(candidate.y));
 
-			printf("Lowest for this block: (%d, %d)\n", midWarp[0].x, midWarp[0].y);
+			printf("Lowest for block %d: (%d, %d)\n", sid, midWarp[0].x, midWarp[0].y);
 		}
 	}
 	
@@ -110,43 +138,53 @@ __global__ void kernSegmentReduce(segment<N>* seglist, const GPU_DATA_type<coale
  * location [BLOCK_X,BLOCK_Y] 
 */
 
-#define BLOCK_STEP 1
-float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t chunk, uint32_t ext_startPattern, void** seglist) {
+float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t chunk, uint32_t ext_startPattern, void** seglist, int& numseg) {
 #ifndef NTIMING
 	float elapsed;
-	segment<2>* tmp_seglist = (segment<2>*)*seglist;
+	segment<2, int2>* dc_seglist = (segment<2, int2>*)*seglist;
 	uint32_t startPattern = ext_startPattern;
 	timespec start, stop;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	// assume that the 0th entry is the widest, which is true given the chunking method.
 #endif // NTIMING
 	// if g_hashlist == NULL, copy the hash list to the GPU
-	ckt.print();
-	if (*seglist == NULL) { 
-		cudaMalloc(&tmp_seglist, sizeof(segment<2>)*300);
-		cudaMemset(tmp_seglist, 0, sizeof(segment<2>)*300);
-		std::cerr << "Allocating hashmap space of " << 300 << ".\n";
-	}
-	segment<2>* segs = (segment<2>*)tmp_seglist;
+//	ckt.print();
 	uint32_t segcount = 0;
+	if (dc_seglist == NULL) { 
+		segment<2, int2>* h_seglist = NULL;
+		generateSegmentList(&h_seglist,ckt);
+		displaySegmentList(h_seglist, ckt);
+		while (h_seglist[segcount].key.num[0] < ckt.size()) { segcount++;}
+		cudaMalloc(&dc_seglist, sizeof(segment<2,int2>)*segcount);
+		cudaMemcpy(dc_seglist, h_seglist, sizeof(segment<2,int2>)*segcount, cudaMemcpyHostToDevice);
+		std::cerr << "Allocating hashmap space of " << segcount << ".\n";
+		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
+		numseg = segcount;
+	} else { segcount = numseg; }
 	uint32_t count = 0;
-	size_t remaining_blocks = mark.height();
+	size_t remaining_blocks = segcount;
 	const size_t block_x = (mark.gpu(chunk).width / MERGE_SIZE) + ((mark.gpu(chunk).width % MERGE_SIZE) > 0);
 	size_t block_y = (remaining_blocks > BLOCK_STEP ? BLOCK_STEP : remaining_blocks);
-//	block_y = 1; // only do one gid for testing
+	std::cerr << "Working with " << block_y << " / " << remaining_blocks << " sids.\n"; 
+
+	GPU_DATA_type<coalesce_t> marks = toPod<coalesce_t>(mark,chunk);
+	debugMarkOutput(&marks, ckt, chunk, ext_startPattern, "gpumark-test.log");
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting on memory allocation
 	do {
 		dim3 blocks(block_x, block_y);
-		kernSegmentReduce<2,MERGE_SIZE><<<blocks, MERGE_SIZE>>>(segs, toPod<coalesce_t>(sim), toPod<coalesce_t>(mark), segcount, startPattern);
+		kernSegmentReduce<2,MERGE_SIZE><<<blocks, MERGE_SIZE>>>(dc_seglist, toPod<coalesce_t>(sim,chunk), marks, count, startPattern);
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 		dim3 blocksmin(1, block_y);
 		count+=BLOCK_STEP;
 		if (remaining_blocks < BLOCK_STEP) { remaining_blocks = 0;}
-		if (remaining_blocks > BLOCK_STEP) { remaining_blocks -= BLOCK_STEP; }
+		if (remaining_blocks >= BLOCK_STEP) { remaining_blocks -= BLOCK_STEP; }
 		block_y = (remaining_blocks > BLOCK_STEP ? BLOCK_STEP : remaining_blocks);
 		cudaDeviceSynchronize();
 	} while (remaining_blocks > 0);
 	cudaDeviceSynchronize();
+#ifdef LOGEXEC
+	debugSegmentList(dc_seglist, numseg, "gpumerge.log");
+#endif //LOGEXEC
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 #ifndef NTIMING
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);

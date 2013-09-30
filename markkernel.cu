@@ -1,7 +1,7 @@
 #include "markkernel.h"
 #include "util/gpudata.h"
 #include "util/utility.cuh"
-#undef LOGEXEC
+//#undef LOGEXEC
 #include <cuda.h>
 #undef MARK_BLOCK
 #define MARK_BLOCK 128
@@ -46,7 +46,7 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 	if ((tid*4) < patterns) {
 		const GPUNODE& gate = node[gid];
 		const coalesce_t simResults = REF2D((coalesce_t*)sim,sim_pitch,tid,gid);
-		coalesce_t rowCache = {{(simResults.rows[0] > 1), (simResults.rows[1] > 1), (simResults.rows[2] > 1),(simResults.rows[3] > 1)}};
+		coalesce_t rowCache((simResults.rows[0] > 1), (simResults.rows[1] > 1), (simResults.rows[2] > 1),(simResults.rows[3] > 1));
 
 		// switching based on value causes divergence, switch based on node type instead.
 		switch(gate.type) {
@@ -87,7 +87,7 @@ __global__ void kernRemoveInvalidMarks(uint8_t* mark, size_t pitch, size_t patte
 	if ((tid*4) < patterns) {
 		const GPUNODE& gate = node[gid];
 		// there must be at least one fan-out of current gate that is marked, if not a po
-		coalesce_t result = { { 0, 0, 0, 0 } };
+		coalesce_t result;
 		result.packed = (gate.po > 0) * 0x01010101;;
 		for (uint16_t j = 0; j < gate.nfo; j++) {
 			result.packed = (result.packed | REF2D((coalesce_t*)mark, pitch, tid, FIN(fans,gate.offset,j+gate.nfi)).packed);
@@ -123,10 +123,10 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt, size_t 
 		} while (levelsize > 0);
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting
 	}
-	// do a backwards traversal to ensure that invalid marks are cleared.
 #ifdef LOGEXEC
 	debugMarkOutput(&results, ckt, chunk, startPattern, "gpumark-full.log");
 #endif // LOGEXEC
+	// do a backwards traversal to ensure that invalid marks are cleared.
 	startGate=ckt.size();
 	for (uint32_t i2 = 0; i2 <= ckt.levels(); i2++) {
 		uint32_t i = ckt.levels() - i2;
@@ -198,39 +198,43 @@ void debugMarkOutput(GPU_Data* results, const GPU_Circuit& ckt,const size_t chun
 #endif
 
 }
-void debugMarkOutput(ARRAY2D<uint8_t> results,const GPU_Circuit& ckt, std::string outfile) {
+void debugMarkOutput(GPU_DATA_type<coalesce_t>* results, const GPU_Circuit& ckt,const size_t chunk, const size_t startPattern,std::string outfile = "simdebug.log") {
 #ifndef NDEBUG
-	uint8_t *lvalues;
-	std::ofstream ofile(outfile.c_str());
-//	ofile << "Line:   \t";
-//	for (unsigned int i = 0; i < results.height; i++) {
-//		ofile << std::setw(OUTJUST) << i << " ";
-//	}
-//	ofile << std::endl;
-	ofile << "Gate:     " << "\t";
-	for (uint32_t i = 0; i < ckt.size(); i++) {
-		ofile << std::setw(OUTJUST) << i << " ";
-	}
-	ofile << std::endl;
-	lvalues = (uint8_t*)malloc(results.height*results.pitch);
-	cudaMemcpy2D(lvalues,results.pitch,results.data,results.pitch,results.width,results.height,cudaMemcpyDeviceToHost);
-	for (unsigned int r = 0;r < results.width; r++) {
-		ofile << "Vector " << r << ":\t";
-		for (unsigned int i = 0; i < results.height; i++) {
-			uint8_t z = REF2D(lvalues, results.pitch, r, i);
-			switch(z) {
-				case 0:
-					ofile  << std::setw(OUTJUST) << "N" << " "; break;
-				case 1:
-					ofile  << std::setw(OUTJUST) << "Y" << " "; break;
-				default:
-					ofile << std::setw(OUTJUST) << (int)z << " "; break;
-			}
+	std::ofstream ofile;
+	size_t t = 0;
+	if (chunk == 0) {
+		ofile.open(outfile.c_str(), std::ios::out);
+		ofile << "Gate:     " << "\t";
+		for (uint32_t i = 0; i < ckt.size(); i++) {
+			ofile << std::setw(OUTJUST) << i << " ";
 		}
-		ofile << std::endl;
+		ofile << "\n";
+	} else {
+		ofile.open(outfile.c_str(), std::ios::app);
 	}
-	free(lvalues);
+
+		uint8_t *lvalues;
+		lvalues = (uint8_t*)malloc(results->height*results->pitch);
+		cudaMemcpy2D(lvalues,results->pitch,results->data,results->pitch,results->width,results->height,cudaMemcpyDeviceToHost);
+		for (unsigned int r = 0;r < results->width; r++) {
+			ofile << "Vector " << t+startPattern << ":\t";
+			for (unsigned int i = 0; i < results->height; i++) {
+				uint8_t z = REF2D(lvalues, results->pitch, r, i);
+				switch(z) {
+					case 0:
+						ofile  << std::setw(OUTJUST) << "N" << " "; break;
+					case 1:
+						ofile  << std::setw(OUTJUST) << "Y" << " "; break;
+					default:
+						ofile << std::setw(OUTJUST) << (int)z << " "; break;
+				}
+			}
+			ofile << "\n";
+			t++;
+		}
+		free(lvalues);
 	ofile.close();
 #endif
+
 }
 

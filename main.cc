@@ -42,7 +42,6 @@ int main(int argc, const char* argv[]) {
 	std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 	std::clog << "Circuit size is: " << ckt.size() << "Levels: " << ckt.levels() << std::endl;
 
-
 	for (int32_t i = 2; i < argc; i++) { // run multiple benchmark values from the same program invocation
 		
 		uint64_t *totals = new uint64_t; 
@@ -76,7 +75,7 @@ int main(int argc, const char* argv[]) {
 		void* merge_ids;
 		merge_ids = NULL;
 		void *dc_segs = NULL;
-		
+		int segments = 0;
 		for (unsigned int chunk = 0; chunk < sim_results->size(); chunk++) {
 			uint64_t *coverage = new uint64_t; 
 			*coverage = 0;
@@ -92,12 +91,9 @@ int main(int argc, const char* argv[]) {
 			gpu += mark;
 			std::cerr << "     Mark: " << mark << " ms" << std::endl;
 			
-			merge = gpuMergeSegments(*mark_results, *sim_results, ckt, chunk, startPattern, &dc_segs);
+			merge = gpuMergeSegments(*mark_results, *sim_results, ckt, chunk, startPattern, &dc_segs, segments);
 			gpu += merge;
 			std::cerr << " Merge: " << merge << " ms" << std::endl;
-#ifdef LOGEXEC
-			debugMergeOutput(ckt.size(), merge_ids, "gpumerge.log");
-#endif //LOGEXEC
 			sim_results->unload();
 //			cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage, chunk, startPattern);
 			*totals += *coverage;

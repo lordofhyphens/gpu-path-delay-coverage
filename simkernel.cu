@@ -4,7 +4,7 @@
 #define SIM_BLOCK 256
 #define BLOCK_PER_KERNEL 4
 #undef OUTJUST
-#undef LOGEXEC
+//#undef LOGEXEC
 #define OUTJUST 4
 // amount to unroll
 #define UNROLL 4

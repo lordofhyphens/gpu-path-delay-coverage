@@ -13,8 +13,10 @@ CFLAGS=${CPFLAGS}
 NVCFLAGS=-g -G -arch=sm_20 --profile -O2 $(CPFLAGS:%=-Xcompiler %) -ccbin ${CXX} -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
 PYLIB=_fsim.so
 
-.PHONY: all util tags
+.PHONY: all util tags test
 all: $(out) tags
+test: $(out)
+	cuda-memcheck ./fcount ../data/c17.level ../data/c17.vec
 
 .SUFFIXES:
 .SUFFIXES: .o .cu .cc
