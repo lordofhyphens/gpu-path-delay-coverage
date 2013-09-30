@@ -21,7 +21,7 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
 #define HANDLE_ERROR( err ) (HandleMergeError( err, __FILE__, __LINE__ ))
 
 template<int N>
-void debugSegmentList(segment<N,int2>* seglist, const int& size, std::string outfile) {
+void debugSegmentList(segment<N,int2>* seglist, const unsigned int& size, std::string outfile) {
 	#ifndef NDEBUG
 	segment<N,int2> *lvalues;
 	std::ofstream ofile(outfile.c_str());
@@ -78,7 +78,7 @@ __device__ void warpReduceMin(volatile int2 * sdata , unsigned int tid) {
 	if (blockSize >= 2) min_pos(sdata[tid], sdata[tid + 1]);
 }
 
-__host__ __device__ inline uint32_t pred_gate(uint32_t a, uint32_t b) { return (((a) << 31) >> 31)&a; }
+__host__ __device__ inline uint32_t pred_gate(uint32_t a, bool b) { return 0xFFFFFFFFU >> (32-b)&a; }
 // Read the segment from the entry, determine the earliest pattern that marks it, and then write that (atomically).
 // (likely) RESTRICTION: blockDim.x MUST be a power of 2
 template <int N, unsigned int blockSize>
@@ -95,12 +95,10 @@ __global__ void kernSegmentReduce(segment<N, int2>* seglist, const GPU_DATA_type
 		// This should unroll, as the trip count is known at compile time.
 		// Get a batch of mark and sim results
 		unsigned int mark_set = 0xffffffff;
+		#pragma unroll
 		for (uint8_t i = 0; i < N; i++) {
 			// AND each mark result together.
-			uint32_t z = 0;
-			uint32_t gid = seglist[sid].key.num[i];
-			mark_set &= ((uint32_t*)((unsigned char*)mark.data + (mark.pitch*gid)))[pid];
-			printf("%8x, %d\n",((uint32_t*)((unsigned char*)mark.data + (mark.pitch*gid)))[pid],mark.pitch );
+			mark_set &= REF2D(mark, pid, seglist[sid].key.num[i]);
 		}
 
 		// check to see which position got marked. This will be one of 4 possible positions:
@@ -109,13 +107,15 @@ __global__ void kernSegmentReduce(segment<N, int2>* seglist, const GPU_DATA_type
 		// 32 = offset 0
 		// 24 = offset 1
 		// 16 = offset 2 // 8 = offset 3
-		int offset = 5 - (__ffs(__brev(mark_set)) >> 3);
-		int this_pid = pred_gate((offset < 5), real_pid + offset); // 
-		printf("%d - %d,%d \n",pid, this_pid-1, offset);
+		mark_set =  (mark_set | (mark_set >> 7) | (mark_set >> 14) | (mark_set >> 20)) & 0x0000000F;
+		mark_set = __brev(mark_set);
+		unsigned int offset = (32 - __ffs(mark_set));
+		unsigned int sim_type = (REF2D(sim, pred_gate(offset,offset>5)+real_pid, seglist[sid].key.num[0]) & (0x03 << offset*8)) >> (offset * 8);
+		midWarp[threadIdx.x].x = pred_gate((offset+real_pid)+1, sim_type == T0) - 1;
+		midWarp[threadIdx.x].y = pred_gate((offset+real_pid)+1, sim_type == T1) - 1;
+		printf("Single-thread results: (%d, %d) %8x, = %d (%d,%d) %d\n",sid,pid,mark_set,offset,midWarp[threadIdx.x].x,midWarp[threadIdx.x].y,seglist[sid].key.num[0]);
 		// actual PID + 1 we are comparing against or 0 if not found.
 		// Place in shared memory, decrementing to correct real PID.
-		midWarp[threadIdx.x].x = pred_gate((vectAND(REF2D(sim,threadIdx.x,seglist[sid].key.num[0]), T0) > 0), this_pid) - 1;
-		midWarp[threadIdx.x].y = pred_gate((vectAND(REF2D(sim,threadIdx.x,seglist[sid].key.num[0]), T1) > 0), this_pid) - 1;
 
 		// Now do the reduction inside the same warp, looking for min-positive.
 		if (blockSize >= 512) { if (threadIdx.x < 256) { min_pos(midWarp[threadIdx.x], midWarp[threadIdx.x+256]); } __syncthreads();} 
