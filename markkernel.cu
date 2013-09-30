@@ -1,7 +1,7 @@
 #include "markkernel.h"
 #include "util/gpudata.h"
 #include "util/utility.cuh"
-//#undef LOGEXEC
+#undef LOGEXEC
 #include <cuda.h>
 #undef MARK_BLOCK
 #define MARK_BLOCK 128
