@@ -12,7 +12,6 @@
 #include <device/intrinsics.cuh>
 #undef N
 #undef MERGE_SIZE
-#define MERGE_SIZE 512
 void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
     if (err != cudaSuccess) {
         DPRINT( "%s in %s at line %d\n", cudaGetErrorString( err ), file, line );
@@ -65,6 +64,9 @@ namespace mgpu {
 }
 
 const unsigned int BLOCK_STEP = 65535; // # of SIDs to process at once.
+const unsigned int PARALLEL_SEGS = 16;
+const unsigned int WARP_SIZE = 32;
+const unsigned int MERGE_SIZE = 1024;
 
 inline __host__ __device__ int2 min(int2 a, int2 b) { 
 	return make_int2(min((unsigned)a.x, (unsigned)b.x), min((unsigned)a.y, (unsigned)b.y));
@@ -88,7 +90,21 @@ __device__ void warpReduceMin(volatile int2 sdata[], unsigned int tid) {
 	if (blockSize >= 2)  sdata[tid].x = min((unsigned)sdata[tid].x, (unsigned)sdata[tid + 1].x);
 	if (blockSize >= 2)  sdata[tid].y = min((unsigned)sdata[tid].y, (unsigned)sdata[tid + 1].y);
 }
-__host__ __device__ inline uint32_t pred_gate(uint32_t a, bool b) { return ((unsigned)(0-(!b))) &a; }
+template <unsigned int blockSize>
+__device__ void warpReduceMin(volatile int2 sdata[blockSize][WARP_SIZE], const unsigned int& x, const unsigned int& y) {
+	if (blockSize >= 64) sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 32].x);
+	if (blockSize >= 64) sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 32].y); 
+	if (blockSize >= 32) sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 16].x);
+	if (blockSize >= 32) sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 16].y);
+	if (blockSize >= 16) sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 8].x);
+	if (blockSize >= 16) sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 8].y);
+	if (blockSize >= 8)  sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 4].x);
+	if (blockSize >= 8)  sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 4].y);
+	if (blockSize >= 4)  sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 2].x);
+	if (blockSize >= 4)  sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 2].y);
+	if (blockSize >= 2)  sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 1].x);
+	if (blockSize >= 2)  sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 1].y);
+}
 // Read the segment from the entry, determine the earliest pattern that marks it, and then write that (atomically).
 // (likely) RESTRICTION: blockDim.x MUST be a power of 2
 template <int N, unsigned int blockSize>
@@ -170,6 +186,75 @@ __global__ void kernSegmentReduce(segment<N, int2>* seglist, const GPU_DATA_type
  * location [BLOCK_X,BLOCK_Y] 
 */
 
+template <int N, unsigned int blockSize>
+__global__ void kernSegmentReduce2(segment<N, int2>* seglist, int maxSegment, const GPU_DATA_type<coalesce_t> mark, const GPU_DATA_type<coalesce_t> sim, uint32_t startSegment, uint32_t startPattern) {
+	__shared__ int2 midWarp[blockSize][32];
+	int2 final_value = make_int2(-1,-1);
+	// Current segment for this thread group.
+	midWarp[threadIdx.y][threadIdx.x] = make_int2(-1,-1);
+	__syncthreads();
+	unsigned int sid = startSegment + threadIdx.y + blockIdx.y*blockDim.y;
+#pragma unroll 2
+	for (int ref_pid = 0; ref_pid <= MERGE_SIZE; ref_pid += 32) {
+		uint32_t pid = threadIdx.x + ref_pid;
+		uint32_t real_pid = pid * 4 + startPattern; // unroll constant for coalesce_t
+		
+		if (real_pid < mark.width && sid < maxSegment) {
+			unsigned int mark_set = 0xffffffff;
+#pragma unroll
+			for (uint8_t i = 0; i < N; i++) {
+				// AND each mark result together.
+				mark_set &= REF2D(mark, pid, seglist[sid].key.num[i]);
+			}
+
+			// check to see which position got marked. This will be one of 4 possible positions:
+			// 1, 9, 17, 25 (as returned by ffs).
+			// Post brev:
+			// 32 = offset 0
+			// 24 = offset 1
+			// 16 = offset 2 // 8 = offset 3
+			// We OR the original set with itself, shifted and then mask off the garbage.
+			mark_set =  (mark_set | (mark_set >> 7) | (mark_set >> 14) | (mark_set >> 20)) & 0x0000000F;
+			// reversing the bits puts the lowest bit first, 
+			mark_set = __brev(mark_set);
+			//which lets us get its position with ffs.
+			unsigned int offset = (32 - __ffs(mark_set));
+			offset *= (offset < 5);
+
+			// Figure out the relevant entry on the simualtion table.
+			unsigned int sim_type = REF2D(sim, pid, seglist[sid].key.num[0]).rows[offset];
+
+			// If the simulation results is T0 (or 2), then the real PID needs to be put into shared mem, x location
+			midWarp[threadIdx.y][threadIdx.x].x = (offset+real_pid+1)*((mark_set > 0)&&(sim_type == T0)) - 1;
+
+			// If the simulation results is T1 (or 3), then the real PID needs to be put into shared mem, x location
+			midWarp[threadIdx.y][threadIdx.x].y = (offset+real_pid+1)*((mark_set > 0)&&(sim_type == T1)) - 1;
+
+			// actual PID + 1 we are comparing against or 0 if not found.
+			// Place in shared memory, decrementing to correct real PID.
+			if (threadIdx.x < blockSize / 2) 
+				warpReduceMin<blockSize>(midWarp, threadIdx.x, threadIdx.y);
+
+			__syncthreads();
+			if (threadIdx.x == 0) { final_value = min(midWarp[threadIdx.y][0],final_value); }
+		}
+	}
+	__syncthreads();
+	if (threadIdx.x == 0 && sid < maxSegment) {
+		int2 candidate = make_int2(-1,-1);
+		if (final_value.x >= 0) {
+			while ((unsigned)final_value.x < (unsigned)candidate.x) {
+				candidate.x = atomicMin((unsigned*)&(seglist[sid].pattern.x), (unsigned)(final_value.x));
+			}
+		}
+		if (final_value.y >= 0) { 
+			while ((unsigned)final_value.y < (unsigned)candidate.y) {
+				candidate.y = atomicMin((unsigned*)&(seglist[sid].pattern.y), (unsigned)(final_value.y));
+			}
+		}
+	}
+}
+
 float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t chunk, uint32_t ext_startPattern, void** seglist, int& numseg) {
 
 	// if g_hashlist == NULL, copy the hash list to the GPU
@@ -180,8 +265,9 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 	if (dc_seglist == NULL) { 
 		segment<2, int2>* h_seglist = NULL;
 		generateSegmentList(&h_seglist,ckt);
-		displaySegmentList(h_seglist, ckt);
-		while (h_seglist[segcount].key.num[0] < ckt.size()) { segcount++;}
+		
+		//displaySegmentList(h_seglist, ckt);
+		while (h_seglist[segcount].key.num[0] < ckt.size()) { h_seglist[segcount].pattern.x = -1; h_seglist[segcount].pattern.y = -1; segcount++;}
 		cudaMalloc(&dc_seglist, sizeof(segment<2,int2>)*segcount);
 		cudaMemcpy(dc_seglist, h_seglist, sizeof(segment<2,int2>)*segcount, cudaMemcpyHostToDevice);
 		std::cerr << "Allocating hashmap space of " << segcount << ".\n";
@@ -195,21 +281,23 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 	// assume that the 0th entry is the widest, which is true given the chunking method.
 #endif // NTIMING
 	uint32_t count = 0;
-	size_t remaining_blocks = segcount;
+	size_t remaining_blocks = (segcount / PARALLEL_SEGS) + ((segcount % PARALLEL_SEGS) > 0);
 	const size_t block_x = (mark.gpu(chunk).width / MERGE_SIZE) + ((mark.gpu(chunk).width % MERGE_SIZE) > 0);
 	size_t block_y = (remaining_blocks > BLOCK_STEP ? BLOCK_STEP : remaining_blocks);
-	std::cerr << "Working with " << block_y << " / " << remaining_blocks << " sids.\n"; 
+	std::cerr << "Working with " << block_y * PARALLEL_SEGS<< " / " << remaining_blocks * PARALLEL_SEGS << " sids.\n"; 
 
 	GPU_DATA_type<coalesce_t> marks = toPod<coalesce_t>(mark,chunk);
 	GPU_DATA_type<coalesce_t> sims = toPod<coalesce_t>(sim,chunk);
-	debugMarkOutput(&marks, ckt, chunk, ext_startPattern, "gpumark-test.log");
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting on memory allocation
 	do {
+		dim3 threads(WARP_SIZE, PARALLEL_SEGS);
 		dim3 blocks(block_x, block_y);
-		kernSegmentReduce<2,MERGE_SIZE><<<blocks, MERGE_SIZE>>>(dc_seglist, marks, sims,count, startPattern);
+		kernSegmentReduce2<2,PARALLEL_SEGS><<<blocks, threads>>>(dc_seglist, segcount, marks, sims,count, startPattern);
+
+		//kernSegmentReduce<2,MERGE_SIZE><<<blocks, MERGE_SIZE>>>(dc_seglist, marks, sims,count, startPattern);
+		count+=BLOCK_STEP;
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 		dim3 blocksmin(1, block_y);
-		count+=BLOCK_STEP;
 		if (remaining_blocks < BLOCK_STEP) { remaining_blocks = 0;}
 		if (remaining_blocks >= BLOCK_STEP) { remaining_blocks -= BLOCK_STEP; }
 		block_y = (remaining_blocks > BLOCK_STEP ? BLOCK_STEP : remaining_blocks);
@@ -222,6 +310,7 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 	elapsed = floattime(diff(start, stop));
 #endif
 #ifdef LOGEXEC
+	std::cerr << "Printing merge log." << std::endl;
 	debugSegmentList(dc_seglist, numseg, "gpumerge.log");
 #endif //LOGEXEC
 #ifndef NTIMING
