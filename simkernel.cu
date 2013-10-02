@@ -1,13 +1,13 @@
 #include <cuda.h>
 #include "simkernel.h"
-#undef SIM_BLOCK
-#define SIM_BLOCK 256
 #define BLOCK_PER_KERNEL 4
 #undef OUTJUST
 #undef LOGEXEC
 #define OUTJUST 4
 // amount to unroll
 #define UNROLL 4
+
+const unsigned int SIM_BLOCK = 256;
 
 void HandleSimError( cudaError_t err, const char *file, int line ) {
     if (err != cudaSuccess) {

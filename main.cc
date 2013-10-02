@@ -5,8 +5,8 @@
 #include "util/vectors.h"
 #include "simkernel.h"
 #include "markkernel.h"
-#include "mergekernel.h"
-//#include "coverkernel.h"
+#include "mergekernel.cuh"
+#include "coverkernel.cuh"
 #include "util/subckt.h"
 #include <utility>
 #include <iostream>
@@ -91,11 +91,11 @@ int main(int argc, const char* argv[]) {
 			gpu += mark;
 			std::cerr << "     Mark: " << mark << " ms" << std::endl;
 			
-			merge = gpuMergeSegments(*mark_results, *sim_results, ckt, chunk, startPattern, &dc_segs, segments);
+			merge = gpuMergeSegments<2>(*mark_results, *sim_results, ckt, chunk, startPattern, &dc_segs, segments);
 			gpu += merge;
 			std::cerr << " Merge: " << merge << " ms" << std::endl;
 			sim_results->unload();
-//			cover = gpuCountPaths(ckt, *mark_results, merge_ids, coverage, chunk, startPattern);
+			cover = gpuCountPaths<2>(ckt, *mark_results, dc_segs, segments, coverage, chunk, startPattern);
 			*totals += *coverage;
 			std::cerr << " Cover: " << cover << " ms" << std::endl;
 			std::cerr << "GPU Coverage: " << *coverage << ", total: "<< *totals << std::endl;
