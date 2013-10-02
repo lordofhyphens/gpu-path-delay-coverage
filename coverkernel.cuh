@@ -199,13 +199,16 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, c
 		uint64_t* coverage, size_t chunk, size_t startPattern) {
 
 	segment<N,int2>* merges = (segment<N,int2>*)merge;
+
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure there aren't any errors going into function.
 
 	std::ofstream cfile;
-	if (chunk == 0) {
-		cfile.open("gpucover.log", std::ios::out);
-	} else {
-		cfile.open("gpucover.log", std::ios::out | std::ios::app);
+	if (verbose_flag) {
+		if (chunk == 0) {
+			cfile.open("gpucover.log", std::ios::out);
+		} else {
+			cfile.open("gpucover.log", std::ios::out | std::ios::app);
+		}
 	}
 	uint32_t *g_results;
 	uint32_t *d_results = NULL; // debug results 
