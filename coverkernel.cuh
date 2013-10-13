@@ -28,6 +28,15 @@ void HandleCoverError( cudaError_t err, const char *file, uint32_t line ) {
 const unsigned int COVER_BLOCK = 512;
 const unsigned int REDUCE_THREADS = 512;
 
+
+//template <typename T>
+//__device__ __forceinline__ T clip(const T in, const T low, const  T high) { return in <= low ? high : in >= high ? high : in -low; }
+__device__ __forceinline__ int clip(const int in, const int2 bound) {
+	return in < bound.x ? bound.y+1 - bound.x : in > bound.y ? bound.y+1 - bound.x : in - bound.x;
+}
+__device__ __forceinline__ int clip(const int in, const int2 bound, bool test) {
+	return in < bound.x && !test ? 0 : in > bound.y && !test ? 0 : in - bound.x;
+}
 // bit masks for packing, trying to reduce # of fetches.
 #define GET_H(SRC) (((SRC & 0xFFFF0000) >> 16))
 #define GET_C(SRC) ((SRC & 0x0000FFFF))
@@ -94,9 +103,58 @@ __global__ void kernSumSingle(GPUNODE* ckt, size_t size, uint32_t* input, size_t
 	__syncthreads();
 
 }
+__device__ __forceinline__ bool in_range(const int test, const int2 bound) {
+	return (test >= bound.x && test <= bound.y);
+}
+__device__ __forceinline__ bool in_sid(const segment<2, int2> item, const uint32_t g) {
+	return (item.key.num[0] == g || item.key.num[1] == g);
+}
+__device__ __forceinline__ bool in_sid(const segment<3, int2> item, const uint32_t g) {
+	return (item.key.num[0] == g || item.key.num[1] == g|| item.key.num[2] == g);
+}
+template <int N>
+__device__ __forceinline__ bool in_sid(const segment<N, int2> item, const uint32_t g) {
+	bool test = false;
+#pragma unroll
+	for (int i = 0; i < N; i++) {
+		//printf("G %d is in SID %d: %d\n", g, sid,(haystack[sid].key.num[i] == g));
+		test = test || (item.key.num[i] == g);
+	}
+	return test;
+}
+
 
 template <int N, int blockSize>
-__device__ void findActiveThreads(volatile int2 sdata[blockSize], segment<N,int2> const * const haystack, size_t haystack_size, const uint32_t& g, const int2& bounds) {
+__device__ void findActiveThreads(volatile int2 sdata[blockSize], segment<N,int2> const * const haystack, size_t haystack_size, const uint32_t g, const int2 bounds) {
+// Divide haystack into chunks, each thread will work on haystack/blockSize threads
+// search each chunk for G.
+// if found and max >= pattern.x >= min; sdata[pattern.x - min] = pattern.x;
+// if found and max >= pattern.y >= min; sdata[pattern.y - min] = pattern.y;
+/*	if (threadIdx.x == 0) {
+		printf("Bounds: (%d,%d)\n", bounds.x, bounds.y);
+ 		printf("Shared Memory size: %d\n", blockSize);
+	}
+ */
+	// march through all of the segments, looking for ones that match the current GID.
+	for (int batch_needle = 0; batch_needle < haystack_size; batch_needle += blockSize) { 
+		int sid = batch_needle + threadIdx.x;
+		if (sid < haystack_size) {
+			assert(sid < haystack_size);
+			bool test = in_sid(haystack[sid], g);
+			// while this loop-unrolls, it's not very efficient.
+			//			printf("sdata: %p, indirect %p, garbage: %p\n", sdata, indirect, &garbage);
+			// current problem is that this diverges like mad.
+			// test will be true if our gate shows up in the segment!
+			if (test) {
+				sdata[clip(haystack[sid].pattern.x,bounds)].x = haystack[sid].pattern.x;
+				sdata[clip(haystack[sid].pattern.y,bounds)].y = haystack[sid].pattern.y;
+			}
+		}
+	}
+}
+
+template <>
+__device__ void findActiveThreads<1,COVER_BLOCK>(volatile int2 sdata[COVER_BLOCK], segment<1,int2> const * const haystack, size_t haystack_size, const uint32_t g, const int2 bounds) {
 // Divide haystack into chunks, each thread will work on haystack/blockSize threads
 // search each chunk for G.
 // if found and max >= pattern.x >= min; sdata[pattern.x - min] = pattern.x;
@@ -107,38 +165,16 @@ __device__ void findActiveThreads(volatile int2 sdata[blockSize], segment<N,int2
 	}
 */
 	// march through all of the segments, looking for ones that match the current GID.
-	for (int batch_needle = 0; batch_needle < haystack_size; batch_needle += blockSize) { 
-		int sid = batch_needle + threadIdx.x;
-		if (sid < haystack_size) {
-			assert(sid < haystack_size);
-			bool test = false;
-			// while this loop-unrolls, it's not very efficient.
-			#pragma unroll
-			for (int i = 0; i < N; i++) {
-				//printf("G %d is in SID %d: %d\n", g, sid,(haystack[sid].key.num[i] == g));
-				test = test || (haystack[sid].key.num[i] == g);
-			}
-			// current problem is that this diverges like mad.
-			// test will be true if our gate shows up in the segment!
-			if (test && haystack[sid].pattern.x >= bounds.x && haystack[sid].pattern.x < bounds.y) {
-				//printf("Placing pid %d into shared memory location sdata[%d].x B(%d,%d)\n", haystack[sid].pattern.x, (haystack[sid].pattern.x - bounds.x), bounds.x, bounds.y);
-				sdata[haystack[sid].pattern.x - bounds.x].x = haystack[sid].pattern.x;
-			}
-			if (test && haystack[sid].pattern.y >= bounds.x && haystack[sid].pattern.y < bounds.y) {
-				//printf("Placing pid %d into shared memory location sdata[%d].y B(%d,%d)\n", haystack[sid].pattern.y, (haystack[sid].pattern.y - bounds.x), bounds.x, bounds.y);
-				sdata[haystack[sid].pattern.y - bounds.x].y = haystack[sid].pattern.y;
-			}
-		}
-	}
+	sdata[threadIdx.x].x = haystack[g].pattern.x;
+	sdata[threadIdx.x].y = haystack[g].pattern.y;
 }
-
 template <int N, int blockSize>
 __global__ void kernCover(GPUNODE const * const ckt, uint8_t const * const mark, const size_t mark_pitch, segment<N,int2> const * const history, size_t history_size,  uint32_t* cover, const size_t cover_pitch, const uint32_t start_offset,const uint32_t pattern_count,const uint32_t start_pattern, uint32_t const * const offsets) { //, uint32_t* subckt, size_t subckt_size) {
     // cover is the coverage ints we're working with for this pass.
 	// mark is the fresh marks
 	// hist is the history of the mark status of all lines.
 	const uint32_t tid = (blockIdx.y * COVER_BLOCK) + threadIdx.x;
-	__shared__ int2 activeTests[blockSize+1];
+	__shared__ int2 activeTests[blockSize+2];
 	int2 threadBound; // min/max thread
 
 	const int32_t pid = tid + start_pattern; 

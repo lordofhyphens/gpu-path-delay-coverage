@@ -1,4 +1,8 @@
 
+static int cover_flag = 0;
+static int sim_flag = 0;
+static int merge_flag = 0;
+static int mark_flag = 0;
 static int verbose_flag = 0;
 #include "util/utility.h"
 #include "util/ckt.h"
@@ -6,7 +10,7 @@ static int verbose_flag = 0;
 #include "util/gpudata.h"
 #include "util/vectors.h"
 #include "simkernel.h"
-#include "markkernel.h"
+#include "markkernel.cuh"
 #include "mergekernel.cuh"
 #include "coverkernel.cuh"
 #include "util/subckt.h"
@@ -30,17 +34,23 @@ int main(int argc, char* argv[]) {
 	std::vector<string> benchmarks;
 	int segs = 2;
 	int option_index = 0;
+	int override_patterns = 0;
 	while (1)
 	{
 		static struct option long_options[] =
 		{
 			/* These options set a flag. */
 			{"verbose", no_argument,       &verbose_flag, 1},
+			{"cover", no_argument,       &cover_flag, 1},
+			{"mark", no_argument,       &mark_flag, 1},
+			{"merge", no_argument,       &merge_flag, 1},
+			{"sim", no_argument,       &sim_flag, 1},
 			{"brief",   no_argument,       &verbose_flag, 0},
 			/* These options don't set a flag.
 			   We distinguish them by their indices. */
 			{"help",     no_argument,       0, 'h'},
 			{"bench",     required_argument,       0, 'b'},
+			{"num_patterns",     required_argument,       0, 'o'},
 			{"segs",    required_argument, 0, 's'},
 			{0, 0}
 		};
@@ -71,6 +81,9 @@ int main(int argc, char* argv[]) {
 			case 't':
 				printf ("option %s = %s\n", long_options[option_index].name, optarg);
 				benchmarks.push_back(std::string(optarg));
+				break;
+			case 'o':
+				override_patterns  = atoi(optarg);
 				break;
 
 			case 's':
@@ -136,6 +149,9 @@ int main(int argc, char* argv[]) {
 		std::cerr << "Vector size: " << vecdim.first << "x"<<vecdim.second << std::endl;
 		GPU_Data *vec = new GPU_Data(vecdim.first,vecdim.second, vecdim.first);
 		uint32_t simul_patterns = gpuCalculateSimulPatterns(ckt.size(), vecdim.first, device);
+		if (override_patterns > 0) {
+			simul_patterns = override_patterns-1;
+		}
 		std::cerr << "Reading vector file....";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		read_vectors(*vec, vector_file.c_str(), vec->block_width(), vecdim.first);
@@ -143,11 +159,12 @@ int main(int argc, char* argv[]) {
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
-		std::clog << "Maximum patterns per pass: " << simul_patterns << std::endl;
+		std::clog << "Maximum patterns per pass: " << simul_patterns / vecdim.first << std::endl;
 
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS); // initializing results array for simulation
+		std::clog << "Maximum patterns per pass: " << simul_patterns << "("<<sim_results->block_width() << ")" << " / " << vecdim.first << std::endl;
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
 		gpu += elapsed;
@@ -213,7 +230,7 @@ int main(int argc, char* argv[]) {
 			std::cerr << " Cover: " << cover << " ms" << std::endl;
 			std::cerr << "GPU Coverage: " << *coverage << ", total: "<< *totals << std::endl;
 			gpu += cover;
-			startPattern += mark_results->gpu(chunk).width;
+			startPattern += mark_results->block_width();
 			mark_results->unload();
 			delete coverage;
 		}

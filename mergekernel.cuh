@@ -21,6 +21,7 @@ void HandleMergeError( cudaError_t err, const char *file, uint32_t line ) {
         exit( EXIT_FAILURE );
     }
  }
+ #undef HANDLE_ERROR
 #define HANDLE_ERROR( err ) (HandleMergeError( err, __FILE__, __LINE__ ))
 template<int N>
 void debugSegmentList(segment<N,int2>* seglist, const unsigned int& size, std::string outfile) {
@@ -70,10 +71,10 @@ const unsigned int PARALLEL_SEGS = 20;
 const unsigned int WARP_SIZE = 32;
 const unsigned int MERGE_SIZE = 1024;
 
-inline __host__ __device__ int2 min(int2 a, int2 b) { 
+__host__ __device__ __forceinline__ int2 min(const int2 a, const int2 b) { 
 	return make_int2(min((unsigned)a.x, (unsigned)b.x), min((unsigned)a.y, (unsigned)b.y));
 }
-inline __host__ __device__ bool operator==(const int2& a, const int2&b) {
+__host__ __device__ __forceinline__ bool operator==(const int2 a, const int2 b) {
 	return (a.x == b.x) && (a.y == b.y);
 }
 
@@ -107,11 +108,30 @@ __device__ void warpReduceMin(volatile int2 sdata[blockSize][WARP_SIZE], const u
 	if (blockSize >= 2)  sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 1].x);
 	if (blockSize >= 2)  sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 1].y);
 }
+__device__ __forceinline__ unsigned int has_marked_segment(const GPU_DATA_type<coalesce_t> mark, const segment<2,int2> seg, const uint32_t pid) {
+	unsigned int mark_set = 0xffffffff;
+	if (seg.key.num[0] >= 0) mark_set &= REF2D(mark, pid, seg.key.num[0]);
+	if (seg.key.num[1] >= 0) mark_set &= REF2D(mark, pid, seg.key.num[1]);
+	return mark_set;
+}
+__device__ __forceinline__ unsigned int has_marked_segment(const GPU_DATA_type<coalesce_t> mark, const segment<1,int2> seg, const uint32_t pid) {
+	return  0xffffffff & REF2D(mark, pid, seg.key.num[0]);
+}
 
+template <int N> 
+__device__ __forceinline__ unsigned int has_marked_segment(const GPU_DATA_type<coalesce_t> mark, const segment<N,int2> seg, const uint32_t pid) {
+	unsigned int mark_set = 0xffffffff;
+	#pragma unroll
+	for (uint8_t i = 0; i < N; i++) {
+		// AND each mark result together.
+		if (seg.key.num[i] >= 0) mark_set &= REF2D(mark, pid, seg.key.num[i]);
+	}
+	return mark_set;
+}
 // Read the segment from the entry, determine the earliest pattern that marks it, and then write that (atomically).
 // (likely) RESTRICTION: blockDim.x MUST be a power of 2
 template <int N, unsigned int blockSize>
-__global__ void kernSegmentReduce2(segment<N, int2>* seglist, int maxSegment, const GPU_DATA_type<coalesce_t> mark, const GPU_DATA_type<coalesce_t> sim, uint32_t startSegment, uint32_t startPattern) {
+__global__ void kernSegmentReduce2(segment<N, int2>* seglist, int maxSegment, const GPU_DATA_type<coalesce_t> mark, const GPU_DATA_type<coalesce_t> sim, uint32_t startSegment, const uint32_t startPattern) {
 	__shared__ int2 midWarp[blockSize][32];
 	int2 final_value = make_int2(-1,-1);
 	// Current segment for this thread group.
@@ -123,13 +143,8 @@ __global__ void kernSegmentReduce2(segment<N, int2>* seglist, int maxSegment, co
 		uint32_t pid = threadIdx.x + ref_pid;
 		uint32_t real_pid = pid * 4 + startPattern; // unroll constant for coalesce_t
 		
-		if (real_pid < mark.width && sid < maxSegment) {
-			unsigned int mark_set = 0xffffffff;
-#pragma unroll
-			for (uint8_t i = 0; i < N; i++) {
-				// AND each mark result together.
-				if (seglist[sid].key.num[i] >= 0) mark_set &= REF2D(mark, pid, seglist[sid].key.num[i]);
-			}
+		if (pid * 4 < mark.width && threadIdx.y + blockIdx.y*blockDim.y < maxSegment) {
+			unsigned int mark_set = has_marked_segment(mark, seglist[sid], pid);
 
 			// check to see which position got marked. This will be one of 4 possible positions:
 			// 1, 9, 17, 25 (as returned by ffs).
@@ -164,7 +179,9 @@ __global__ void kernSegmentReduce2(segment<N, int2>* seglist, int maxSegment, co
 		}
 	}
 	__syncthreads();
-	if (threadIdx.x == 0 && sid < maxSegment) {
+	if (threadIdx.x == 0 && threadIdx.y + blockIdx.y*blockDim.y < maxSegment) {
+		if (sid == 269)
+			printf("Low value for %d starting batch %d: %d, %d", sid,startPattern, final_value.x, final_value.y);
 		int2 candidate = make_int2(-1,-1);
 		if (final_value.x >= 0) {
 			while ((unsigned)final_value.x < (unsigned)candidate.x) {
@@ -188,6 +205,7 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 	uint32_t startPattern = ext_startPattern;
 	uint32_t segcount = 0;
 	cudaDeviceSetCacheConfig(cudaFuncCachePreferShared);
+	std::cerr << "Starting merge from " << ext_startPattern << "\n";
 	if (dc_seglist == NULL) { 
 		segment<N, int2>* h_seglist = NULL;
 		generateSegmentList(&h_seglist,ckt);
@@ -236,7 +254,7 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
 #endif
-if (verbose_flag) {
+if (verbose_flag && merge_flag) {
 	std::cerr << "Printing merge log." << std::endl;
 	debugSegmentList(dc_seglist, numseg, "gpumerge.log");
 }
