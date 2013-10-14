@@ -4,12 +4,13 @@ static int sim_flag = 0;
 static int merge_flag = 0;
 static int mark_flag = 0;
 static int verbose_flag = 0;
+static int robust_flag = 0;
 #include "util/utility.h"
 #include "util/ckt.h"
 #include "util/gpuckt.h"
 #include "util/gpudata.h"
 #include "util/vectors.h"
-#include "simkernel.h"
+#include "simkernel.cuh"
 #include "markkernel.cuh"
 #include "mergekernel.cuh"
 #include "coverkernel.cuh"
@@ -45,6 +46,7 @@ int main(int argc, char* argv[]) {
 			{"mark", no_argument,       &mark_flag, 1},
 			{"merge", no_argument,       &merge_flag, 1},
 			{"sim", no_argument,       &sim_flag, 1},
+			{"robust", no_argument,       &robust_flag, 1},
 			{"brief",   no_argument,       &verbose_flag, 0},
 			/* These options don't set a flag.
 			   We distinguish them by their indices. */
@@ -159,7 +161,7 @@ int main(int argc, char* argv[]) {
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 		elapsed = floattime(diff(start, stop));
 		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
-		std::clog << "Maximum patterns per pass: " << simul_patterns / vecdim.first << std::endl;
+		std::clog << "Maximum patterns per pass: " << simul_patterns << " / " << vecdim.first << std::endl;
 
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);

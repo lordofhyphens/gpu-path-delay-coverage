@@ -9,7 +9,6 @@
 #include "util/gpudata.h"
 #include "util/segment.cuh"
 #include "util/utility.cuh"
-#include "markkernel.h"
 
 #include <mgpuhost.cuh>
 #include <mgpudevice.cuh>
@@ -33,7 +32,6 @@ void debugSegmentList(segment<N,int2>* seglist, const unsigned int& size, std::s
 	for (size_t r = 0;r < size; r++) {
 		ofile << "Segment " << r << "(" ;
 		segment<N,int2> z = lvalues[r];//REF2D(uint8_t, lvalues, results.pitch, r, i);
-		#pragma unroll
 		for (int j = 0; j < N; j++) {
 			ofile << z.key.num[j];
 			if (j != N-1) 
@@ -94,7 +92,7 @@ __device__ void warpReduceMin(volatile int2 sdata[], unsigned int tid) {
 	if (blockSize >= 2)  sdata[tid].y = min((unsigned)sdata[tid].y, (unsigned)sdata[tid + 1].y);
 }
 template <unsigned int blockSize>
-__device__ void warpReduceMin(volatile int2 sdata[blockSize][WARP_SIZE], const unsigned int& x, const unsigned int& y) {
+__device__ __forceinline__ void warpReduceMin(volatile int2 sdata[blockSize][WARP_SIZE], const unsigned int x, const unsigned int y) {
 	if (blockSize >= 64) sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 32].x);
 	if (blockSize >= 64) sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 32].y); 
 	if (blockSize >= 32) sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 16].x);
@@ -139,7 +137,7 @@ __global__ void kernSegmentReduce2(segment<N, int2>* seglist, int maxSegment, co
 	__syncthreads();
 	unsigned int sid = startSegment + threadIdx.y + blockIdx.y*blockDim.y;
 #pragma unroll 2
-	for (int ref_pid = 0; ref_pid <= MERGE_SIZE; ref_pid += 32) {
+	for (int ref_pid = 0; ref_pid <= MERGE_SIZE; ref_pid += WARP_SIZE) {
 		uint32_t pid = threadIdx.x + ref_pid;
 		uint32_t real_pid = pid * 4 + startPattern; // unroll constant for coalesce_t
 		
@@ -153,35 +151,46 @@ __global__ void kernSegmentReduce2(segment<N, int2>* seglist, int maxSegment, co
 			// 24 = offset 1
 			// 16 = offset 2 // 8 = offset 3
 			// We OR the original set with itself, shifted and then mask off the garbage.
-			mark_set =  (mark_set | (mark_set >> 7) | (mark_set >> 14) | (mark_set >> 20)) & 0x0000000F;
-			// reversing the bits puts the lowest bit first, 
-			mark_set = __brev(mark_set);
-			//which lets us get its position with ffs.
-			unsigned int offset = (32 - __ffs(mark_set));
-			offset *= (offset < 5);
 
-			// Figure out the relevant entry on the simualtion table.
-			unsigned int sim_type = REF2D(sim, pid, seglist[sid].key.num[0]).rows[offset];
+			unsigned int sim_type = REF2D(sim, pid, seglist[sid].key.num[0]) & 0x01010101;
+			unsigned mark_set_x = mark_set & ~sim_type & 0x01010101;
+			unsigned mark_set_y = mark_set & sim_type;
+			
+			//printf("real_pid %d sim_type %8x mark_set: %8x (%8x,%8x)\n",real_pid, sim_type, mark_set, mark_set_x,mark_set_y); 
+			mark_set =  (mark_set | (mark_set >> 7) | (mark_set >> 14) | (mark_set >> 20)) & 0x0000000F;
+			mark_set_x =  (mark_set_x | (mark_set_x >> 7) | (mark_set_x >> 14) | (mark_set_x >> 21)) & 0x0000000F;
+			mark_set_y =  (mark_set_y | (mark_set_y >> 7) | (mark_set_y >> 14) | (mark_set_y >> 21)) & 0x0000000F;
+			// reversing the bits puts the lowest bit first, 
+			mark_set_x = __brev(mark_set_x);
+			mark_set_y = __brev(mark_set_y);
+			//printf("real_pid %d mark_set: %x (%x,%x)\n",real_pid, mark_set, mark_set_x,mark_set_y); 
+			//which lets us get its position with ffs.
+			unsigned int offset_x = (32 - __ffs(mark_set_x));
+			unsigned int offset_y = (32 - __ffs(mark_set_y));
+			//printf("real_pid %d offsets: (%d,%d)\n",real_pid, offset_x, offset_x);
+			offset_x *= (offset_x < 5);
+			offset_y *= (offset_y < 5);
 
 			// If the simulation results is T0 (or 2), then the real PID needs to be put into shared mem, x location
-			midWarp[threadIdx.y][threadIdx.x].x = (offset+real_pid+1)*((mark_set > 0)&&(sim_type == T0)) - 1;
+			//printf("offset_x %d, placing %d into (%d,%d).x\n", offset_x, (offset_x+real_pid+1)*((mark_set_x > 0)) - 1, threadIdx.y, threadIdx.x);
+			//printf("offset_y %d, placing %d into (%d,%d).y\n", offset_y, (offset_y+real_pid+1)*((mark_set_y > 0)) - 1, threadIdx.y, threadIdx.x);
+			midWarp[threadIdx.y][threadIdx.x].x = (offset_x+real_pid+1)*((mark_set_x > 0)) - 1;
 
 			// If the simulation results is T1 (or 3), then the real PID needs to be put into shared mem, x location
-			midWarp[threadIdx.y][threadIdx.x].y = (offset+real_pid+1)*((mark_set > 0)&&(sim_type == T1)) - 1;
-
+			midWarp[threadIdx.y][threadIdx.x].y = (offset_y+real_pid+1)*((mark_set_y > 0)) - 1;
 			// actual PID + 1 we are comparing against or 0 if not found.
 			// Place in shared memory, decrementing to correct real PID.
 			if (threadIdx.x < blockSize / 2) 
 				warpReduceMin<blockSize>(midWarp, threadIdx.x, threadIdx.y);
 
 			__syncthreads();
-			if (threadIdx.x == 0) { final_value = min(midWarp[threadIdx.y][0],final_value); }
+			if (threadIdx.x == 0) { 
+				final_value = min(midWarp[threadIdx.y][0],final_value); 
+			}
 		}
 	}
 	__syncthreads();
 	if (threadIdx.x == 0 && threadIdx.y + blockIdx.y*blockDim.y < maxSegment) {
-		if (sid == 269)
-			printf("Low value for %d starting batch %d: %d, %d", sid,startPattern, final_value.x, final_value.y);
 		int2 candidate = make_int2(-1,-1);
 		if (final_value.x >= 0) {
 			while ((unsigned)final_value.x < (unsigned)candidate.x) {

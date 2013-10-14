@@ -2,10 +2,10 @@ CXX=g++-4.6
 CUDA_DIR=/opt/net/apps/cuda-5.5
 CTAG_FLAGS=--langmap=C++:+.cu --append=yes
 GPCXX=${CUDA_DIR}/bin/nvcc
-header= simkernel.h markkernel.cuh coverkernel.cuh mergekernel.cuh 
+header= simkernel.cuh markkernel.cuh coverkernel.cuh mergekernel.cuh 
 logfile=log.txt
 main=main.cu
-src=simkernel.cu
+src=
 obj=$(src:.cu=.o) $(main:.cc=.o)
 out=fcount
 CPFLAGS=-Wno-strict-aliasing -lz -I${CUDA_DIR}/include -lrt -I./moderngpu/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -funroll-loops -fopenmp #-Werror # -DNDEBUG #-DNTIMING

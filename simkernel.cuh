@@ -15,6 +15,7 @@ void HandleSimError( cudaError_t err, const char *file, int line ) {
         exit( EXIT_FAILURE );
     }
 }
+#undef HANDLE_ERROR
 #define HANDLE_ERROR( err ) (HandleSimError( err, __FILE__, __LINE__ ))
 texture<uint8_t, 2> and2LUT;
 texture<uint8_t, 2> nand2LUT;
@@ -218,9 +219,8 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, si
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
 	elapsed = floattime(diff(start, stop));
 #endif // NTIMING
-#ifdef LOGEXEC
+if (verbose_flag && sim_flag)
 		debugSimulationOutput(&results, ckt, chunk, initial_pattern, "gpusim-p2.log");
-#endif //LOGEXEC
 #ifndef NTIMING
 	return elapsed;
 #else 
