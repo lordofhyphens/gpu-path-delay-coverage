@@ -37,8 +37,8 @@ void debugSegmentList(segment<N,int2>* seglist, const unsigned int& size, std::s
 			if (j != N-1) 
 				ofile << ",";
 		}
-		ofile << "):\t";
-		ofile << std::setw(OUTJUST) << z.pattern.x << "," << z.pattern.y << " ";
+		ofile << "): ";
+		ofile << z.pattern.x << "," << z.pattern.y << " ";
 		ofile << std::endl;
 		}
 	delete lvalues;
@@ -69,9 +69,6 @@ const unsigned int PARALLEL_SEGS = 20;
 const unsigned int WARP_SIZE = 32;
 const unsigned int MERGE_SIZE = 1024;
 
-__host__ __device__ __forceinline__ int2 min(const int2 a, const int2 b) { 
-	return make_int2(min((unsigned)a.x, (unsigned)b.x), min((unsigned)a.y, (unsigned)b.y));
-}
 __host__ __device__ __forceinline__ bool operator==(const int2 a, const int2 b) {
 	return (a.x == b.x) && (a.y == b.y);
 }
@@ -91,20 +88,23 @@ __device__ void warpReduceMin(volatile int2 sdata[], unsigned int tid) {
 	if (blockSize >= 2)  sdata[tid].x = min((unsigned)sdata[tid].x, (unsigned)sdata[tid + 1].x);
 	if (blockSize >= 2)  sdata[tid].y = min((unsigned)sdata[tid].y, (unsigned)sdata[tid + 1].y);
 }
+
+
 template <unsigned int blockSize>
-__device__ __forceinline__ void warpReduceMin(volatile int2 sdata[blockSize][WARP_SIZE], const unsigned int x, const unsigned int y) {
-	if (blockSize >= 64) sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 32].x);
-	if (blockSize >= 64) sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 32].y); 
-	if (blockSize >= 32) sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 16].x);
-	if (blockSize >= 32) sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 16].y);
-	if (blockSize >= 16) sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 8].x);
-	if (blockSize >= 16) sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 8].y);
-	if (blockSize >= 8)  sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 4].x);
-	if (blockSize >= 8)  sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 4].y);
-	if (blockSize >= 4)  sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 2].x);
-	if (blockSize >= 4)  sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 2].y);
-	if (blockSize >= 2)  sdata[y][x].x = min((unsigned)sdata[y][x].x, (unsigned)sdata[y][x + 1].x);
-	if (blockSize >= 2)  sdata[y][x].y = min((unsigned)sdata[y][x].y, (unsigned)sdata[y][x + 1].y);
+__device__ __forceinline__ void warpReduceMin(volatile int2 sdata[PARALLEL_SEGS][WARP_SIZE], const unsigned int x, const unsigned int y) {
+	if (blockSize >= 64) sdata[y][x].x = min((unsigned)(sdata[y][x].x), (unsigned)(sdata[y][x + 32].x));
+	if (blockSize >= 32) sdata[y][x].x = min((unsigned)(sdata[y][x].x), (unsigned)(sdata[y][x + 16].x));
+	if (blockSize >= 16) sdata[y][x].x = min((unsigned)(sdata[y][x].x), (unsigned)(sdata[y][x + 8].x));
+	if (blockSize >= 8)  sdata[y][x].x = min((unsigned)(sdata[y][x].x), (unsigned)(sdata[y][x + 4].x));
+	if (blockSize >= 4)  sdata[y][x].x = min((unsigned)(sdata[y][x].x), (unsigned)(sdata[y][x + 2].x));
+	if (blockSize >= 2)  sdata[y][x].x = min((unsigned)(sdata[y][x].x), (unsigned)(sdata[y][x + 1].x));
+	
+	if (blockSize >= 64) sdata[y][x].y = min((unsigned)(sdata[y][x].y), (unsigned)(sdata[y][x + 32].y));
+	if (blockSize >= 32) sdata[y][x].y = min((unsigned)(sdata[y][x].y), (unsigned)(sdata[y][x + 16].y));
+	if (blockSize >= 16) sdata[y][x].y = min((unsigned)(sdata[y][x].y), (unsigned)(sdata[y][x + 8].y));
+	if (blockSize >= 8)  sdata[y][x].y = min((unsigned)(sdata[y][x].y), (unsigned)(sdata[y][x + 4].y));
+	if (blockSize >= 4)  sdata[y][x].y = min((unsigned)(sdata[y][x].y), (unsigned)(sdata[y][x + 2].y));
+	if (blockSize >= 2)  sdata[y][x].y = min((unsigned)(sdata[y][x].y), (unsigned)(sdata[y][x + 1].y));
 }
 __device__ __forceinline__ unsigned int has_marked_segment(const GPU_DATA_type<coalesce_t> mark, const segment<2,int2> seg, const uint32_t pid) {
 	unsigned int mark_set = 0xffffffff;
@@ -126,18 +126,22 @@ __device__ __forceinline__ unsigned int has_marked_segment(const GPU_DATA_type<c
 	}
 	return mark_set;
 }
+
+__device__ void printState() {
+}
 // Read the segment from the entry, determine the earliest pattern that marks it, and then write that (atomically).
 // (likely) RESTRICTION: blockDim.x MUST be a power of 2
 template <int N, unsigned int blockSize>
 __global__ void kernSegmentReduce2(segment<N, int2>* seglist, int maxSegment, const GPU_DATA_type<coalesce_t> mark, const GPU_DATA_type<coalesce_t> sim, uint32_t startSegment, const uint32_t startPattern) {
-	__shared__ int2 midWarp[blockSize][32];
+	__shared__ int2 midWarp[blockSize][WARP_SIZE];
 	int2 final_value = make_int2(-1,-1);
 	// Current segment for this thread group.
 	midWarp[threadIdx.y][threadIdx.x] = make_int2(-1,-1);
 	__syncthreads();
 	unsigned int sid = startSegment + threadIdx.y + blockIdx.y*blockDim.y;
 #pragma unroll 2
-	for (int ref_pid = 0; ref_pid <= MERGE_SIZE; ref_pid += WARP_SIZE) {
+	for (int ref_pid = 0; ref_pid <= MERGE_SIZE; ref_pid += WARP_SIZE) { // progress in batches of WARP_SIZE. 
+		// reduce to minimum for this warp, and store in final_value 
 		uint32_t pid = threadIdx.x + ref_pid;
 		uint32_t real_pid = pid * 4 + startPattern; // unroll constant for coalesce_t
 		
@@ -156,36 +160,42 @@ __global__ void kernSegmentReduce2(segment<N, int2>* seglist, int maxSegment, co
 			unsigned mark_set_x = mark_set & ~sim_type & 0x01010101;
 			unsigned mark_set_y = mark_set & sim_type;
 			
-			//printf("real_pid %d sim_type %8x mark_set: %8x (%8x,%8x)\n",real_pid, sim_type, mark_set, mark_set_x,mark_set_y); 
-			mark_set =  (mark_set | (mark_set >> 7) | (mark_set >> 14) | (mark_set >> 20)) & 0x0000000F;
+			// If the simulation results is T0 (or 2), then the real PID needs to be put into shared mem, x location
+			// If the simulation results is T1 (or 3), then the real PID needs to be put into shared mem, y location
+			////printf("real_pid %d sim_type %8x mark_set: %8x (%8x,%8x)\n",real_pid, sim_type, mark_set, mark_set_x,mark_set_y); 
+			mark_set =  (mark_set | (mark_set >> 7) | (mark_set >> 14) | (mark_set >> 21)) & 0x0000000F;
 			mark_set_x =  (mark_set_x | (mark_set_x >> 7) | (mark_set_x >> 14) | (mark_set_x >> 21)) & 0x0000000F;
 			mark_set_y =  (mark_set_y | (mark_set_y >> 7) | (mark_set_y >> 14) | (mark_set_y >> 21)) & 0x0000000F;
 			// reversing the bits puts the lowest bit first, 
 			mark_set_x = __brev(mark_set_x);
 			mark_set_y = __brev(mark_set_y);
-			//printf("real_pid %d mark_set: %x (%x,%x)\n",real_pid, mark_set, mark_set_x,mark_set_y); 
+			////printf("real_pid %d mark_set: %x (%x,%x)\n",real_pid, mark_set, mark_set_x,mark_set_y); 
 			//which lets us get its position with ffs.
-			unsigned int offset_x = (32 - __ffs(mark_set_x));
-			unsigned int offset_y = (32 - __ffs(mark_set_y));
-			//printf("real_pid %d offsets: (%d,%d)\n",real_pid, offset_x, offset_x);
-			offset_x *= (offset_x < 5);
-			offset_y *= (offset_y < 5);
-
-			// If the simulation results is T0 (or 2), then the real PID needs to be put into shared mem, x location
-			//printf("offset_x %d, placing %d into (%d,%d).x\n", offset_x, (offset_x+real_pid+1)*((mark_set_x > 0)) - 1, threadIdx.y, threadIdx.x);
-			//printf("offset_y %d, placing %d into (%d,%d).y\n", offset_y, (offset_y+real_pid+1)*((mark_set_y > 0)) - 1, threadIdx.y, threadIdx.x);
-			midWarp[threadIdx.y][threadIdx.x].x = (offset_x+real_pid+1)*((mark_set_x > 0)) - 1;
-
-			// If the simulation results is T1 (or 3), then the real PID needs to be put into shared mem, x location
-			midWarp[threadIdx.y][threadIdx.x].y = (offset_y+real_pid+1)*((mark_set_y > 0)) - 1;
-			// actual PID + 1 we are comparing against or 0 if not found.
-			// Place in shared memory, decrementing to correct real PID.
-			if (threadIdx.x < blockSize / 2) 
-				warpReduceMin<blockSize>(midWarp, threadIdx.x, threadIdx.y);
+			unsigned int offset_x = (__clz(mark_set_x))+1;
+			unsigned int offset_y = (__clz(mark_set_y))+1;
+			
+			midWarp[threadIdx.y][threadIdx.x].x = min((unsigned)midWarp[threadIdx.y][threadIdx.x].x, (unsigned)((offset_x+real_pid)*(offset_x<6)-1));
+			
+			midWarp[threadIdx.y][threadIdx.x].y = min((unsigned)midWarp[threadIdx.y][threadIdx.x].y, (unsigned)((offset_y+real_pid)*(offset_y < 6)-1));
+			__syncthreads();
+			if (sid == 70 && (pid == 27)) {
+				//printf("hi there from pid thread %d in %d,%d !\n",pid, blockIdx.x,blockIdx.y);
+				//printf("mark_set: %8X, %8X; offset %d, %d, representing %d, %d, %d, %d\n", mark_set_x, mark_set_y, offset_x ,offset_y, real_pid, real_pid+1,real_pid+2,real_pid+3);
+				//printf("The minimum for this thread is located at offsets (%d,%d), real pids (%d,%d)\n", offset_x, offset_y, (offset_x+real_pid)*(offset_x<6)-1, (offset_y+real_pid)*(offset_y<6)-1);
+				//printf("mark_set: midWarp[%d][%d] = (%d,%d)\n", threadIdx.y, threadIdx.x, midWarp[threadIdx.y][threadIdx.x].x, midWarp[threadIdx.y][threadIdx.x].y);
+			}
+			
+			if (threadIdx.x < (WARP_SIZE / 2 )) 
+				warpReduceMin<WARP_SIZE>(midWarp, threadIdx.x, threadIdx.y);
 
 			__syncthreads();
+			if (sid == 70 && (pid == 27)) {
+				//printf("Minimum after reduction: (%d,%d)\n", midWarp[threadIdx.y][0].x, midWarp[threadIdx.y][0].y);
+				//printf("MidWarp after: (%d,%d)\n", midWarp[threadIdx.y][threadIdx.x].x, midWarp[threadIdx.y][threadIdx.x].y);
+			}
 			if (threadIdx.x == 0) { 
-				final_value = min(midWarp[threadIdx.y][0],final_value); 
+				final_value.x = min((unsigned)midWarp[threadIdx.y][0].x,(unsigned)final_value.x); 
+				final_value.y = min((unsigned)midWarp[threadIdx.y][0].y,(unsigned)final_value.y); 
 			}
 		}
 	}
@@ -248,7 +258,6 @@ float gpuMergeSegments(GPU_Data& mark, GPU_Data& sim, GPU_Circuit& ckt, size_t c
 		dim3 blocks(block_x, block_y);
 		kernSegmentReduce2<N,PARALLEL_SEGS><<<blocks, threads>>>(dc_seglist, segcount, marks, sims,count, startPattern);
 
-		//kernSegmentReduce<2,MERGE_SIZE><<<blocks, MERGE_SIZE>>>(dc_seglist, marks, sims,count, startPattern);
 		count+=BLOCK_STEP;
 		HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting inside the kernels
 		dim3 blocksmin(1, block_y);

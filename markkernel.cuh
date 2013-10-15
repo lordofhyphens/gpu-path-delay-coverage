@@ -124,13 +124,100 @@ __device__ __forceinline__  coalesce_t nonrobust(const uint32_t f1, const uint8_
 	}
 	return tmp;
 }
-
+__device__ void printGate(const int gid, const int in_gid, const GPUNODE gate, const uint8_t* sim, const size_t sim_pitch, const uint8_t mark, const int tid, uint32_t* fans) {
+	int in_tid = (blockIdx.y * blockDim.x) + threadIdx.x;
+	if (in_tid == tid && gid == in_gid) {
+		printf("Gate particulars for %d:", gid);
+		switch (gate.type) {
+			case FROM:
+				printf("FROM. %d NFI, %d NFO\n", gate.nfi, gate.nfo);
+				break;
+			case INPT:
+				printf("INPT. %d NFI, %d NFO\n", gate.nfi, gate.nfo);
+				break;
+			case BUFF:
+				printf("BUFF. %d NFI, %d NFO\n", gate.nfi, gate.nfo);
+				break;
+			case NOT:
+				printf("NOT. %d NFI, %d NFO\n", gate.nfi, gate.nfo);
+				break;
+			case AND:
+				printf("AND. %d NFI, %d NFO\n", gate.nfi, gate.nfo);
+				break;
+			case NAND:
+				printf("NAND. %d NFI, %d NFO\n", gate.nfi, gate.nfo);
+				break;
+			case NOR:
+				printf("NOR. %d NFI, %d NFO\n", gate.nfi, gate.nfo);
+				break;
+			case OR:
+				printf("OR. %d NFI, %d NFO\n", gate.nfi, gate.nfo);
+				break;
+			case XOR:
+				printf("XOR. %d NFI, %d NFO\n", gate.nfi, gate.nfo);
+				break;
+			case XNOR:
+				printf("XNOR. %d NFI, %d NFO\n", gate.nfi, gate.nfo);
+				break;
+		}
+		printf("Simulation for fan-ins (");
+		for (int i = 0; i < gate.nfi; i++) {
+			printf("%d", FIN(fans,gate.offset,i));
+			if (i+1 < gate.nfi) {
+				printf(", ");
+			}
+		}
+		printf("): ");
+		for (int i = 0; i < gate.nfi; i++) {
+			int sim1 = REF2D((coalesce_t*)sim, sim_pitch,tid, FIN(fans,gate.offset,i)).rows[0];
+			switch (sim1) {
+				case T0:
+					printf("T0"); break;
+				case S1:
+					printf("S1"); break;
+				case T1:
+					printf("T1"); break;
+				case S0:
+					printf("S0"); break;
+				default:
+					printf("Garbage");break;
+			}
+			if (i+1 < gate.nfi) {
+				printf(", ");
+			}
+		}
+		printf("\n");
+		printf("Simulation result (tid %d): ",tid);
+		uint8_t gsim = REF2D((coalesce_t*)sim, sim_pitch,tid, gid).rows[0];
+		switch (gsim) {
+			case T0:
+				printf("T0\n"); break;
+			case S1:
+				printf("S1\n"); break;
+			case T1:
+				printf("T1\n"); break;
+			case S0:
+				printf("S0\n"); break;
+			default:
+				printf("Garbage.\n");break;
+		}
+		printf("Marked?: ");
+		switch (mark) {
+			case 0:
+				printf("No.\n");break;
+			case 1:
+				printf("Yes.\n");break;
+			default:
+				printf("Garbage.\n");break;
+		}
+	}
+}
 __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* mark, size_t pitch, size_t patterns, GPUNODE* node, uint32_t* fans, int start, int startPattern, int robust_f) {
 	int tid = (blockIdx.y * blockDim.x) + threadIdx.x;
 	int gid = (blockIdx.x) + start;
 	coalesce_t resultCache; resultCache.packed = 0;
 	if ((tid*4) < patterns) {
-		const GPUNODE& gate = node[gid];
+		const GPUNODE gate = node[gid];
 		const coalesce_t simResults = REF2D((coalesce_t*)sim,sim_pitch,tid,gid);
 		coalesce_t rowCache((simResults.rows[0] > 1), (simResults.rows[1] > 1), (simResults.rows[2] > 1),(simResults.rows[3] > 1));
 
@@ -138,9 +225,10 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 		switch(gate.type) {
 			case INPT:
 				if (gate.nfo == 0 && gate.po < 1) {
-					resultCache.packed = 0; // on the odd case that an input is literally connected to nothing, this is not a path.
+					//resultCache.packed = 0; // on the odd case that an input is literally connected to nothing, this is not a path.
+					resultCache = rowCache;// Otherwise we can mark this if it has a transition.
 				} else {
-					resultCache = rowCache;// Otherwise we can mark this.
+					resultCache = rowCache;// Otherwise we can mark this if it has a transition.
 				}
 				break;
 			case FROM: // For FROM, it's equal to its fan-in
@@ -169,6 +257,7 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 		// stick the contents of resultCache into the mark array
 		resultCache.packed = resultCache.packed & rowCache.packed;
 		REF2D((coalesce_t*)mark,pitch,tid,gid) = resultCache;
+		//printGate(1163, gid, gate, sim, sim_pitch, REF2D((coalesce_t*)mark,pitch,tid,gid).rows[0], 0, fans);
 	}
 }
 extern "C" __launch_bounds__(INV_MARK_BLOCK,BLOCK_PER_KERNEL) 
@@ -251,7 +340,7 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt, size_t 
 			int simblocks = min(MAX_BLOCKS, levelsize);
 			dim3 numBlocks(simblocks,blockcount_y);
 			startGate -= simblocks;
-			kernRemoveInvalidMarks<<<numBlocks,INV_MARK_BLOCK>>>(results.gpu(chunk).data, results.gpu(chunk).pitch, input.gpu(chunk).data, input.gpu(chunk).pitch, results.gpu(chunk).width,ckt.gpu_graph(), ckt.offset(),  startGate, robust_flag);
+			kernRemoveInvalidMarks<<<numBlocks,INV_MARK_BLOCK>>>(results.gpu(chunk).data, results.gpu(chunk).pitch, input.gpu(chunk).data, input.gpu(chunk).pitch, results.gpu(chunk).width,ckt.gpu_graph(), ckt.offset(),  startGate);//, robust_flag);
 			if (levelsize > MAX_BLOCKS) {
 				levelsize -= MAX_BLOCKS;
 			} else {
