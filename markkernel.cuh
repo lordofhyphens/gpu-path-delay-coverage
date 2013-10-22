@@ -296,7 +296,11 @@ __global__ void kernRemoveInvalidMarks(uint8_t* mark, size_t pitch, uint8_t* sim
 		coalesce_t result;
 		result.packed = (gate.po > 0) * 0x01010101;;
 		for (uint16_t j = 0; j < gate.nfo; j++) {
-			result.packed = (result.packed | REF2D((coalesce_t*)mark, pitch, tid, fots[j]).packed);
+			if (gate.nfo < 128) {
+				result.packed = (result.packed | REF2D((coalesce_t*)mark, pitch, tid, fots[j]).packed);
+			} else {
+				result.packed = (result.packed | REF2D((coalesce_t*)mark, pitch, tid, FIN(fans,gate.offset,j+gate.nfi)).packed);
+			}
 		}
 		result.packed = result.packed & REF2D((coalesce_t*)mark,pitch,tid,gid).packed;
 		REF2D((coalesce_t*)mark,pitch,tid,gid) = result;
