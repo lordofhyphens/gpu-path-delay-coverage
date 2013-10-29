@@ -8,7 +8,7 @@ main=main.cu
 src=
 obj=$(src:.cu=.o) $(main:.cc=.o)
 out=fcount
-CPFLAGS=-Wno-strict-aliasing -lz -I${CUDA_DIR}/include -lrt -I./moderngpu/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -funroll-loops -fopenmp #-Werror # -DNDEBUG #-DNTIMING
+CPFLAGS=-Wunused -Wno-strict-aliasing -lz -I${CUDA_DIR}/include -lrt -I./moderngpu/include -I/opt/net/apps/cudd/include -O2 -Wall -funsigned-char -funroll-loops -fopenmp #-Werror # -DNDEBUG #-DNTIMING
 CFLAGS=${CPFLAGS}
 NVCFLAGS= -arch=sm_20 --profile -O2 $(CPFLAGS:%=-Xcompiler %) -ccbin ${CXX} -Xptxas=-v # -Xcompiler -DNDEBUG - #-Xcompiler -DNTIMING  
 PYLIB=_fsim.so
