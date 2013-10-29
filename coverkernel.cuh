@@ -285,7 +285,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, c
 			dim3 numBlocks(simblocks,blockcount_y);
 			startGate -= simblocks;
 			assert((uint32_t)startGate + simblocks <= ckt.size());
-			kernCover<N,COVER_BLOCK><<<numBlocks,COVER_BLOCK>>>(ckt.gpu_graph(), mark.gpu(chunk).data, mark.gpu(chunk).pitch,
+			kernCover<N,COVER_BLOCK><<<numBlocks,COVER_BLOCK>>>(ckt.gpu(), mark.gpu(chunk).data, mark.gpu(chunk).pitch,
 					merges, merge_size, g_results,pitch, startGate, 
 					mark.gpu(chunk).width, startPattern, ckt.offset());
 			if (levelsize > MAX_BLOCKS) {
@@ -296,7 +296,7 @@ float gpuCountPaths(const GPU_Circuit& ckt, GPU_Data& mark, const void* merge, c
 		} while (levelsize > 0);
 		if (i == 0) {
 			// Sum for all gates and patterns
-			kernSumSingle<REDUCE_THREADS><<<1,REDUCE_THREADS>>>(ckt.gpu_graph(), ckt.levelsize(0), g_results, mark.gpu(chunk).width, pitch, finalcoverage); // multithreaded, single block GPU add.
+			kernSumSingle<REDUCE_THREADS><<<1,REDUCE_THREADS>>>(ckt.gpu(), ckt.levelsize(0), g_results, mark.gpu(chunk).width, pitch, finalcoverage); // multithreaded, single block GPU add.
 			cudaDeviceSynchronize();
 			cudaMemcpy(coverage, finalcoverage, sizeof(uint64_t), cudaMemcpyDeviceToHost);
 			cudaDeviceSynchronize();
