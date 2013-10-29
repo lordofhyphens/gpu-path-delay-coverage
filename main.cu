@@ -5,6 +5,7 @@ static int merge_flag = 0;
 static int mark_flag = 0;
 static int verbose_flag = 0;
 static int robust_flag = 0;
+
 #include "util/utility.h"
 #include "util/ckt.h"
 #include "util/gpuckt.h"
@@ -23,21 +24,26 @@ static int robust_flag = 0;
 using namespace std;
 #undef OUTJUST
 #define OUTJUST 4
+
+
+// default value for segments, can be overriden on command line
+static int segs = 1; 
+
 int main(int argc, char* argv[]) {
 	int c;
 	uint8_t device = selectGPU();
 	extern int optind;
-	resetGPU();
+	resetGPU(); // ensures that we have a new GPU context to work with.
 	GPU_Circuit ckt;
-	timespec start, stop;
-	float elapsed = 0.0,mark=0.0,merge =0.0,cover = 0.0,sim1 = 0.0,gpu =0.0;
+	timespec start;
+	float mark=0.0,merge =0.0,cover = 0.0,sim1 = 0.0,gpu =0.0;
 	std::string infile;
 	std::vector<string> benchmarks;
-	int segs = 2;
 	int option_index = 0;
 	int override_patterns = 0;
-	while (1)
-	{
+
+	{ // Loop to process incoming command line arguments.
+	while (1) {
 		static struct option long_options[] =
 		{
 			/* These options set a flag. */
@@ -74,7 +80,7 @@ int main(int argc, char* argv[]) {
 				if (optarg)
 					printf (" with arg %s", optarg);
 				printf ("\n");
-				break;
+	 			break;
 
 			case 'b':
 				infile = std::string(optarg);
@@ -108,36 +114,27 @@ int main(int argc, char* argv[]) {
 				abort ();
 		}
 	}
-	if (optind < argc) 
+	if (optind < argc) {
 		/* these are the arguments after the command-line options */ 
 		for (; optind < argc; optind++) 
 				benchmarks.push_back(std::string(argv[optind]));
-	else { 
+	} else { 
 		printf("no arguments left to process\n"); 
-	}
+	} }
 	// done with getopts, rest are benchmark vectors.
 	if (infile.empty()) {
 		printf("--bench argument is required.");
 		abort();
 	}
-	std::cerr << "Reading circuit file " << infile << "....";
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	if (infile.find("bench") != std::string::npos) {
 		ckt.read_bench(infile.c_str());
 	} else {
 			std::clog << "presorted benchmark " << infile << " ";
 		ckt.load(infile.c_str());
 	}
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-	elapsed = floattime(diff(start, stop));
-	std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
-//	ckt.print();
+
 	std::cerr << "Copying circuit to GPU...";
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 	ckt.copy(); // convert and copy circuit to GPU
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-	elapsed = floattime(diff(start, stop));
-	std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
 	std::clog << "Circuit size is: " << ckt.size() << "Levels: " << ckt.levels() << std::endl;
 
 	for (uint32_t i = 0; i < benchmarks.size(); i++) { // run multiple benchmark values from the same program invocation
@@ -154,22 +151,18 @@ int main(int argc, char* argv[]) {
 		if (override_patterns > 0) {
 			simul_patterns = override_patterns-1;
 		}
-		std::cerr << "Reading vector file....";
+
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		read_vectors(*vec, vector_file.c_str(), vec->block_width(), vecdim.first);
 		debugDataOutput(*vec, "vecout.log");
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-		elapsed = floattime(diff(start, stop));
-		std::cerr << "..complete. Took " << elapsed  << "ms" << std::endl;
+
 		std::clog << "Maximum patterns per pass: " << simul_patterns << " / " << vecdim.first << std::endl;
 
 		std::cerr << "Initializing gpu memory for results...";
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 		GPU_Data *sim_results = new GPU_Data(vecdim.first,ckt.size(), MAX_PATTERNS); // initializing results array for simulation
 		std::clog << "Maximum patterns per pass: " << simul_patterns << "("<<sim_results->block_width() << ")" << " / " << vecdim.first << std::endl;
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-		elapsed = floattime(diff(start, stop));
-		gpu += elapsed;
+		gpu += elapsed(start);
 
 		std::cerr << "..complete." << std::endl;
 		size_t startPattern = 0;
