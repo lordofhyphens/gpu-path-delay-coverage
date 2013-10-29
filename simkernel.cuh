@@ -79,6 +79,7 @@ __launch_bounds__(SIM_BLOCK,BLOCK_PER_KERNEL) __global__ void kernSimulateP1(GPU
 	unsigned int gid = blockIdx.x+start_offset;
 	unsigned int pid = tid + startPattern; //multiple of unrolled loop
 	coalesce_t *row;
+	coalesce_t pi_p1, pi_p2;
 	coalesce_t val, r;
 	int j;
 	assert(gid < output.height);
@@ -91,7 +92,6 @@ __launch_bounds__(SIM_BLOCK,BLOCK_PER_KERNEL) __global__ void kernSimulateP1(GPU
 			case INPT:
 				// Loop unroll to 4.
 				// First PID 
-				coalesce_t pi_p1, pi_p2;
 				pi_p1 = REF2D(pi, pid, gid);
 				if (pid+1 < pi.width) { // avoid a bad read
 					pi_p2 = REF2D(pi,pid+1, gid); // second batch of 4
@@ -205,7 +205,7 @@ float gpuRunSimulation(GPU_Data& results, GPU_Data& inputs, GPU_Circuit& ckt, si
 			kernSimulateP1<<<numBlocks,SIM_BLOCK>>>(toPod(ckt), inps, res, startGate, initial_pattern/UNROLL, last);
 
 			startGate += simblocks;
-			if (levelsize > MAX_BLOCKS) {
+			if ((unsigned)levelsize > MAX_BLOCKS) {
 				levelsize -= MAX_BLOCKS;
 			} else {
 				levelsize = 0;
