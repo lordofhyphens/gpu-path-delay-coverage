@@ -40,12 +40,12 @@ __device__ __forceinline__ uint8_t LUT_16(const uint16_t type, const uint16_t on
 	return (type >> ((on << 2)+off)) & 0x0001;
 }
 
-__device__ __forceinline__  coalesce_t robust(const uint8_t f1, const uint8_t *sim, const size_t sim_pitch, const uint32_t& tid, const uint32_t *fans,const GPUNODE& gate, const coalesce_t resultCache, const coalesce_t oldmark) {
+__device__ __forceinline__  coalesce_t robust(const uint8_t f1, const GPU_DATA_type<coalesce_t> sim, const uint32_t tid, volatile int* fans, const GPUNODE gate, const coalesce_t resultCache, const coalesce_t oldmark) {
 	coalesce_t tmp; tmp.packed = 0xFFFFFFFF;
-	const coalesce_t sim_fin1 = REF2D((coalesce_t*)sim,sim_pitch,tid,FIN(fans,gate.offset,f1));
+	const coalesce_t sim_fin1 = REF2D(sim,tid,fans[f1]);
 	for (uint16_t fin2 = 0; fin2 < gate.nfi; fin2++) {
 		if (f1 == fin2) continue;
-		const coalesce_t sim_fin2 = REF2D((coalesce_t*)sim,sim_pitch,tid,FIN(fans,gate.offset,fin2));
+		const coalesce_t sim_fin2 = REF2D(sim,tid,fans[fin2]);
 		tmp.rows[0] = tmp.rows[0] && LUT_16(LUT_R[gate.type-2],sim_fin1.rows[0], sim_fin2.rows[0]);
 		tmp.rows[1] = tmp.rows[1] && LUT_16(LUT_R[gate.type-2],sim_fin1.rows[1], sim_fin2.rows[1]);
 		tmp.rows[2] = tmp.rows[2] && LUT_16(LUT_R[gate.type-2],sim_fin1.rows[2], sim_fin2.rows[2]);
@@ -54,13 +54,13 @@ __device__ __forceinline__  coalesce_t robust(const uint8_t f1, const uint8_t *s
 	tmp.packed = tmp.packed & oldmark.packed;
 	tmp.packed = tmp.packed | resultCache.packed;
 	return tmp;
-}
-__device__ __forceinline__  coalesce_t nonrobust(const uint8_t f1, const uint8_t *sim, const size_t sim_pitch, const uint32_t& tid, const uint32_t *fans,const GPUNODE& gate, const coalesce_t resultCache, const coalesce_t oldmark) {
+} 
+__device__ __forceinline__  coalesce_t nonrobust(const uint8_t f1, const GPU_DATA_type<coalesce_t> sim, const uint32_t tid, volatile int *fans, const GPUNODE gate, const coalesce_t resultCache, const coalesce_t oldmark) {
 	coalesce_t tmp; tmp.packed = 0xFFFFFFFF;
-	const coalesce_t sim_fin1 = REF2D((coalesce_t*)sim,sim_pitch,tid,FIN(fans,gate.offset,f1));
+	const coalesce_t sim_fin1 = REF2D(sim,tid,fans[f1]);
 	for (uint16_t fin2 = 0; fin2 < gate.nfi; fin2++) {
 		if (f1 == fin2) continue;
-		const coalesce_t sim_fin2 = REF2D((coalesce_t*)sim,sim_pitch,tid,FIN(fans,gate.offset,fin2));
+		const coalesce_t sim_fin2 = REF2D(sim,tid,fans[fin2]);
 		tmp.rows[0] = tmp.rows[0] && LUT_16(LUT_NR[gate.type-2],sim_fin1.rows[0], sim_fin2.rows[0]);
 		tmp.rows[1] = tmp.rows[1] && LUT_16(LUT_NR[gate.type-2],sim_fin1.rows[1], sim_fin2.rows[1]);
 		tmp.rows[2] = tmp.rows[2] && LUT_16(LUT_NR[gate.type-2],sim_fin1.rows[2], sim_fin2.rows[2]);
@@ -71,9 +71,9 @@ __device__ __forceinline__  coalesce_t nonrobust(const uint8_t f1, const uint8_t
 	return tmp;
 }
 
-__device__ __forceinline__  coalesce_t robust(const uint32_t f1, const uint8_t *sim, const size_t sim_pitch, const uint32_t tid, const uint32_t *fans,const GPUNODE& gate) {
+__device__ __forceinline__  coalesce_t robust(const uint32_t f1, const GPU_DATA_type<coalesce_t> sim, const uint32_t tid, volatile int *fans, const GPUNODE& gate) {
 	coalesce_t tmp; tmp.packed = 0xFFFFFFFF;
-	const coalesce_t sim_fin1 = REF2D((coalesce_t*)sim,sim_pitch,tid,f1);
+	const coalesce_t sim_fin1 = REF2D(sim,tid,f1);
 	switch(gate.type){
 		case FROM: // For FROM, it's equal to its fan-in
 		case BUFF:
@@ -88,7 +88,7 @@ __device__ __forceinline__  coalesce_t robust(const uint32_t f1, const uint8_t *
 		case AND:
 			for (uint16_t fin2 = 0; fin2 < gate.nfi; fin2++) {
 				if (f1 == FIN(fans,gate.offset,fin2)) continue;
-				const coalesce_t sim_fin2 = REF2D((coalesce_t*)sim,sim_pitch,tid,FIN(fans,gate.offset,fin2));
+				const coalesce_t sim_fin2 = REF2D(sim,tid,fans[fin2]);
 				tmp.rows[0] = tmp.rows[0] && LUT_16(LUT_R[gate.type-2],sim_fin1.rows[0], sim_fin2.rows[0]);
 				tmp.rows[1] = tmp.rows[1] && LUT_16(LUT_R[gate.type-2],sim_fin1.rows[1], sim_fin2.rows[1]);
 				tmp.rows[2] = tmp.rows[2] && LUT_16(LUT_R[gate.type-2],sim_fin1.rows[2], sim_fin2.rows[2]);
@@ -212,13 +212,21 @@ __device__ void printGate(const int gid, const int in_gid, const GPUNODE gate, c
 		}
 	}
 }
-__global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* mark, size_t pitch, size_t patterns, GPUNODE* node, uint32_t* fans, int start, int startPattern, int robust_f) {
+template <class T> 
+__global__ void kernMarkPathSegments(const GPUCKT ckt, const GPU_DATA_type<T> sim, GPU_DATA_type<T> mark, const int start, int robust_f) {
 	int tid = (blockIdx.y * blockDim.x) + threadIdx.x;
 	int gid = (blockIdx.x) + start;
+	__shared__ int fins[128];
+	const GPUNODE gate = ckt.graph[gid];
+
+	if (threadIdx.x < gate.nfi) { 
+		fins[threadIdx.x] = FIN(ckt.offset,gate.offset,threadIdx.x); 
+	} 
+	__syncthreads();
 	coalesce_t resultCache; resultCache.packed = 0;
-	if ((tid*4) < patterns) {
-		const GPUNODE gate = node[gid];
-		const coalesce_t simResults = REF2D((coalesce_t*)sim,sim_pitch,tid,gid);
+
+	if ((tid*4) < mark.width) {
+		const coalesce_t simResults = REF2D(sim,tid,gid);
 		coalesce_t rowCache((simResults.rows[0] > 1), (simResults.rows[1] > 1), (simResults.rows[2] > 1),(simResults.rows[3] > 1));
 
 		// switching based on value causes divergence, switch based on node type instead.
@@ -235,7 +243,7 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 			case BUFF:
 			case DFF:
 				// For inverter and buffer gates, mark if and only if a fan-in is marked.
-			case NOT: resultCache = REF2D((coalesce_t*)mark,pitch,tid,FIN(fans,gate.offset,0)); break;
+			case NOT: resultCache = REF2D(mark,tid,fins[0]); break;
 			case OR:  // For the normal gates, set the fan-out based on the fan-ins. 
 			case NOR: // There's a LUT for each basic gate type.
 			case XOR:
@@ -243,12 +251,12 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 			case NAND:
 			case AND:
 				  for (uint16_t fin1 = 0; fin1 < gate.nfi; fin1++) {
-					  coalesce_t oldmark = REF2D((coalesce_t*)mark,pitch,tid,FIN(fans,gate.offset,fin1));
+					  coalesce_t oldmark = REF2D(mark,tid,fins[0]);
 					  if (robust_f == 1) {
-						  resultCache = robust(fin1, sim, sim_pitch, tid, fans, gate,resultCache, oldmark); 
+						  resultCache = robust(fin1, sim, tid, fins, gate,resultCache, oldmark); 
 					  } else {
 
-						  resultCache = nonrobust(fin1, sim, sim_pitch, tid, fans, gate,resultCache, oldmark);
+						  resultCache = nonrobust(fin1, sim, tid, fins, gate,resultCache, oldmark);
 					  }
 				  }
 				  break;
@@ -256,34 +264,11 @@ __global__ void kernMarkPathSegments(uint8_t *sim, size_t sim_pitch, uint8_t* ma
 		}
 		// stick the contents of resultCache into the mark array
 		resultCache.packed = resultCache.packed & rowCache.packed;
-		REF2D((coalesce_t*)mark,pitch,tid,gid) = resultCache;
+		REF2D(mark,tid,gid) = resultCache;
 		//printGate(1163, gid, gate, sim, sim_pitch, REF2D((coalesce_t*)mark,pitch,tid,gid).rows[0], 0, fans);
 	}
 }
 extern "C" __launch_bounds__(INV_MARK_BLOCK,BLOCK_PER_KERNEL) 
-__global__ void kernRemoveInvalidMarks(uint8_t* mark, size_t pitch, uint8_t* sim, size_t sim_pitch, size_t patterns, GPUNODE* node, uint32_t* fans, int start, int robust_f) {
-	int tid = (blockIdx.y * blockDim.x) + threadIdx.x;
-	int gid = (blockIdx.x) + start;
-	const GPUNODE gate = node[gid];
-	__shared__ int fots[128];
-	if (threadIdx.x < gate.nfo) { fots[threadIdx.x] = FIN(fans,gate.offset,threadIdx.x+gate.nfi); }
-	__syncthreads();
-	if ((tid*4) < patterns) {
-		// there must be at least one fan-out of current gate that is marked with our gate as a on-path gate, if not a po
-		coalesce_t result;
-		result.packed = (gate.po > 0) * 0x01010101;;
-		for (uint16_t j = 0; j < gate.nfo; j++) {
-			const GPUNODE fanout = node[fots[j]];
-			if (robust_f == 1) {
-				result.packed = result.packed | robust(gid,sim,sim_pitch,tid,fans, fanout).packed;
-			} else {
-				result.packed = result.packed | nonrobust(gid,sim,sim_pitch,tid,fans, fanout).packed;
-			}
-		}
-		result.packed = result.packed & REF2D((coalesce_t*)mark,pitch,tid,gid).packed;
-		REF2D((coalesce_t*)mark,pitch,tid,gid) = result;
-	}
-}
 __global__ void kernRemoveInvalidMarks(uint8_t* mark, size_t pitch, uint8_t* sim, size_t sim_pitch, size_t patterns, GPUNODE* node, uint32_t* fans, int start) {
 	int tid = (blockIdx.y * blockDim.x) + threadIdx.x;
 	int gid = (blockIdx.x) + start;
@@ -311,6 +296,8 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt, size_t 
 	HANDLE_ERROR(cudaGetLastError()); // check to make sure we aren't segfaulting before we hit this point.
 	int blockcount_y;
 	int startGate;
+	GPU_DATA_type<coalesce_t> res = toPod<coalesce_t>(results,chunk);
+	GPU_DATA_type<coalesce_t> inps = toPod<coalesce_t>(input, chunk);
 #ifndef NTIMING
 	float elapsed;
 	timespec start, stop;
@@ -323,9 +310,9 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt, size_t 
 		do { 
 			int simblocks = min(MAX_BLOCKS, levelsize);
 			dim3 numBlocks(simblocks,blockcount_y);
-			kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(input.gpu(chunk).data, input.gpu(chunk).pitch, results.gpu(chunk).data, results.gpu(chunk).pitch, results.gpu(chunk).width,ckt.gpu_graph(), ckt.offset(),  startGate, startPattern, robust_flag);
+			kernMarkPathSegments<<<numBlocks,MARK_BLOCK>>>(toPod(ckt), inps, res, startGate, robust_flag);
 			startGate += simblocks;
-			if (levelsize > MAX_BLOCKS) {
+			if ((unsigned)levelsize > MAX_BLOCKS) {
 				levelsize -= MAX_BLOCKS;
 			} else {
 				levelsize = 0;
@@ -344,8 +331,8 @@ float gpuMarkPaths(GPU_Data& results, GPU_Data& input, GPU_Circuit& ckt, size_t 
 			int simblocks = min(MAX_BLOCKS, levelsize);
 			dim3 numBlocks(simblocks,blockcount_y);
 			startGate -= simblocks;
-			kernRemoveInvalidMarks<<<numBlocks,INV_MARK_BLOCK>>>(results.gpu(chunk).data, results.gpu(chunk).pitch, input.gpu(chunk).data, input.gpu(chunk).pitch, results.gpu(chunk).width,ckt.gpu_graph(), ckt.offset(),  startGate);//, robust_flag);
-			if (levelsize > MAX_BLOCKS) {
+			kernRemoveInvalidMarks<<<numBlocks,INV_MARK_BLOCK>>>(results.gpu(chunk).data, results.gpu(chunk).pitch, input.gpu(chunk).data, input.gpu(chunk).pitch, results.gpu(chunk).width,ckt.gpu(), ckt.offset(),  startGate);//, robust_flag);
+			if ((unsigned)levelsize > MAX_BLOCKS) {
 				levelsize -= MAX_BLOCKS;
 			} else {
 				levelsize = 0;

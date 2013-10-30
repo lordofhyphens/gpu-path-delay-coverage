@@ -45,24 +45,6 @@ void debugSegmentList(segment<N,int2>* seglist, const unsigned int& size, std::s
 	ofile.close();
 #endif
 }
-namespace mgpu {
-	struct ScanOpMinPos {
-		enum { Communative = true};
-		typedef int2 input_type;
-		typedef uint2 value_type;
-		typedef int2 result_type;
-
-		MGPU_HOST_DEVICE value_type Extract (value_type t, int index) { return t;}
-		MGPU_HOST_DEVICE value_type Plus(value_type t1, value_type t2) { return make_uint2(min(t1.x,t2.x),min(t1.y,t2.x));};
-		MGPU_HOST_DEVICE value_type Combine(value_type t1, value_type t2) { return t2; }
-		MGPU_HOST_DEVICE value_type Identity() { return make_uint2((unsigned)_ident.x,(unsigned)_ident.y); }
-		MGPU_HOST_DEVICE ScanOpMinPos(input_type ident) : _ident(ident) { }
-		MGPU_HOST_DEVICE ScanOpMinPos() {
-			_ident = make_int2(numeric_limits<int>::max(), numeric_limits<int>::max());
-		}
-		input_type _ident;
-	};
-}
 
 const unsigned int BLOCK_STEP = 65535; // # of SIDs to process at once.
 const unsigned int PARALLEL_SEGS = 20;
